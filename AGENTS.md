@@ -116,7 +116,7 @@ el envoltorio con `matcher` y `hooks`. Su documentación completa viene
 instalada con la propia herramienta, en
 `~/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/hooks.md`.
 
-Codex exige además **hook trust persistido**: no ejecuta hooks hasta que se
+Codex exige además **hook trust persistido** (documentado para el usuario en el README y avisado por doctor): no ejecuta hooks hasta que se
 concede, y `--dangerously-bypass-hook-trust` lo saltea por invocación. Es la
 causa más probable de que sus hooks no se disparen tras `init`.
 

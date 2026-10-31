@@ -180,6 +180,14 @@ function resumenFinal(detectados) {
     '   Los CLIs cargan los hooks al abrir la sesión. Una que ya estaba',
     '   abierta no los tiene todavía: ciérrala y vuelve a abrirla.',
     '',
+    ...(detectados.includes('codex') ? [
+      ' Y EN CODEX: ACEPTA LOS HOOKS',
+      '   La primera vez que abras Codex te va a preguntar si confías en',
+      '   los hooks. Tienes que aceptar ("trust all"), o no ejecuta ninguno.',
+      '   El permiso queda guardado, pero recién se aplica en la sesión',
+      '   siguiente: cierra Codex y vuelve a abrirlo una vez más.',
+      '',
+    ] : []),
     ' DESPUÉS, QUÉ TIENES QUE HACER',
     '   Nada. Trabaja normal.',
     '   Cuando se te agote la cuota de un CLI, abre otro EN ESTA MISMA',
@@ -344,6 +352,25 @@ function doctor() {
   for (const [a, iso] of Object.entries(lat)) {
     const dias = (Date.now() - new Date(iso).getTime()) / 86400000;
     console.log(`  ${pad(a)} ${iso.slice(0, 16).replace('T', ' ')}${dias > 1 ? `  ← hace ${Math.round(dias)} día(s)` : ''}`);
+  }
+
+  // Un CLI con hooks registrados que nunca estampó latido es el síntoma de un
+  // paso pendiente, no de un bug. Se diagnostica aquí en lugar de dejar al
+  // usuario adivinando por qué .tambo/ sigue vacío.
+  const sinLatido = Object.entries(CLIS)
+    .filter(([n, c]) => instalado(c.bin) && existsSync(c.config)
+      && readFileSync(c.config, 'utf8').includes('chaski')
+      && !Object.keys(lat).some((k) => k.replace(/-/g, ' ') === n));
+  for (const [nombre] of sinLatido) {
+    console.log(`\n  ⚠ ${nombre}: hooks registrados pero nunca ejecutados.`);
+    if (nombre === 'codex') {
+      console.log('    Codex pide confiar en los hooks la primera vez que lo abres.');
+      console.log('    Acepta ("trust all") y vuelve a abrirlo: el permiso se aplica');
+      console.log('    desde la sesión siguiente.');
+    } else {
+      console.log('    Abre una sesión interactiva y escribe algo. Si sigue sin');
+      console.log('    aparecer, revisa el log del CLI: suele decir por qué falló.');
+    }
   }
 
   console.log('\nProyecto');

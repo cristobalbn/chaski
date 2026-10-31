@@ -57,7 +57,14 @@ Después:
 2. **Pega también la salida de `chaski doctor`**, que dice qué CLIs quedaron
    conectados y qué comando exacto se registró en cada configuración. El
    usuario debería poder auditarlo.
-3. **Dile las tres cosas que importan**, con tus palabras:
+3. **Avísale de los dos pasos que solo él puede hacer**, o va a creer que la
+   herramienta está rota:
+   - **reiniciar las sesiones abiertas**, porque los hooks se cargan al abrir
+     la sesión;
+   - **y si tiene Codex, aceptar los hooks** cuando se lo pregunte («trust
+     all»). Sin eso Codex no ejecuta ninguno, y el permiso recién se aplica
+     en la sesión siguiente, así que tiene que abrirlo dos veces.
+4. **Dile las tres cosas que importan**, con tus palabras:
    - no tiene que hacer nada más, chaski corre solo;
    - cuando se le agote la cuota de un CLI, que abra otro **en la misma
      carpeta**;
@@ -114,9 +121,29 @@ node ../chaski/src/instalar.mjs init
 3. Instala el skill `/relevo` en `.claude/skills/relevo/`.
 4. Agrega una sección de relevo a tu `AGENTS.md`.
 
-> **Después de `init`, reinicia tus sesiones.** Los CLIs cargan los hooks al
-> abrir la sesión, así que una que ya estaba abierta no los tiene y `.tambo/`
-> va a seguir vacío. Cierra y vuelve a abrir, y recién ahí empieza a capturar.
+### Dos pasos después de instalar
+
+Hay dos cosas que `init` no puede hacer por ti, y sin ellas parece que la
+herramienta no funciona.
+
+**1. Reinicia tus sesiones.** Los CLIs cargan los hooks al abrir la sesión, así
+que una que ya estaba abierta no los tiene y `.tambo/` va a seguir vacío.
+Ciérrala y vuelve a abrirla.
+
+**2. En Codex, acepta los hooks.** La primera vez que abras Codex te va a
+preguntar si confías en ellos. **Tienes que aceptar** —aparece como «trust
+all»— o no ejecuta ninguno. Y el permiso, aunque queda guardado, recién se
+aplica en la sesión siguiente: cierra Codex y vuelve a abrirlo una vez más.
+
+Si algo no captura, `chaski doctor` detecta exactamente este caso y te dice
+qué falta:
+
+```
+⚠ codex: hooks registrados pero nunca ejecutados.
+  Codex pide confiar en los hooks la primera vez que lo abres.
+  Acepta ("trust all") y vuelve a abrirlo: el permiso se aplica
+  desde la sesión siguiente.
+```
 
 ### Verificar la instalación
 
