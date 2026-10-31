@@ -38,8 +38,14 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Una ruta POSIX de Git Bash (`/tmp/...`) no resuelve cuando el hook se
   ejecuta en Windows.
 
+  Los tres adaptadores quedaron validados contra payloads y transcripts
+  reales. Cada CLI usa un formato de transcript distinto, y hay un extractor
+  por formato:
+  - Claude Code: bloques con `tool_use` y `tool_result`.
+  - Antigravity: pasos con `step_index`, `type` y `content` en texto plano.
+  - Codex: envoltorio `{timestamp, ordinal, type, payload}`.
+
 ### Pendiente antes de 1.0
-- Capturar el payload real de los hooks de Codex y `agy` en sesión interactiva
-  (`chaski probe`).
+- Suite de tests con fixtures de los tres formatos.
 - Suite de tests con `node:test` y fixtures de transcript por versión de CLI.
 - Disparo automático de la narrativa (implementado y apagado por defecto).

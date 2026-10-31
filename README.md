@@ -342,7 +342,7 @@ riesgo tu cuenta no debería estar a un flag de distancia.
 | Latencia del hook | ~290 ms, casi todo arranque de Node | El presupuesto de `Stop` en Claude Code es de 1,5 s **compartido** entre todos los hooks del evento. Hay margen de 5x, pero si tienes muchos hooks ahí, mide |
 | Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
 | Narrativa | puede atrasarse unos turnos | Los hechos están siempre al día; el porqué depende de cuándo corriste `/relevo` |
-| Hooks de `agy` y Codex | payload sin validar | Los eventos existen y el TOML que genera `init` parsea correctamente (verificado con `codex doctor`), pero el contenido del payload hay que capturarlo en una sesión interactiva con `chaski probe`. El parseo es defensivo: ante un formato desconocido ignora el evento en lugar de fallar |
+| Hooks de Codex | requieren conceder confianza | La primera vez que abres Codex con hooks instalados pide confiar en ellos. Hasta que aceptes, no se ejecuta ninguno, y el permiso se aplica desde la sesión siguiente |
 
 Si un administrador fijó `allowManagedHooksOnly` o `disableAllHooks` en una
 máquina corporativa, los hooks de usuario no corren. `doctor` lo detecta y lo

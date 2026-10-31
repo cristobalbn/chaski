@@ -112,10 +112,13 @@ export function hechosTranscript(rutaTranscript, desdeOffset = 0, config = null)
  * formato desconocido se ignora el evento en lugar de fallar.
  */
 function extraer(ev, res, config) {
-  // Antigravity usa un formato propio: pasos con step_index, type y content
-  // en texto plano, sin bloques de tool_use. Se detecta por step_index.
+  // Antigravity: pasos con step_index, type y content en texto plano.
   if (ev.step_index !== undefined || ev.stepIndex !== undefined) {
     return extraerPaso(ev, res, config);
+  }
+  // Codex: envoltorio {timestamp, ordinal, type, payload}.
+  if (ev.payload !== undefined && ev.ordinal !== undefined) {
+    return extraerRollout(ev, res, config);
   }
 
   const tipo = ev.type ?? ev.role ?? ev.kind;
@@ -189,6 +192,66 @@ function extraerPaso(ev, res, config) {
     const m = /"?(?:AbsolutePath|path|file)"?\s*[:=]\s*"?([^"\n]+)/i.exec(contenido);
     if (m && !rutaExcluida(m[1], config)) res.archivosLeidos.push(m[1].trim());
   }
+}
+
+/**
+ * Un registro del rollout de Codex.
+ *
+ * Formato verificado contra una sesión real: cada línea envuelve un payload
+ * en {timestamp, ordinal, type, payload}. Los tipos que informan son
+ * `response_item` (mensajes y llamadas a herramientas) y `event_msg`
+ * (task_started, item_completed, task_complete).
+ */
+function extraerRollout(ev, res, config) {
+  const p = ev.payload ?? {};
+  const tipo = String(p.type ?? '');
+
+  if (ev.type === 'event_msg' && tipo === 'task_started') res.turnos++;
+
+  if (ev.type === 'event_msg' && tipo === 'task_complete' && p.last_agent_message) {
+    res.ultimoMensaje = String(p.last_agent_message);
+  }
+
+  if (ev.type === 'response_item' && tipo === 'message') {
+    res.turnos++;
+    if (p.role === 'assistant') {
+      const txt = textoDe(p.content);
+      if (txt) res.ultimoMensaje = txt;
+    }
+  }
+
+  // Llamadas a herramientas: aparecen como response_item con tipos de
+  // function/tool call, o anidadas en item_completed.
+  const item = tipo === 'item_completed' ? (p.item ?? {}) : p;
+  const nombre = String(item.name ?? item.type ?? '');
+
+  if (/shell|command|exec|bash/i.test(nombre)) {
+    const args = item.arguments ?? item.input ?? item.command ?? '';
+    const bruto = typeof args === 'string' ? args : JSON.stringify(args);
+    const m = /"?command"?\s*:\s*(\[[^\]]*\]|"[^"]*")/i.exec(bruto);
+    let linea = bruto;
+    if (m) {
+      try {
+        const v = JSON.parse(m[1]);
+        linea = Array.isArray(v) ? v.join(' ') : String(v);
+      } catch { linea = m[1]; }
+    }
+    const { texto } = redactar(lineaSignificativa(linea), config);
+    if (texto) {
+      const fallo = /error|fail/i.test(String(item.status ?? ''));
+      res.comandos.push({ cmd: texto, id: item.id ?? ev.ordinal, exit: fallo ? 1 : 0 });
+    }
+  }
+}
+
+function textoDe(contenido) {
+  if (typeof contenido === 'string') return contenido;
+  if (!Array.isArray(contenido)) return null;
+  for (const b of contenido) {
+    if (typeof b === 'string') return b;
+    if (b && typeof b.text === 'string') return b.text;
+  }
+  return null;
 }
 
 function exitDe(b) {

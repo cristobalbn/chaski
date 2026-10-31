@@ -30,11 +30,14 @@ const MARCA_FIN = '# <<< chaski <<<';
  * espacio, así que "claude code" llegaba al script como dos argumentos y la
  * atribución del relevo quedaba truncada en "claude".
  *
- * `sinComillas` existe para Antigravity: ejecuta con `cmd /c` y re-escapa las
- * comillas del JSON, de modo que al shell le llega `\"C:\Program Files\...\"`
- * y busca un ejecutable llamado `\"C:\Program`. Su log lo delata con
- * "is not recognized as an internal or external command". Se evita usando la
- * ruta corta 8.3 de Windows, que no tiene espacios y no necesita comillas.
+ * `viaEnvoltorio` es para Codex y Antigravity: ejecutan con `cmd /c` y
+ * re-escapan las comillas del archivo de configuración, así que al shell le
+ * llega `\"C:\Program Files\...\"` y busca un ejecutable llamado
+ * `\"C:\Program`. El log de Antigravity lo delató con "is not recognized as
+ * an internal or external command". Ver `envoltorio()`.
+ *
+ * Claude Code no lo necesita: acepta el comando citado tal cual, y está
+ * validado funcionando así.
  */
 function cmd(script, evento, agente, viaEnvoltorio = false) {
   const slug = agente.replace(/ /g, '-');
@@ -251,12 +254,14 @@ function instalarCodex(ruta) {
     '[[hooks.SessionStart]]',
     '[[hooks.SessionStart.hooks]]',
     'type = "command"',
-    `command = ${JSON.stringify(cmd(LEER, 'SessionStart', 'codex'))}`,
+    // Vía envoltorio, igual que Antigravity: Codex también ejecuta con
+    // `cmd /c`, así que una ruta con espacios entre comillas es frágil.
+    `command = ${JSON.stringify(cmd(LEER, 'SessionStart', 'codex', true))}`,
     '',
     '[[hooks.Stop]]',
     '[[hooks.Stop.hooks]]',
     'type = "command"',
-    `command = ${JSON.stringify(cmd(CAPTURAR, 'Stop', 'codex'))}`,
+    `command = ${JSON.stringify(cmd(CAPTURAR, 'Stop', 'codex', true))}`,
     'async = true',
     MARCA_FIN,
   ].join('\n');
@@ -476,7 +481,7 @@ function probe(sub) {
           lineas.push(`[[hooks.${ev}]]`, `[[hooks.${ev}.hooks]]`, 'type = "command"',
             // JSON.stringify es obligatorio: en TOML, "C:\Program Files\nodejs"
             // interpreta \n como salto de línea y el comando queda destruido.
-            'command = ' + JSON.stringify(cmdSonda(ev, nombre)), '');
+            'command = ' + JSON.stringify(cmdSonda(ev, nombre, true)), '');
         }
         lineas.push(MARCA_FIN);
         escribirAtomico(cli.config, quitarBloque(previo).trimEnd() + '\n\n' + lineas.join('\n') + '\n');
