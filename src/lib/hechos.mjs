@@ -112,6 +112,12 @@ export function hechosTranscript(rutaTranscript, desdeOffset = 0, config = null)
  * formato desconocido se ignora el evento en lugar de fallar.
  */
 function extraer(ev, res, config) {
+  // Antigravity usa un formato propio: pasos con step_index, type y content
+  // en texto plano, sin bloques de tool_use. Se detecta por step_index.
+  if (ev.step_index !== undefined || ev.stepIndex !== undefined) {
+    return extraerPaso(ev, res, config);
+  }
+
   const tipo = ev.type ?? ev.role ?? ev.kind;
   if (tipo === 'assistant' || tipo === 'user') res.turnos++;
 
@@ -146,6 +152,43 @@ function extraer(ev, res, config) {
   }
 
   if (typeof ev.last_assistant_message === 'string') res.ultimoMensaje = ev.last_assistant_message;
+}
+
+/**
+ * Un paso del transcript de Antigravity.
+ *
+ * Formato verificado contra una sesión real: cada línea es un paso con
+ * step_index, source, type, status, created_at y content. Los tipos vistos son
+ * USER_INPUT, PLANNER_RESPONSE y los de herramientas (run_command y afines).
+ * El contenido es texto plano, no bloques estructurados, así que los comandos
+ * se extraen del texto en lugar de leer campos.
+ */
+function extraerPaso(ev, res, config) {
+  const tipo = String(ev.type ?? '').toUpperCase();
+  const contenido = typeof ev.content === 'string' ? ev.content : '';
+
+  if (tipo === 'USER_INPUT' || tipo === 'PLANNER_RESPONSE') res.turnos++;
+
+  if (tipo === 'PLANNER_RESPONSE' && contenido) {
+    res.ultimoMensaje = contenido;
+  }
+
+  if (/RUN_COMMAND|COMMAND|TERMINAL/.test(tipo)) {
+    // El comando aparece como CommandLine en el contenido, o como primera
+    // línea útil si viene en texto libre.
+    const m = /"?CommandLine"?\s*[:=]\s*"?([^"\n]+)/i.exec(contenido);
+    const bruto = m ? m[1] : contenido;
+    const { texto } = redactar(lineaSignificativa(bruto), config);
+    if (texto) {
+      const fallo = /FAILED|ERROR/.test(String(ev.status ?? '')) || /exit (?:code )?[1-9]/i.test(contenido);
+      res.comandos.push({ cmd: texto, id: ev.step_index ?? null, exit: fallo ? 1 : 0 });
+    }
+  }
+
+  if (/VIEW_FILE|READ_FILE/.test(tipo)) {
+    const m = /"?(?:AbsolutePath|path|file)"?\s*[:=]\s*"?([^"\n]+)/i.exec(contenido);
+    if (m && !rutaExcluida(m[1], config)) res.archivosLeidos.push(m[1].trim());
+  }
 }
 
 function exitDe(b) {

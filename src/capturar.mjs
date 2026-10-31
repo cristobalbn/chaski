@@ -92,11 +92,16 @@ function leerPayload() {
   let ev = {};
   try { ev = JSON.parse(bruto) || {}; } catch {}
 
-  // Normalización defensiva: ninguno de los tres prometió estabilidad.
+  // Normalización defensiva: ninguno de los tres prometió estabilidad, y
+  // Antigravity usa camelCase y nombres propios. Verificado contra payloads
+  // reales de Claude Code y de agy.
+  const ws = Array.isArray(ev.workspacePaths) ? ev.workspacePaths[0] : null;
   ev.transcript_path = ev.transcript_path ?? ev.transcriptPath ?? ev.transcript ?? null;
   ev.hook_event_name = ev.hook_event_name ?? ev.hookEventName ?? ev.event ?? process.argv[2] ?? null;
-  ev.session_id = ev.session_id ?? ev.sessionId ?? ev.conversation_id ?? null;
-  ev.cwd = ev.cwd ?? ev.workspace ?? ev.project_dir ?? process.cwd();
+  ev.session_id = ev.session_id ?? ev.sessionId ?? ev.conversationId ?? ev.conversation_id ?? null;
+  ev.cwd = ev.cwd ?? ws ?? ev.workspace ?? ev.project_dir ?? process.cwd();
+  // agy manda el último prompt del usuario; sirve como pista de la tarea.
+  ev.__ultimoPrompt = ev.lastUserInput ?? ev.user_prompt ?? null;
   ev.__agente = process.argv[3] ?? detectarAgente(ev);
   return ev;
 }

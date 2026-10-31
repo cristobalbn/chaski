@@ -25,13 +25,49 @@ const MARCA_FIN = '# <<< chaski <<<';
 
 /**
  * Comando de shell, con rutas nativas y citadas.
+ *
  * El nombre del agente va sin espacios: el shell parte los argumentos por
  * espacio, así que "claude code" llegaba al script como dos argumentos y la
  * atribución del relevo quedaba truncada en "claude".
+ *
+ * `sinComillas` existe para Antigravity: ejecuta con `cmd /c` y re-escapa las
+ * comillas del JSON, de modo que al shell le llega `\"C:\Program Files\...\"`
+ * y busca un ejecutable llamado `\"C:\Program`. Su log lo delata con
+ * "is not recognized as an internal or external command". Se evita usando la
+ * ruta corta 8.3 de Windows, que no tiene espacios y no necesita comillas.
  */
-function cmd(script, evento, agente) {
+function cmd(script, evento, agente, viaEnvoltorio = false) {
+  const slug = agente.replace(/ /g, '-');
+  if (viaEnvoltorio) return envoltorio(script, evento, slug);
   const q = (s) => `"${s.replace(/\//g, process.platform === 'win32' ? '\\' : '/')}"`;
-  return `${q(process.execPath)} ${q(script)} ${evento} ${agente.replace(/ /g, '-')}`;
+  return `${q(process.execPath)} ${q(script)} ${evento} ${slug}`;
+}
+
+/**
+ * Script envoltorio en ~/.chaski/, cuya ruta no tiene espacios.
+ *
+ * Es la única forma determinística de resolver el doble escapado: las rutas
+ * con espacios quedan dentro del script, entre comillas, donde nadie las
+ * re-escapa. El hook solo invoca una ruta limpia.
+ *
+ * Se descartó la ruta corta 8.3 de Windows porque la generación de nombres
+ * cortos suele estar deshabilitada en volúmenes modernos y falla en silencio.
+ */
+function envoltorio(script, evento, agente) {
+  // El nombre incluye el script destino: si no, el envoltorio de la sonda y
+  // el del hook normal colisionan y el último en instalarse pisa al otro.
+  const destino = String(script).split(/[\\/]/).pop().replace(/\.mjs$/, '');
+  const base = `${agente.replace(/ /g, '-')}-${destino}-${evento}`;
+  const win = process.platform === 'win32';
+  const ruta = join(dirGlobal(), base + (win ? '.cmd' : '.sh'));
+  const q = (s) => `"${s.replace(/\//g, win ? '\\' : '/')}"`;
+  const cuerpo = win
+    ? ['@echo off', 'rem Generado por chaski. Evita el doble escapado de comillas.',
+       `${q(process.execPath)} ${q(script)} ${evento} ${agente} %*`, ''].join('\r\n')
+    : ['#!/bin/sh', '# Generado por chaski. Evita el doble escapado de comillas.',
+       `exec ${q(process.execPath)} ${q(script)} ${evento} ${agente} "$@"`, ''].join('\n');
+  writeFileSync(ruta, cuerpo, win ? undefined : { mode: 0o755 });
+  return ruta.replace(/\//g, win ? '\\' : '/');
 }
 
 const CLIS = {
@@ -198,8 +234,8 @@ function instalarAgy(ruta) {
   // El archivo de agy se organiza por propietario: registramos bajo "chaski"
   // sin pisar lo de otras herramientas instaladas.
   h.chaski = {
-    SessionStart: [{ type: 'command', command: cmd(LEER, 'SessionStart', 'agy'), timeout: 10 }],
-    Stop: [{ type: 'command', command: cmd(CAPTURAR, 'Stop', 'agy'), timeout: 10 }],
+    SessionStart: [{ type: 'command', command: cmd(LEER, 'SessionStart', 'agy', true), timeout: 10 }],
+    Stop: [{ type: 'command', command: cmd(CAPTURAR, 'Stop', 'agy', true), timeout: 10 }],
   };
   escribirAtomico(ruta, JSON.stringify(h, null, 2));
 }
@@ -430,7 +466,7 @@ function probe(sub) {
         mkdirSync(dirname(cli.config), { recursive: true });
         const h = leerJson(cli.config, {}) ?? {};
         h.chaskiProbe = Object.fromEntries(eventos.map((ev) =>
-          [ev, [{ type: 'command', command: cmdSonda(ev, nombre), timeout: 15 }]]));
+          [ev, [{ type: 'command', command: cmdSonda(ev, nombre, true), timeout: 15 }]]));
         escribirAtomico(cli.config, JSON.stringify(h, null, 2));
       } else {
         mkdirSync(dirname(cli.config), { recursive: true });
@@ -461,9 +497,8 @@ function probe(sub) {
   console.log('  chaski probe --limpiar    quitar la sonda\n');
 }
 
-function cmdSonda(evento, agente) {
-  const q = (s) => `"${s.replace(/\//g, process.platform === 'win32' ? '\\' : '/')}"`;
-  return `${q(process.execPath)} ${q(sondaPath())} ${evento} ${agente.replace(/ /g, '-')}`;
+function cmdSonda(evento, agente, viaEnvoltorio = false) {
+  return cmd(sondaPath(), evento, agente, viaEnvoltorio);
 }
 
 function probeVer() {
