@@ -130,9 +130,9 @@ salida antes de confiar en la herramienta: son unas diez líneas.
 
 ### Capturar payloads (`chaski probe`)
 
-Los payloads de los hooks de Codex y `agy` no están documentados campo por
-campo. Si quieres ayudar a cerrarlos —o diagnosticar por qué un hook no captura
-bien— `probe` instala una sonda que vuelca el payload crudo:
+Herramienta de diagnóstico: instala una sonda que vuelca a disco el payload
+crudo que cada CLI le pasa a sus hooks. Sirve para ver por qué un hook no
+captura, y para aportar fixtures si agregas soporte a otro CLI.
 
 ```bash
 chaski probe              # instala la sonda en los CLIs que tengas
@@ -142,8 +142,7 @@ chaski probe --limpiar    # quita la sonda
 ```
 
 Tiene que ser una sesión interactiva: ninguno de los tres dispara hooks en
-headless. Si capturas un payload de Codex o `agy`, envíalo como fixture — es la
-contribución más útil al proyecto ahora mismo.
+modo headless.
 
 ### Desinstalar
 

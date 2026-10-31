@@ -37,15 +37,22 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   línea y el comando queda destruido.
 - Una ruta POSIX de Git Bash (`/tmp/...`) no resuelve cuando el hook se
   ejecuta en Windows.
-
-  Los tres adaptadores quedaron validados contra payloads y transcripts
-  reales. Cada CLI usa un formato de transcript distinto, y hay un extractor
-  por formato:
+- Codex y Antigravity ejecutan con `cmd /c` y re-escapan las comillas del
+  archivo de configuración, así que una ruta con espacios entre comillas
+  falla. Se resuelve con un script envoltorio en `~/.chaski/`, cuya ruta no
+  tiene espacios. La ruta corta 8.3 de Windows no sirve: suele estar
+  deshabilitada y falla en silencio.
+- Codex exige conceder confianza a los hooks la primera vez, y el permiso se
+  aplica desde la sesión siguiente.
+- Los tres CLIs usan formatos de transcript distintos entre sí, y cada uno
+  tiene su propio extractor, elegido por la forma del registro:
   - Claude Code: bloques con `tool_use` y `tool_result`.
   - Antigravity: pasos con `step_index`, `type` y `content` en texto plano.
   - Codex: envoltorio `{timestamp, ordinal, type, payload}`.
+- Los tres adaptadores están validados contra payloads y transcripts reales:
+  Claude Code (3 MB, 743 turnos), Antigravity (2 turnos) y Codex (119 KB,
+  8 turnos).
 
 ### Pendiente antes de 1.0
-- Suite de tests con fixtures de los tres formatos.
-- Suite de tests con `node:test` y fixtures de transcript por versión de CLI.
+- Suite de tests con `node:test` y fixtures de los tres formatos.
 - Disparo automático de la narrativa (implementado y apagado por defecto).
