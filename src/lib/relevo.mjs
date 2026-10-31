@@ -114,6 +114,17 @@ export function render(estado) {
     L.push('');
   }
 
+  // Lo que quedó corriendo al cerrar: es lo primero que el agente nuevo
+  // necesita saber, porque puede estar modificando el árbol ahora mismo.
+  if (estado.enSegundoPlano?.length) {
+    L.push('## Quedó corriendo en segundo plano');
+    L.push('');
+    for (const t of estado.enSegundoPlano) L.push(`- ${t.descripcion}`);
+    L.push('');
+    L.push('_Puede haber terminado, fallado o seguir corriendo. Verifica antes de asumir._');
+    L.push('');
+  }
+
   if (h.upstream?.adelante > 0) {
     L.push(`## Cuidado: upstream divergió`);
     L.push('');

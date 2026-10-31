@@ -54,6 +54,9 @@ function main() {
       narrativa: previo.narrativa ?? null,
       narrativaAutor: previo.narrativaAutor ?? null,
       narrativaEscrita: previo.narrativaEscrita ?? null,
+      // Tareas en segundo plano que quedan corriendo. Si cambias de CLI con
+      // algo a medio ejecutar, el agente nuevo tiene que saberlo.
+      enSegundoPlano: tareasVivas(ev),
       redacciones: 0,
       evento: ev.hook_event_name ?? null,
     };
@@ -138,6 +141,23 @@ function ultimoTocado(g, previo) {
 }
 
 function gitHead(cwd) { return git(cwd, ['rev-parse', '--short', 'HEAD']); }
+
+/**
+ * Tareas en segundo plano todavía corriendo, del payload del hook.
+ * Confirmado en el payload real de Claude Code: campo `background_tasks`,
+ * con id, status y description. Los otros CLIs pueden no enviarlo.
+ */
+function tareasVivas(ev) {
+  const tareas = ev.background_tasks ?? ev.backgroundTasks ?? [];
+  if (!Array.isArray(tareas)) return [];
+  return tareas
+    .filter((t) => t && /running|pending|in_progress/i.test(t.status ?? ''))
+    .map((t) => ({
+      descripcion: String(t.description ?? t.id ?? 'sin descripción').slice(0, 120),
+      tipo: t.type ?? null,
+    }))
+    .slice(0, 6);
+}
 
 /** Latido por CLI: doctor avisa si alguno dejó de ejecutar su hook. */
 function latido(agente) {
