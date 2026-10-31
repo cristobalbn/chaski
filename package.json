@@ -1,0 +1,45 @@
+{
+  "name": "chaski",
+  "version": "0.1.0",
+  "description": "Relevo de contexto entre agentes de codigo (Claude Code, Codex, agy)",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "chaski": "./src/instalar.mjs"
+  },
+  "scripts": {
+    "check": "node --check src/capturar.mjs && node --check src/leer.mjs && node --check src/instalar.mjs"
+  },
+  "files": [
+    "src",
+    "skill",
+    "README.md",
+    "AGENTS.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "claude-code",
+    "codex",
+    "antigravity",
+    "agy",
+    "handoff",
+    "context",
+    "ai-agent",
+    "cli",
+    "relevo"
+  ],
+  "author": "Cristobal Barrera",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cristobalbn/chaski.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cristobalbn/chaski/issues"
+  },
+  "homepage": "https://github.com/cristobalbn/chaski#readme"
+}

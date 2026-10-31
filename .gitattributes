@@ -1,0 +1,10 @@
+# Normalización de fin de línea.
+# Crítico para src/*.mjs: el shebang de un archivo con CRLF falla en Linux y
+# macOS ("#!/usr/bin/env node\r": bad interpreter), lo que rompe el bin del
+# paquete para cualquiera que no esté en Windows.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
