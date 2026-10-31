@@ -1,0 +1,17 @@
+{
+  "session_id": "aaaaaaaa-1111-2222-3333-444444444444",
+  "prompt_id": "bbbbbbbb-5555-6666-7777-888888888888",
+  "transcript_path": "/tmp/proyecto/claude-code.transcript.jsonl",
+  "cwd": "/tmp/proyecto",
+  "scratchpad_dir": "/tmp/scratchpad",
+  "permission_mode": "default",
+  "effort": { "level": "medium" },
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "Listo el typecheck.",
+  "background_tasks": [
+    { "id": "t1", "type": "shell", "status": "running", "description": "npm run build -- --watch" },
+    { "id": "t2", "type": "shell", "status": "completed", "description": "ya termino" }
+  ],
+  "session_crons": []
+}

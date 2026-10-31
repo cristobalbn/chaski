@@ -11,10 +11,24 @@ node src/instalar.mjs doctor       # verifica qué quedó instalado
 node src/instalar.mjs uninstall    # revierte desde respaldo
 node src/instalar.mjs probe        # captura el payload crudo de los hooks
 npm run check                      # chequeo de sintaxis (no hay build)
+npm test                           # 64 tests, node:test, sin dependencias
 ```
 
-No hay suite de tests todavía. Si agregas una, usa `node:test` — no instales
-un framework.
+## Los tests de contrato son lo que sostiene el proyecto
+
+`test/fixtures/` tiene un payload y un transcript por CLI. **Los tres formatos
+de transcript son distintos entre sí y ninguno prometió estabilidad entre
+versiones** — ese es el riesgo que más probablemente mate el proyecto, y estos
+tests lo convierten en una build roja en lugar de un fallo silencioso en la
+máquina de alguien.
+
+Si capturas un payload con una forma distinta (`chaski probe`), reemplaza el
+fixture y ajusta el test. Si agregas un CLI, agrega su fixture y su bloque de
+contrato: sin eso el adaptador no entra.
+
+Los fixtures son **sintéticos a propósito**. Un transcript real lleva rutas con
+el nombre de usuario y la conversación completa de alguien, y este repo es
+público. Lo que se prueba es la forma, no el contenido.
 
 ## Nunca commitees a main
 
