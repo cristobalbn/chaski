@@ -9,11 +9,28 @@ modules. Si vas a trabajar en este repo, lee esto completo antes de editar.
 node src/instalar.mjs init         # registra hooks, gitignore, skill
 node src/instalar.mjs doctor       # verifica qué quedó instalado
 node src/instalar.mjs uninstall    # revierte desde respaldo
-node --check src/<archivo>.mjs     # chequeo de sintaxis (no hay build)
+node src/instalar.mjs probe        # captura el payload crudo de los hooks
+npm run check                      # chequeo de sintaxis (no hay build)
 ```
 
 No hay suite de tests todavía. Si agregas una, usa `node:test` — no instales
 un framework.
+
+## Nunca commitees a main
+
+`main` está protegida y exige pull request. Es lo que la gente instala con
+`npm install -g github:cristobalbn/chaski`, así que un commit roto ahí es un
+commit roto en la máquina de otro.
+
+```bash
+git checkout -b fix/lo-que-sea     # feat/ fix/ docs/ test/ chore/
+npm run check                      # antes de abrir el PR
+git push -u origin fix/lo-que-sea
+gh pr create --fill
+```
+
+El merge lo decide una persona. No lo hagas por tu cuenta salvo que te lo
+pidan explícitamente.
 
 ## Invariantes
 

@@ -62,6 +62,35 @@ hook se ejecuta de verdad.
 - Cualquier cosa que permita a texto generado por un modelo escribir en los
   campos de hechos de `estado.json`.
 
+## Flujo de trabajo
+
+`main` siempre tiene que quedar instalable: es lo que la gente baja con
+`npm install -g github:cristobalbn/chaski`. Así que nada entra directo.
+
+```bash
+git checkout -b feat/lo-que-sea     # o fix/, docs/, test/
+# ... trabajás, commiteás ...
+git push -u origin feat/lo-que-sea
+gh pr create --fill                 # o desde la web
+```
+
+Prefijos de rama: `feat/` para funcionalidad nueva, `fix/` para correcciones,
+`docs/` para documentación, `test/` para tests, `chore/` para mantenimiento.
+
+Antes de abrir el PR:
+
+```bash
+npm run check                       # sintaxis; no hay build
+```
+
+Y probá el cambio a mano según la sección de arriba. No hay CI todavía, así
+que la verificación es tuya.
+
+`main` está protegida y exige pull request. No exige aprobación de otra
+persona —sería absurdo en un proyecto de un solo mantenedor— pero sí obliga a
+que todo pase por un PR, incluido el dueño del repo. El PR es el lugar donde
+queda escrito **por qué** se hizo un cambio, y eso vale más que el commit.
+
 ## Pull requests
 
 - Una cosa por PR.
