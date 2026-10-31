@@ -23,10 +23,15 @@ const LEER = resolve(AQUI, 'leer.mjs');
 const MARCA_INI = '# >>> chaski (no editar a mano) >>>';
 const MARCA_FIN = '# <<< chaski <<<';
 
-/** Comando de shell, con rutas nativas y citadas. */
+/**
+ * Comando de shell, con rutas nativas y citadas.
+ * El nombre del agente va sin espacios: el shell parte los argumentos por
+ * espacio, así que "claude code" llegaba al script como dos argumentos y la
+ * atribución del relevo quedaba truncada en "claude".
+ */
 function cmd(script, evento, agente) {
   const q = (s) => `"${s.replace(/\//g, process.platform === 'win32' ? '\\' : '/')}"`;
-  return `${q(process.execPath)} ${q(script)} ${evento} ${agente}`;
+  return `${q(process.execPath)} ${q(script)} ${evento} ${agente.replace(/ /g, '-')}`;
 }
 
 const CLIS = {

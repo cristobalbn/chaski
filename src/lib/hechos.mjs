@@ -126,7 +126,7 @@ function extraer(ev, res, config) {
     if (b.type === 'tool_use' && b.name) {
       const inp = b.input ?? {};
       if (/^bash$|^shell$|^run/i.test(b.name) && inp.command) {
-        const { texto } = redactar(String(inp.command).split('\n')[0].slice(0, 160), config);
+        const { texto } = redactar(lineaSignificativa(String(inp.command)), config);
         res.comandos.push({ cmd: texto, id: b.id, exit: null });
       } else if (/^read$|^view$/i.test(b.name) && (inp.file_path ?? inp.path)) {
         const r = String(inp.file_path ?? inp.path);
@@ -152,6 +152,22 @@ function exitDe(b) {
   const txt = typeof b.content === 'string' ? b.content : JSON.stringify(b.content ?? '');
   const m = /exit (?:code|status)[: ]+(\d+)/i.exec(txt);
   return m ? parseInt(m[1], 10) : null;
+}
+
+/**
+ * De un comando de varias líneas, la que dice qué se hizo.
+ * Tomar la primera línea a secas dejaba el relevo lleno de `cd ...` y
+ * `set -e`, que no informan nada de lo que pasó en la sesión.
+ */
+function lineaSignificativa(comando) {
+  const RUIDO = /^\s*(cd\s|set\s+-|export\s|source\s|\.\s|#|echo\s+"?===|if\s|fi$|then$|else$|done$|do$)/i;
+  const lineas = comando.split('\n').map((l) => l.trim()).filter(Boolean);
+  const util = lineas.find((l) => !RUIDO.test(l));
+  let elegida = util ?? lineas[0] ?? '';
+  // `cd <ruta> && comando` es el patrón más común de todos: lo que informa
+  // es el comando, no el directorio.
+  elegida = elegida.replace(/^cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*/i, '');
+  return elegida.slice(0, 160);
 }
 
 function num(v) { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; }
