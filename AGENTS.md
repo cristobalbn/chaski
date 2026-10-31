@@ -89,6 +89,32 @@ skill/SKILL.md        instrucciones del comando /relevo
   responden a un límite real de una herramienta. Si quitas un comentario que
   explica un límite, alguien va a reintroducir el bug.
 
+## Contrato de hooks por CLI
+
+No son intercambiables. Lo que funciona en uno falla en silencio en otro.
+
+| | Claude Code | Antigravity () |
+|---|---|---|
+| Config |  |  |
+| Organización | por evento | por propietario, luego evento |
+| Campos del payload | snake_case | **camelCase** |
+| Directorio |  |  (array) |
+| Transcript |  |  |
+| Salida del hook | texto plano | **JSON con ** |
+
+La diferencia de salida es la trampa: a  hay que devolverle
+. Si recibe
+texto plano no inyecta nada y no avisa.
+
+En , , ,  y  son
+listas planas de handlers; solo  y  usan el envoltorio
+con  y . Su documentación completa viene instalada con la
+herramienta, en
+.
+
+Codex requiere además **hook trust persistido**: no ejecuta hooks hasta
+concederlo, y  lo saltea por invocación.
+
 ## Si vas a escribir documentación de este repo
 
 La leen agentes además de personas, y para un agente cada token de documento es

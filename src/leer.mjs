@@ -39,7 +39,7 @@ function main() {
     if (salida.length > MAX_CARACTERES + 1200) {
       salida = salida.slice(0, MAX_CARACTERES + 1000) + '\n\n_[Recortado.]_\n' + CIERRE;
     }
-    process.stdout.write(salida + '\n');
+    process.stdout.write(emitir(salida, process.argv[3]));
   } catch (e) {
     process.stderr.write(`chaski: no se pudo inyectar el relevo (${e?.message ?? e})\n`);
   } finally {
@@ -50,7 +50,26 @@ function main() {
 function cwdDePayload() {
   let ev = {};
   try { ev = JSON.parse(readFileSync(0, 'utf8')) || {}; } catch {}
-  return ev.cwd ?? ev.workspace ?? ev.project_dir ?? process.cwd();
+  // Antigravity usa camelCase y manda un array de rutas de workspace en vez
+  // de un cwd. Documentado en su contrato de hooks.
+  const ws = Array.isArray(ev.workspacePaths) ? ev.workspacePaths[0] : null;
+  return ev.cwd ?? ws ?? ev.workspace ?? ev.project_dir ?? process.cwd();
+}
+
+/**
+ * Cada CLI espera un formato de salida distinto en el hook de inicio:
+ *
+ *   - Claude Code y Codex: texto plano, que se agrega al contexto.
+ *   - Antigravity: un objeto JSON con `injectSteps`. Si se le manda texto
+ *     plano no inyecta nada — falla en silencio, que es el peor caso.
+ */
+function emitir(texto, agente) {
+  if (/^agy$/i.test(agente ?? '')) {
+    return JSON.stringify({
+      injectSteps: [{ systemMessage: { systemMessage: texto } }],
+    }) + '\n';
+  }
+  return texto + '\n';
 }
 
 /** ¿Cambió el repo desde que se escribió el relevo? */
