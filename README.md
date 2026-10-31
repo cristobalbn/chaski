@@ -114,6 +114,10 @@ node ../chaski/src/instalar.mjs init
 3. Instala el skill `/relevo` en `.claude/skills/relevo/`.
 4. Agrega una sección de relevo a tu `AGENTS.md`.
 
+> **Después de `init`, reinicia tus sesiones.** Los CLIs cargan los hooks al
+> abrir la sesión, así que una que ya estaba abierta no los tiene y `.tambo/`
+> va a seguir vacío. Cierra y vuelve a abrir, y recién ahí empieza a capturar.
+
 ### Verificar la instalación
 
 ```bash
