@@ -93,27 +93,32 @@ skill/SKILL.md        instrucciones del comando /relevo
 
 No son intercambiables. Lo que funciona en uno falla en silencio en otro.
 
-| | Claude Code | Antigravity () |
+| | Claude Code | Antigravity (`agy`) |
 |---|---|---|
-| Config |  |  |
+| Config | `~/.claude/settings.json` | `~/.gemini/config/hooks.json` |
 | Organización | por evento | por propietario, luego evento |
 | Campos del payload | snake_case | **camelCase** |
-| Directorio |  |  (array) |
-| Transcript |  |  |
-| Salida del hook | texto plano | **JSON con ** |
+| Directorio | `cwd` | `workspacePaths` (array) |
+| Transcript | `transcript_path` | `transcriptPath` |
+| Salida del hook | texto plano | **JSON con `injectSteps`** |
 
-La diferencia de salida es la trampa: a  hay que devolverle
-. Si recibe
-texto plano no inyecta nada y no avisa.
+La diferencia de salida es la trampa. A `agy` hay que devolverle:
 
-En , , ,  y  son
-listas planas de handlers; solo  y  usan el envoltorio
-con  y . Su documentación completa viene instalada con la
-herramienta, en
-.
+```json
+{ "injectSteps": [ { "systemMessage": { "systemMessage": "..." } } ] }
+```
 
-Codex requiere además **hook trust persistido**: no ejecuta hooks hasta
-concederlo, y  lo saltea por invocación.
+Si recibe texto plano no inyecta nada y no avisa.
+
+En `agy`, los eventos `SessionStart`, `PreInvocation`, `PostInvocation` y
+`Stop` son listas planas de handlers; solo `PreToolUse` y `PostToolUse` usan
+el envoltorio con `matcher` y `hooks`. Su documentación completa viene
+instalada con la propia herramienta, en
+`~/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/hooks.md`.
+
+Codex exige además **hook trust persistido**: no ejecuta hooks hasta que se
+concede, y `--dangerously-bypass-hook-trust` lo saltea por invocación. Es la
+causa más probable de que sus hooks no se disparen tras `init`.
 
 ## Si vas a escribir documentación de este repo
 
