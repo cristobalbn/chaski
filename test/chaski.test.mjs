@@ -498,13 +498,68 @@ describe('el relevo no crece con el tiempo', () => {
       crear('feat-vieja-borrada', 60);   // no existe y es vieja → se borra
       crear('feat-recien-borrada', 2);   // no existe pero es reciente → queda
 
-      const borrados = limpiarRelevosHuerfanos(dir, 30);
+      const borrados = limpiarRelevosHuerfanos(dir, { soloHechos: 30 });
 
       assert.deepEqual(borrados, ['feat-vieja-borrada']);
       assert.ok(existsSync(join(ramas, 'main')), 'borró la rama viva');
       assert.ok(existsSync(join(ramas, 'feat-recien-borrada')),
         'borró un relevo reciente: una rama puede existir en otro worktree');
       assert.ok(!existsSync(join(ramas, 'feat-vieja-borrada')));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('un relevo con narrativa vive más que uno de solo hechos', () => {
+    // La asimetría que justifica la política: los hechos se recalculan desde
+    // git, la narrativa no se recupera si se borra.
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-narrvida-'));
+    const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    try {
+      g('init', '-q');
+      g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+      writeFileSync(join(dir, 'a.txt'), 'x');
+      g('add', '-A'); g('commit', '-qm', 'inicial');
+
+      const ramas = join(dir, '.tambo', 'ramas');
+      const crear = (nombre, dias, narrativa) => {
+        const d = join(ramas, nombre);
+        const estado = JSON.stringify(narrativa ? { narrativa } : {});
+        execFileSync(process.execPath, ['-e',
+          `const fs=require('fs');fs.mkdirSync(${JSON.stringify(d)},{recursive:true});` +
+          `fs.writeFileSync(${JSON.stringify(join(d, 'estado.json'))},${JSON.stringify(estado)});` +
+          `const t=new Date(Date.now()-${dias}*86400000);fs.utimesSync(${JSON.stringify(d)},t,t);`]);
+      };
+
+      // Las dos tienen 45 días: más que el plazo de hechos, menos que el de narrativa.
+      crear('solo-hechos', 45, null);
+      crear('con-narrativa', 45, 'Decidido: cookie httpOnly por XSS.');
+
+      const borrados = limpiarRelevosHuerfanos(dir, { soloHechos: 30, conNarrativa: 90 });
+
+      assert.deepEqual(borrados, ['solo-hechos']);
+      assert.ok(existsSync(join(ramas, 'con-narrativa')),
+        'borró una narrativa que no se puede recuperar');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('con 0 días la limpieza queda desactivada', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-sinlimp-'));
+    const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    try {
+      g('init', '-q');
+      g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+      writeFileSync(join(dir, 'a.txt'), 'x');
+      g('add', '-A'); g('commit', '-qm', 'inicial');
+      const d = join(dir, '.tambo', 'ramas', 'rama-antiquisima');
+      execFileSync(process.execPath, ['-e',
+        `const fs=require('fs');fs.mkdirSync(${JSON.stringify(d)},{recursive:true});` +
+        `const t=new Date(Date.now()-999*86400000);fs.utimesSync(${JSON.stringify(d)},t,t);`]);
+
+      assert.deepEqual(limpiarRelevosHuerfanos(dir, { soloHechos: 0 }), []);
+      assert.ok(existsSync(d), 'borró con la limpieza desactivada');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -517,7 +572,7 @@ describe('el relevo no crece con el tiempo', () => {
       const d = join(dir, '.tambo', 'ramas', 'alguna-rama');
       execFileSync(process.execPath, ['-e',
         `require('fs').mkdirSync(${JSON.stringify(d)},{recursive:true})`]);
-      assert.deepEqual(limpiarRelevosHuerfanos(dir, 0), []);
+      assert.deepEqual(limpiarRelevosHuerfanos(dir, { soloHechos: 1 }), []);
       assert.ok(existsSync(d), 'borró un relevo sin poder consultar git');
     } finally {
       rmSync(dir, { recursive: true, force: true });

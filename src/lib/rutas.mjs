@@ -89,22 +89,39 @@ export function tomarLock(cwd, maxEdadMs = 30000) {
   return () => { try { rmSync(lock, { recursive: true, force: true }); } catch {} };
 }
 
+/** Días por defecto antes de borrar el relevo de una rama que ya no existe. */
+export const DIAS_SOLO_HECHOS = 30;
+export const DIAS_CON_NARRATIVA = 90;
+
 /**
  * Borra los relevos de ramas que ya no existen en git.
  *
- * Sin esto, cada rama mergeada y borrada deja su relevo para siempre: en un
- * proyecto de un año son cientos de carpetas huérfanas. Y el daño no es el
- * espacio —son unos KB— sino que si alguien recrea una rama con el mismo
- * nombre meses después, hereda un relevo viejo y sin relación.
+ * El criterio no es la antigüedad a secas, porque el costo de equivocarse es
+ * asimétrico: borrar de más cuesta contexto irrecuperable, acumular de más
+ * cuesta kilobytes. Y dentro de un relevo hay dos cosas de valor muy distinto:
  *
- * Dos resguardos: solo borra lo que git confirma que no existe, y solo si el
- * relevo tiene más de `diasMinimos`. Una rama recién creada en otro worktree,
- * o un `detached HEAD` momentáneo, no deben costarte el relevo del día.
+ *   - Los HECHOS son reproducibles: archivos, diff y commits se recalculan
+ *     desde git en cualquier momento. Si la rama fue mergeada, además ya
+ *     están en el historial.
+ *   - La NARRATIVA no se recupera. Existe porque alguien la escribió, costó
+ *     un turno de un modelo e incluye el juicio de una persona.
+ *
+ * Así que los relevos con narrativa viven el triple. Y `dias = 0` desactiva
+ * la limpieza: la tolerancia a la basura es una preferencia legítima.
+ *
+ * Dos resguardos más: solo se borra lo que git confirma que no existe, y una
+ * rama viva nunca se toca, sin importar la antigüedad.
  *
  * Devuelve los nombres borrados.
  */
-export function limpiarRelevosHuerfanos(cwd, diasMinimos = 30) {
+export function limpiarRelevosHuerfanos(cwd, opciones = {}) {
+  // Compatibilidad: un número suelto se interpreta como los días base.
+  const o = typeof opciones === 'number' ? { soloHechos: opciones } : opciones;
+  const diasHechos = o.soloHechos ?? DIAS_SOLO_HECHOS;
+  const diasNarrativa = o.conNarrativa ?? Math.max(diasHechos * 3, DIAS_CON_NARRATIVA);
+
   const borrados = [];
+  if (diasHechos === 0) return borrados; // limpieza desactivada
   try {
     const dirRamas = join(tambo(cwd), 'ramas');
     if (!existsSync(dirRamas)) return borrados;
@@ -114,12 +131,13 @@ export function limpiarRelevosHuerfanos(cwd, diasMinimos = 30) {
     if (salida === null) return borrados;
     const vivas = new Set(salida.split('\n').filter(Boolean).map(slugRama));
 
-    const limite = Date.now() - diasMinimos * 86_400_000;
     for (const entrada of readdirSync(dirRamas, { withFileTypes: true })) {
       if (!entrada.isDirectory() || vivas.has(entrada.name)) continue;
       const ruta = join(dirRamas, entrada.name);
       try {
-        if (statSync(ruta).mtimeMs > limite) continue;
+        const tieneNarrativa = !!(leerJson(join(ruta, 'estado.json'), {}) ?? {}).narrativa;
+        const plazo = tieneNarrativa ? diasNarrativa : diasHechos;
+        if (statSync(ruta).mtimeMs > Date.now() - plazo * 86_400_000) continue;
         rmSync(ruta, { recursive: true, force: true });
         borrados.push(entrada.name);
       } catch {}
@@ -139,9 +157,11 @@ export function relevosHuerfanos(cwd) {
     return readdirSync(dirRamas, { withFileTypes: true })
       .filter((e) => e.isDirectory() && !vivas.has(e.name))
       .map((e) => {
+        const ruta = join(dirRamas, e.name);
         let dias = 0;
-        try { dias = (Date.now() - statSync(join(dirRamas, e.name)).mtimeMs) / 86_400_000; } catch {}
-        return { nombre: e.name, dias: Math.round(dias) };
+        try { dias = (Date.now() - statSync(ruta).mtimeMs) / 86_400_000; } catch {}
+        const conNarrativa = !!(leerJson(join(ruta, 'estado.json'), {}) ?? {}).narrativa;
+        return { nombre: e.name, dias: Math.round(dias), conNarrativa };
       });
   } catch {
     return [];

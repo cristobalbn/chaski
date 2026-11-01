@@ -381,9 +381,9 @@ function doctor() {
 
   const huerfanos = relevosHuerfanos(CWD);
   if (huerfanos.length) {
-    const viejos = huerfanos.filter((h) => h.dias >= 30);
+    const conNarrativa = huerfanos.filter((h) => h.conNarrativa).length;
     console.log(`  ${pad('huérfanos')} ${huerfanos.length} relevo(s) de ramas que ya no existen` +
-      (viejos.length ? `, ${viejos.length} con más de 30 días (se borran solos)` : ''));
+      (conNarrativa ? `, ${conNarrativa} con narrativa (viven 90 días en vez de 30)` : ''));
   }
 
   const relevo = rutaRelevo(CWD);

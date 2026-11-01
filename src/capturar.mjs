@@ -90,7 +90,7 @@ function main() {
     escribirAtomico(rutaRelevo(cwd), md);
     escribirAtomico(rutaEstado(cwd), JSON.stringify(estado, null, 2));
     latido(estado.agente);
-    limpiezaOcasional(cwd);
+    limpiezaOcasional(cwd, config);
   } catch (e) {
     process.stderr.write(`chaski: captura omitida (${e?.message ?? e})\n`);
   } finally {
@@ -187,7 +187,7 @@ function tareasVivas(ev) {
  * presupuesto del hook `Stop` es de 1,5 s compartido. Una vez al día alcanza
  * de sobra para algo que acumula unos KB por rama.
  */
-function limpiezaOcasional(cwd) {
+function limpiezaOcasional(cwd, config) {
   try {
     const marca = join(dirGlobal(), 'ultima-limpieza');
     const ahora = Date.now();
@@ -196,7 +196,10 @@ function limpiezaOcasional(cwd) {
       if (Number.isFinite(previa) && ahora - previa < 86_400_000) return;
     }
     escribirAtomico(marca, String(ahora));
-    limpiarRelevosHuerfanos(cwd);
+    limpiarRelevosHuerfanos(cwd, {
+      soloHechos: config?.limpiarTrasDias,
+      conNarrativa: config?.limpiarConNarrativaTrasDias,
+    });
   } catch {}
 }
 
