@@ -1,5 +1,6 @@
 # chaski
 
+[![test](https://github.com/cristobalbn/chaski/actions/workflows/test.yml/badge.svg)](https://github.com/cristobalbn/chaski/actions/workflows/test.yml)
 [![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org)
 [![Dependencias](https://img.shields.io/badge/dependencias-0-brightgreen.svg)](package.json)
@@ -108,7 +109,7 @@ líneas de JavaScript sin dependencias:
 git clone https://github.com/cristobalbn/chaski.git
 cd chaski
 npm run check          # verifica la sintaxis; no hay build
-npm test               # 64 tests, sin dependencias
+npm test               # 72 tests, sin dependencias
 cd ../tu-proyecto
 node ../chaski/src/instalar.mjs init
 ```

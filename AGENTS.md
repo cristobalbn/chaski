@@ -11,7 +11,7 @@ node src/instalar.mjs doctor       # verifica qué quedó instalado
 node src/instalar.mjs uninstall    # revierte desde respaldo
 node src/instalar.mjs probe        # captura el payload crudo de los hooks
 npm run check                      # chequeo de sintaxis (no hay build)
-npm test                           # 64 tests, node:test, sin dependencias
+npm test                           # 72 tests, node:test, sin dependencias
 ```
 
 ## Los tests de contrato son lo que sostiene el proyecto

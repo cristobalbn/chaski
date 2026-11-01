@@ -82,11 +82,14 @@ Antes de abrir el PR:
 
 ```bash
 npm run check                       # sintaxis; no hay build
-npm test                            # 64 tests
+npm test                            # 72 tests
 ```
 
-Y probá el cambio a mano según la sección de arriba. No hay CI todavía, así
-que la verificación es tuya.
+Y prueba el cambio a mano según la sección de abajo.
+
+El CI corre la suite en Linux, Windows y macOS por tres versiones de Node, y
+falla si `package.json` declara alguna dependencia. Si tocas un adaptador,
+agrega o ajusta su fixture en `test/fixtures/`.
 
 `main` está protegida y exige pull request. No exige aprobación de otra
 persona —sería absurdo en un proyecto de un solo mantenedor— pero sí obliga a
