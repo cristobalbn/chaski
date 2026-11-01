@@ -23,16 +23,22 @@ function main() {
     const ev = leerPayload();
     const cwd = ev.cwd || process.cwd();
 
-    // Un subagente no escribe el relevo del padre: contaminaría el relevo con
-    // su exploración, que a nadie le sirve mañana.
-    //
-    // PENDIENTE: promover su resultado en SubagentStop (archivos que quedaron
-    // modificados, conclusión declarada, qué falló). El payload lo permite —
-    // trae last_assistant_message, agent_id y parent_agent_id — pero todavía
-    // no está implementado: hoy el evento se descarta.
-    if (ev.agent_id && ev.hook_event_name !== 'SubagentStop') return ok();
-
     const config = cargarConfig(cwd);
+
+    // Un subagente que termina promueve su conclusión al relevo del padre, y
+    // nada más. Tiene camino propio porque la captura normal haría dos daños:
+    // leería el transcript DEL SUBAGENTE y dejaría su tamaño como marca de
+    // agua del padre —que en su próximo turno leería desde la posición
+    // equivocada— y derivaría los hechos de git del árbol del hijo, que puede
+    // ser otro worktree.
+    if (ev.hook_event_name === 'SubagentStop') {
+      return promover(ev, cwd, config);
+    }
+
+    // Los demás eventos de un subagente se descartan: su exploración
+    // contaminaría el relevo con cien lecturas de archivos y tres caminos
+    // abandonados que a nadie le sirven mañana.
+    if (ev.agent_id) return ok();
 
     // Un solo escritor. Si otro proceso tiene el lock, este turno se saltea:
     // el siguiente lo recupera, porque la marca de agua no avanzó.
@@ -105,6 +111,80 @@ function main() {
 }
 
 function ok() { process.exitCode = 0; }
+
+/**
+ * Promueve el resultado de un subagente al relevo del padre.
+ *
+ * Promoción, no concatenación: sube lo que sobrevive —la conclusión que
+ * declaró al terminar y por qué paró— y se descarta el proceso. El relevo
+ * guarda lo que el equipo de agentes **logró**, no lo que **tanteó**.
+ *
+ * Beneficio secundario: como es mecánico, diez subagentes no multiplican por
+ * diez el costo. No hay síntesis acá; solo el padre sintetiza, una vez, sobre
+ * resultados ya condensados.
+ *
+ * El diseño original proponía un quipu hijo efímero en `.tambo/sub/<id>.json`.
+ * Resultó innecesario: el payload de `SubagentStop` ya trae la conclusión, así
+ * que un archivo intermedio solo agregaría algo que limpiar.
+ */
+function promover(ev, cwd, config) {
+  let liberar = null;
+  try {
+    liberar = tomarLock(cwd);
+    if (!liberar) return ok(); // el padre está escribiendo; se pierde esta promoción
+
+    const estado = leerJson(rutaEstado(cwd), null);
+    // Sin relevo del padre no hay dónde promover. Crear uno desde un subagente
+    // dejaría un relevo con la conclusión de un hijo y ningún hecho.
+    if (!estado) return ok();
+
+    const { texto } = redactar(String(ev.last_assistant_message ?? '').trim(), config);
+    const conclusion = resumirConclusion(texto);
+    if (!conclusion) return ok();
+
+    const entrada = {
+      tipo: ev.agent_type ?? 'subagente',
+      conclusion,
+      cuando: new Date().toISOString(),
+      // `stop_reason` distinto de end_turn suele significar que no terminó
+      // lo que estaba haciendo, y eso es justamente lo que hay que avisar.
+      razon: ev.stop_reason && ev.stop_reason !== 'end_turn' ? ev.stop_reason : null,
+    };
+
+    const previas = (estado.subagentes ?? []).filter((s) => s.conclusion !== conclusion);
+    // Presupuesto: el relevo tiene techo de tamaño y los subagentes compiten
+    // con los hechos por ese espacio.
+    estado.subagentes = [...previas, entrada].slice(-6);
+    estado.escrito = new Date().toISOString();
+
+    const md = render(estado);
+    estado.firma = firmar(md);
+    escribirAtomico(rutaRelevo(cwd), md);
+    escribirAtomico(rutaEstado(cwd), JSON.stringify(estado, null, 2));
+  } catch (e) {
+    process.stderr.write(`chaski: promoción omitida (${e?.message ?? e})\n`);
+  } finally {
+    if (liberar) liberar();
+  }
+  return ok();
+}
+
+/**
+ * La conclusión de un subagente, acotada.
+ *
+ * Se queda con los primeros párrafos útiles: un `last_assistant_message`
+ * puede traer el informe completo, y el relevo tiene presupuesto. Lo que
+ * importa es qué logró y qué falló, que suele estar al principio.
+ */
+function resumirConclusion(texto) {
+  if (!texto) return null;
+  const limpio = texto
+    .replace(/```[\s\S]*?```/g, '[bloque de código]') // el código ya está en el diff
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (!limpio) return null;
+  return limpio.length > 400 ? limpio.slice(0, 400).trimEnd() + '…' : limpio;
+}
 
 /** Lee el payload JSON de stdin. Cada CLI nombra sus campos distinto. */
 function leerPayload() {

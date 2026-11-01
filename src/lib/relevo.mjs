@@ -114,6 +114,24 @@ export function render(estado) {
     L.push('');
   }
 
+  // Trabajo delegado: lo que concluyeron los subagentes.
+  //
+  // Va con atribución a propósito. No es contabilidad: cambia cuánto se puede
+  // confiar en la afirmación. «Los tests pasan» dicho por el agente que los
+  // corrió vale distinto que por uno que leyó el archivo de tests.
+  if (estado.subagentes?.length) {
+    L.push('## Trabajo delegado');
+    L.push('');
+    for (const s of estado.subagentes) {
+      L.push(`**${s.tipo}**${s.razon ? ` — terminó por \`${s.razon}\`, puede no haber acabado` : ''}`);
+      L.push('');
+      L.push(s.conclusion);
+      L.push('');
+    }
+    L.push('_Conclusiones declaradas por los subagentes, no verificadas contra el código._');
+    L.push('');
+  }
+
   // Lo que quedó corriendo al cerrar: es lo primero que el agente nuevo
   // necesita saber, porque puede estar modificando el árbol ahora mismo.
   if (estado.enSegundoPlano?.length) {

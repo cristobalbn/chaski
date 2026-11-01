@@ -38,7 +38,10 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   de rama viva no se borra nunca. Si git no responde, no se borra nada.
 - CI en GitHub Actions: la suite corre en Linux, Windows y macOS por tres
   versiones de Node, y falla si se declara alguna dependencia.
-- Suite de 78 tests con `node:test`, sin dependencias: contrato de payload y
+- Promoción de los resultados de subagentes: al terminar, su conclusión sube
+  al relevo del padre con atribución, y si no terminó por `end_turn` se avisa
+  que puede no haber acabado. Su exploración se descarta.
+- Suite de 83 tests con `node:test`, sin dependencias: contrato de payload y
   de transcript por CLI, corpus de 15 formatos de credencial, invariantes del
   relevo, firma, escritura atómica y lectura incremental. Los fixtures son
   sintéticos: la forma viene de capturas reales, el contenido es inventado.
@@ -78,8 +81,6 @@ registradas como issues.
 
 - Disparo automático de la narrativa. Hoy la narrativa solo se escribe con
   `/relevo` a mano.
-- Promoción de los resultados de subagentes. Hoy sus eventos se ignoran para
-  no contaminar el relevo del padre, pero tampoco se promueve nada.
 - `chaski next`, `chaski cost`, `chaski why` y `chaski share`.
 - Reserva de proveedor como `synth-only`.
 - CI, y verificación en macOS y Linux: todo se probó en Windows.

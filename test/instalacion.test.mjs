@@ -171,6 +171,141 @@ describe('uninstall revierte lo que init tocó', () => {
   });
 });
 
+describe('promoción de subagentes', () => {
+  const montarConPadre = (prefijo) => {
+    const m = montar(prefijo);
+    const transcript = join(m.proyecto, 'padre.jsonl');
+    writeFileSync(transcript, JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: 'el padre trabajó' }] },
+    }) + '\n');
+    const capturar = (payload) => execFileSync(process.execPath,
+      [join(SRC, 'capturar.mjs'), payload.hook_event_name ?? 'Stop', 'claude-code'],
+      { cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: JSON.stringify(payload) });
+    capturar({ cwd: m.proyecto, session_id: 'padre', transcript_path: transcript, hook_event_name: 'Stop' });
+    const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+    const leerEstado = () => JSON.parse(readFileSync(
+      join(m.proyecto, '.tambo', 'ramas', rama, 'estado.json'), 'utf8'));
+    const leerRelevo = () => readFileSync(
+      join(m.proyecto, '.tambo', 'ramas', rama, 'relevo.md'), 'utf8');
+    return { ...m, capturar, leerEstado, leerRelevo, transcript };
+  };
+
+  test('promueve la conclusión y avisa si el subagente no terminó', () => {
+    const m = montarConPadre('chaski-sub-');
+    try {
+      m.capturar({
+        cwd: m.proyecto, session_id: 'padre', hook_event_name: 'SubagentStop',
+        agent_id: 'sub-1', agent_type: 'Explore', stop_reason: 'end_turn',
+        last_assistant_message: 'El bug está en refresh.ts: no invalida el token viejo.',
+      });
+      m.capturar({
+        cwd: m.proyecto, session_id: 'padre', hook_event_name: 'SubagentStop',
+        agent_id: 'sub-2', agent_type: 'general-purpose', stop_reason: 'max_turns',
+        last_assistant_message: 'Convertí 3 de 12 archivos y me quedé sin turnos.',
+      });
+
+      const e = m.leerEstado();
+      assert.equal(e.subagentes.length, 2);
+      assert.equal(e.subagentes[0].tipo, 'Explore');
+      assert.equal(e.subagentes[0].razon, null, 'end_turn no debería marcarse como razón');
+      assert.equal(e.subagentes[1].razon, 'max_turns');
+
+      const md = m.leerRelevo();
+      assert.match(md, /Trabajo delegado/);
+      assert.match(md, /refresh\.ts/);
+      assert.match(md, /puede no haber acabado/,
+        'no avisó de que un subagente se quedó sin turnos');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('no corrompe la marca de agua del padre', () => {
+    // El bug que esto previene: la captura normal leería el transcript DEL
+    // SUBAGENTE y dejaría su tamaño como marca de agua del padre, que en su
+    // próximo turno leería desde la posición equivocada y perdería trabajo.
+    const m = montarConPadre('chaski-sub-marca-');
+    try {
+      const antes = m.leerEstado();
+
+      // Un transcript de subagente mucho más grande que el del padre.
+      const delHijo = join(m.proyecto, 'hijo.jsonl');
+      writeFileSync(delHijo, JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'x'.repeat(5000) }] },
+      }) + '\n'.repeat(1));
+
+      m.capturar({
+        cwd: m.proyecto, session_id: 'padre', hook_event_name: 'SubagentStop',
+        agent_id: 'sub-1', agent_type: 'Explore', stop_reason: 'end_turn',
+        transcript_path: delHijo,
+        last_assistant_message: 'Listo.',
+      });
+
+      const despues = m.leerEstado();
+      assert.equal(despues.offset, antes.offset,
+        'la promoción movió la marca de agua del padre');
+      assert.equal(despues.transcript, antes.transcript,
+        'la promoción cambió el transcript de referencia del padre');
+      assert.equal(despues.turnos, antes.turnos,
+        'la promoción contó los turnos del subagente como del padre');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('los eventos de subagente que no son SubagentStop se descartan', () => {
+    const m = montarConPadre('chaski-sub-ruido-');
+    try {
+      const antes = m.leerEstado();
+      m.capturar({
+        cwd: m.proyecto, session_id: 'padre', hook_event_name: 'Stop',
+        agent_id: 'sub-1', transcript_path: m.transcript,
+      });
+      const despues = m.leerEstado();
+      assert.equal(despues.escrito, antes.escrito,
+        'un evento intermedio de subagente reescribió el relevo del padre');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('sin relevo del padre no se crea uno desde un subagente', () => {
+    const m = montar('chaski-sub-huerfano-');
+    try {
+      m.capturar = (payload) => execFileSync(process.execPath,
+        [join(SRC, 'capturar.mjs'), 'SubagentStop', 'claude-code'],
+        { cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: JSON.stringify(payload) });
+      m.capturar({
+        cwd: m.proyecto, hook_event_name: 'SubagentStop', agent_id: 'sub-1',
+        last_assistant_message: 'Algo',
+      });
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      assert.ok(!existsSync(join(m.proyecto, '.tambo', 'ramas', rama, 'relevo.md')),
+        'creó un relevo con la conclusión de un hijo y ningún hecho');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('redacta secretos de la conclusión', () => {
+    const m = montarConPadre('chaski-sub-sec-');
+    try {
+      const token = ['sk', '-', 'a'.repeat(32)].join('');
+      m.capturar({
+        cwd: m.proyecto, session_id: 'padre', hook_event_name: 'SubagentStop',
+        agent_id: 'sub-1', last_assistant_message: `Usé la clave ${token} para probar.`,
+      });
+      const todo = m.leerRelevo() + JSON.stringify(m.leerEstado());
+      assert.ok(!todo.includes(token), 'se filtró un secreto desde un subagente');
+      assert.match(todo, /redactado/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('concurrencia: varios escritores a la vez', () => {
   // De dónde viene cada garantía, que no es lo que parecía:
   //
