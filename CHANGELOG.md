@@ -38,7 +38,7 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   de rama viva no se borra nunca. Si git no responde, no se borra nada.
 - CI en GitHub Actions: la suite corre en Linux, Windows y macOS por tres
   versiones de Node, y falla si se declara alguna dependencia.
-- Suite de 72 tests con `node:test`, sin dependencias: contrato de payload y
+- Suite de 78 tests con `node:test`, sin dependencias: contrato de payload y
   de transcript por CLI, corpus de 15 formatos de credencial, invariantes del
   relevo, firma, escritura atómica y lectura incremental. Los fixtures son
   sintéticos: la forma viene de capturas reales, el contenido es inventado.
