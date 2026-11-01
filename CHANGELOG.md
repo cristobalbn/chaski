@@ -72,5 +72,14 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   Claude Code (3 MB, 743 turnos), Antigravity (2 turnos) y Codex (119 KB,
   8 turnos).
 
-### Pendiente antes de 1.0
-- Disparo automático de la narrativa (implementado y apagado por defecto).
+### No implementado todavía
+El documento de diseño describe estas piezas; el código no las tiene. Están
+registradas como issues.
+
+- Disparo automático de la narrativa. Hoy la narrativa solo se escribe con
+  `/relevo` a mano.
+- Promoción de los resultados de subagentes. Hoy sus eventos se ignoran para
+  no contaminar el relevo del padre, pero tampoco se promueve nada.
+- `chaski next`, `chaski cost`, `chaski why` y `chaski share`.
+- Reserva de proveedor como `synth-only`.
+- CI, y verificación en macOS y Linux: todo se probó en Windows.

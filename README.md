@@ -249,7 +249,9 @@ Archivos que genera en tu proyecto:
 Y en `~/.chaski/`: la clave de firma, los latidos de cada CLI y la config global.
 
 El diseño completo, con los riesgos y la investigación de términos de uso, está
-en [`docs/diseno.html`](docs/diseno.html).
+en [`docs/diseno.html`](docs/diseno.html). Describe el diseño entero, incluidas
+piezas que todavía no existen: abre con una tabla que distingue lo construido
+de lo pendiente.
 
 ---
 

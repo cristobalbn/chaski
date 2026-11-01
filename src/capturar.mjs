@@ -23,8 +23,13 @@ function main() {
     const ev = leerPayload();
     const cwd = ev.cwd || process.cwd();
 
-    // Un subagente no escribe el relevo del padre. Su resultado se promueve
-    // cuando termina, no mientras trabaja.
+    // Un subagente no escribe el relevo del padre: contaminaría el relevo con
+    // su exploración, que a nadie le sirve mañana.
+    //
+    // PENDIENTE: promover su resultado en SubagentStop (archivos que quedaron
+    // modificados, conclusión declarada, qué falló). El payload lo permite —
+    // trae last_assistant_message, agent_id y parent_agent_id — pero todavía
+    // no está implementado: hoy el evento se descarta.
     if (ev.agent_id && ev.hook_event_name !== 'SubagentStop') return ok();
 
     const config = cargarConfig(cwd);
