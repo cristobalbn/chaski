@@ -109,7 +109,7 @@ líneas de JavaScript sin dependencias:
 git clone https://github.com/cristobalbn/chaski.git
 cd chaski
 npm run check          # verifica la sintaxis; no hay build
-npm test               # 72 tests, sin dependencias
+npm test               # 78 tests, sin dependencias
 cd ../tu-proyecto
 node ../chaski/src/instalar.mjs init
 ```

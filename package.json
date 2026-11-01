@@ -12,7 +12,7 @@
   },
   "scripts": {
     "check": "node --check src/capturar.mjs && node --check src/leer.mjs && node --check src/instalar.mjs",
-    "test": "node --test test/chaski.test.mjs"
+    "test": "node --test test/chaski.test.mjs test/instalacion.test.mjs"
   },
   "files": [
     "src",

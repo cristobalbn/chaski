@@ -11,8 +11,12 @@ node src/instalar.mjs doctor       # verifica qué quedó instalado
 node src/instalar.mjs uninstall    # revierte desde respaldo
 node src/instalar.mjs probe        # captura el payload crudo de los hooks
 npm run check                      # chequeo de sintaxis (no hay build)
-npm test                           # 72 tests, node:test, sin dependencias
+npm test                           # 78 tests, node:test, sin dependencias
 ```
+
+Si agregas un archivo de tests, **súmalo al script `test` de package.json**:
+la lista es explícita porque `node --test test/` no funciona y el glob
+`test/**` necesita Node 22, mientras el CI prueba desde Node 20.
 
 ## Los tests de contrato son lo que sostiene el proyecto
 
@@ -80,6 +84,12 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
    temporal más `rename`. Nunca `writeFileSync` directo sobre un archivo que
    otro proceso pueda leer — los clientes de sincronización bloquean archivos
    mientras los suben.
+
+   De aquí viene la integridad del relevo, **no del lock**. Se comprobó
+   quitando el lock: el test de concurrencia seguía pasando, porque el
+   `rename` garantiza que el archivo final sea el de algún escritor y nunca
+   uno a medio escribir. El lock evita trabajo redundante y que un escritor
+   pise los comandos que otro acababa de agregar.
 
 ## Presupuestos
 
