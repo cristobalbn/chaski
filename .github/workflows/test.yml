@@ -1,0 +1,50 @@
+name: test
+
+# Dos cosas que este workflow resuelve:
+#   - Que un PR con tests rotos no pueda entrar a main.
+#   - Que el proyecto se verifique en macOS y Linux, donde nunca se probó.
+#     El envoltorio de hooks genera un .sh para Unix que hasta ahora nadie
+#     había ejecutado.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['20', '22', 'lts/*']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No hay npm install: el proyecto no tiene dependencias, y eso es un
+      # invariante. Si alguien agrega una, este paso lo delata.
+      - name: Verificar que no haya dependencias
+        shell: bash
+        run: |
+          deps=$(node -e "const p=require('./package.json');console.log(Object.keys({...p.dependencies,...p.devDependencies}).length)")
+          if [ "$deps" != "0" ]; then
+            echo "El proyecto declara $deps dependencia(s). Es un invariante: cero."
+            exit 1
+          fi
+
+      - name: Sintaxis
+        run: npm run check
+
+      - name: Tests
+        run: npm test
+
+      # git es dependencia de runtime: los hechos salen de ahí.
+      - name: Comprobar que git está disponible
+        run: git --version
