@@ -23,7 +23,15 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - `init`, `doctor` y `uninstall`, con respaldo y reversión de cada config.
 - Skill `/relevo` para que el agente en sesión escriba la narrativa.
 - Adaptadores para Claude Code, Codex CLI y Antigravity CLI (`agy`).
-- Suite de 64 tests con `node:test`, sin dependencias: contrato de payload y
+- Al inyectar un relevo viejo, informa qué pasó desde entonces: cuántos
+  commits, de quién, y —lo importante— si alguno tocó los archivos que la
+  narrativa declara pendientes, con el aviso de que puede estar ya resuelto.
+  Si el commit del relevo ya no existe (rebase o squash), lo dice.
+- La marca de agua pertenece a una sesión: si cambia la sesión o el
+  transcript, se lee desde el principio.
+- Si el estado trae una narrativa que el Markdown todavía no tiene, se
+  re-renderiza al inyectar en lugar de perderla.
+- Suite de 67 tests con `node:test`, sin dependencias: contrato de payload y
   de transcript por CLI, corpus de 15 formatos de credencial, invariantes del
   relevo, firma, escritura atómica y lectura incremental. Los fixtures son
   sintéticos: la forma viene de capturas reales, el contenido es inventado.
