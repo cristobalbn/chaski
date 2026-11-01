@@ -14,7 +14,7 @@ import { join, resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { dirGlobal, leerJson, carpetaSincronizada, tamboIgnorado, rutaRelevo, rutaEstado, TAMBO } from './lib/rutas.mjs';
+import { dirGlobal, leerJson, carpetaSincronizada, tamboIgnorado, rutaRelevo, rutaEstado, relevosHuerfanos, TAMBO } from './lib/rutas.mjs';
 import { escribirAtomico, firmaValida } from './lib/relevo.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -378,6 +378,13 @@ function doctor() {
   const sync = carpetaSincronizada(CWD);
   console.log(`  ${pad('sincronizada')} ${sync ? `sí (${sync}) — se usa escritura atómica` : 'no'}`);
   console.log(`  ${pad('.tambo en git')} ${tamboIgnorado(CWD) ? 'ignorado, correcto' : 'NO IGNORADO — ejecuta init'}`);
+
+  const huerfanos = relevosHuerfanos(CWD);
+  if (huerfanos.length) {
+    const conNarrativa = huerfanos.filter((h) => h.conNarrativa).length;
+    console.log(`  ${pad('huérfanos')} ${huerfanos.length} relevo(s) de ramas que ya no existen` +
+      (conNarrativa ? `, ${conNarrativa} con narrativa (viven 90 días en vez de 30)` : ''));
+  }
 
   const relevo = rutaRelevo(CWD);
   if (existsSync(relevo)) {

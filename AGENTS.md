@@ -88,6 +88,7 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
 | Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Actualmente usamos ~290 ms |
 | Tamaño del relevo inyectado | 10.000 caracteres | Claude Code manda una ruta en vez del contenido. `MAX_CARACTERES` está en 6.000 |
 | Lectura del transcript | 8 MB por corrida | Protege el presupuesto de latencia |
+| Limpieza de huérfanos | 1 vez al día | Listar ramas es otro subproceso de git |
 
 Si tocas `capturar.mjs`, mide la latencia antes y después.
 

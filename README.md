@@ -269,6 +269,13 @@ Todo tiene valores por defecto razonables. No hace falta configurar nada.
 |---|---|
 | `redact` | Expresiones regulares extra para redactar antes de escribir |
 | `excludePaths` | Rutas que nunca aparecen en el relevo |
+| `limpiarTrasDias` | Días antes de borrar el relevo de una rama que ya no existe. Por defecto 30; `0` desactiva la limpieza |
+| `limpiarConNarrativaTrasDias` | Lo mismo para los relevos que tienen narrativa. Por defecto 90 |
+
+Los relevos con narrativa viven el triple a propósito: los hechos se
+recalculan desde git en cualquier momento, pero la narrativa existe solo
+porque alguien la escribió y no se recupera. Un relevo de rama viva no se
+borra nunca, sin importar la antigüedad.
 
 ### `chaski.local.json` — tu máquina, **en `.gitignore`**
 

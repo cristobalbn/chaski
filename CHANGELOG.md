@@ -31,7 +31,12 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   transcript, se lee desde el principio.
 - Si el estado trae una narrativa que el Markdown todavía no tiene, se
   re-renderiza al inyectar en lugar de perderla.
-- Suite de 67 tests con `node:test`, sin dependencias: contrato de payload y
+- Limpieza de los relevos de ramas que ya no existen en git, una vez al día.
+  El plazo depende de lo que se borra: 30 días si el relevo solo tiene
+  hechos —reproducibles desde git— y 90 si tiene narrativa, que no se
+  recupera. Configurable con `limpiarTrasDias`; `0` la desactiva. Un relevo
+  de rama viva no se borra nunca. Si git no responde, no se borra nada.
+- Suite de 72 tests con `node:test`, sin dependencias: contrato de payload y
   de transcript por CLI, corpus de 15 formatos de credencial, invariantes del
   relevo, firma, escritura atómica y lectura incremental. Los fixtures son
   sintéticos: la forma viene de capturas reales, el contenido es inventado.
