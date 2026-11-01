@@ -8,11 +8,11 @@
     "node": ">=20"
   },
   "bin": {
-    "chaski": "./src/instalar.mjs"
+    "chaski": "./src/cli.mjs"
   },
   "scripts": {
-    "check": "node --check src/capturar.mjs && node --check src/leer.mjs && node --check src/instalar.mjs",
-    "test": "node --test test/chaski.test.mjs test/instalacion.test.mjs"
+    "check": "node --check src/capture.mjs && node --check src/inject.mjs && node --check src/cli.mjs",
+    "test": "node --test test/core.test.mjs test/install.test.mjs"
   },
   "files": [
     "src",

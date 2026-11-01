@@ -11,10 +11,10 @@ son exactos. No los repitas ni los corrijas.
 
 ## Pasos
 
-1. Lee `.tambo/ramas/<rama-actual>/estado.json`. La rama sale de `git rev-parse --abbrev-ref HEAD`.
+1. Lee `.tambo/branches/<rama-actual>/estado.json`. La rama sale de `git rev-parse --abbrev-ref HEAD`.
 2. Escribe la narrativa en el campo `narrativa` de ese JSON, junto con
    `narrativaAutor` (tu nombre de agente) y `narrativaEscrita` (ISO 8601 de ahora).
-3. No toques ningún otro campo. `hechos`, `comandos`, `offset` y `firma` son de chaski.
+3. No toques ningún otro campo. `facts`, `commands`, `offset` y `firma` son de chaski.
 4. Confirmá al usuario en una línea: qué quedó anotado como siguiente paso.
 
 El Markdown se regenera solo en el próximo turno. No edites `relevo.md` a mano.

@@ -1,6 +1,6 @@
 // Tests de instalación y de concurrencia.
 //
-// Están aparte de chaski.test.mjs porque lanzan procesos y manipulan un HOME
+// Están aparte de core.test.mjs porque lanzan procesos y manipulan un HOME
 // falso: son más lentos y tienen otra forma de montarse.
 //
 // Verifican dos promesas del diseño que hasta ahora no tenían prueba:
@@ -9,7 +9,7 @@
 //      la herramienta sin miedo es la condición para animarse a ponerla, así
 //      que esa promesa necesita sostén.
 //   2. El lock deja el relevo válido con varios escritores a la vez. Pasa de
-//      verdad: subagentes en paralelo, o dos CLIs abiertos en el mismo repo.
+//      verdad: subagents en paralelo, o dos CLIs abiertos en el mismo repo.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -34,11 +34,11 @@ const SRC = join(AQUI, '..', 'src');
 function clisDeMentira(dir) {
   mkdirSync(dir, { recursive: true });
   const win = process.platform === 'win32';
-  for (const nombre of ['claude', 'codex', 'agy']) {
+  for (const name of ['claude', 'codex', 'agy']) {
     if (win) {
-      writeFileSync(join(dir, nombre + '.cmd'), '@echo off\r\nexit /b 0\r\n');
+      writeFileSync(join(dir, name + '.cmd'), '@echo off\r\nexit /b 0\r\n');
     } else {
-      writeFileSync(join(dir, nombre), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      writeFileSync(join(dir, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     }
   }
   return dir;
@@ -67,12 +67,12 @@ function montar(prefijo) {
     ...process.env,
     HOME: casa,
     USERPROFILE: casa,
-    // Los CLIs falsos van al frente, para que `instalado()` los encuentre.
+    // Los CLIs falsos van al frente, para que `isInstalled()` los encuentre.
     PATH: bin + (process.platform === 'win32' ? ';' : ':') + process.env.PATH,
     Path: bin + (process.platform === 'win32' ? ';' : ':') + (process.env.Path ?? process.env.PATH),
   };
   const correr = (...args) => execFileSync(process.execPath,
-    [join(SRC, 'instalar.mjs'), ...args],
+    [join(SRC, 'cli.mjs'), ...args],
     { cwd: proyecto, env: entorno, encoding: 'utf8' });
 
   return { raiz, proyecto, casa, bin, g, entorno, correr };
@@ -224,7 +224,7 @@ describe('la documentación no promete lo que no existe', () => {
   const leer = (f) => readFileSync(join(raiz, f), 'utf8');
 
   test('cada comando y flag del README existe en el código', () => {
-    const instalador = leer('src/instalar.mjs');
+    const instalador = leer('src/cli.mjs');
     const docs = ['README.md', 'AGENTS.md', 'CONTRIBUTING.md'].map(leer).join('\n');
 
     const subcomandos = [...instalador.matchAll(/accion === '(\w+)'/g)].map((m) => m[1]);
@@ -234,7 +234,7 @@ describe('la documentación no promete lo que no existe', () => {
     // comando sin documentar es un hueco, pero un comando documentado que no
     // existe hace perder el tiempo a quien lo copia.
     for (const sub of subcomandos) {
-      assert.ok(docs.includes(`chaski ${sub}`) || docs.includes(`instalar.mjs ${sub}`),
+      assert.ok(docs.includes(`chaski ${sub}`) || docs.includes(`cli.mjs ${sub}`),
         `el subcomando "${sub}" no aparece en la documentación`);
     }
 
@@ -246,7 +246,7 @@ describe('la documentación no promete lo que no existe', () => {
   });
 
   test('las claves de configuración del README son las que el código lee', () => {
-    const fuente = ['src/capturar.mjs', 'src/lib/secretos.mjs', 'src/lib/rutas.mjs']
+    const fuente = ['src/capture.mjs', 'src/lib/secrets.mjs', 'src/lib/paths.mjs']
       .map(leer).join('\n');
     const readme = leer('README.md');
 
@@ -265,11 +265,11 @@ describe('la documentación no promete lo que no existe', () => {
   test('la API pública no tiene caracteres fuera de ASCII', () => {
     // git escapa en octal cualquier ruta con acentos, y eso ya produjo un bug.
     // La regla vale para flags, claves y nombres de archivo generados.
-    const instalador = leer('src/instalar.mjs');
+    const instalador = leer('src/cli.mjs');
     const identificadores = [
       ...[...instalador.matchAll(/accion === '([^']+)'/g)].map((m) => m[1]),
       ...[...instalador.matchAll(/'--([^']+)'/g)].map((m) => m[1]),
-      ...[...leer('src/capturar.mjs').matchAll(/config\?\.(\w+)/g)].map((m) => m[1]),
+      ...[...leer('src/capture.mjs').matchAll(/config\?\.(\w+)/g)].map((m) => m[1]),
     ];
     for (const id of identificadores) {
       assert.ok(/^[\x20-\x7e]+$/.test(id), `"${id}" tiene caracteres no ASCII`);
@@ -277,7 +277,7 @@ describe('la documentación no promete lo que no existe', () => {
   });
 });
 
-describe('promoción de subagentes', () => {
+describe('promoción de subagents', () => {
   const montarConPadre = (prefijo) => {
     const m = montar(prefijo);
     const transcript = join(m.proyecto, 'padre.jsonl');
@@ -286,14 +286,14 @@ describe('promoción de subagentes', () => {
       message: { content: [{ type: 'text', text: 'el padre trabajó' }] },
     }) + '\n');
     const capturar = (payload) => execFileSync(process.execPath,
-      [join(SRC, 'capturar.mjs'), payload.hook_event_name ?? 'Stop', 'claude-code'],
+      [join(SRC, 'capture.mjs'), payload.hook_event_name ?? 'Stop', 'claude-code'],
       { cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: JSON.stringify(payload) });
     capturar({ cwd: m.proyecto, session_id: 'padre', transcript_path: transcript, hook_event_name: 'Stop' });
     const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
     const leerEstado = () => JSON.parse(readFileSync(
-      join(m.proyecto, '.tambo', 'ramas', rama, 'estado.json'), 'utf8'));
+      join(m.proyecto, '.tambo', 'branches', rama, 'estado.json'), 'utf8'));
     const leerRelevo = () => readFileSync(
-      join(m.proyecto, '.tambo', 'ramas', rama, 'relevo.md'), 'utf8');
+      join(m.proyecto, '.tambo', 'branches', rama, 'relevo.md'), 'utf8');
     return { ...m, capturar, leerEstado, leerRelevo, transcript };
   };
 
@@ -308,20 +308,20 @@ describe('promoción de subagentes', () => {
       m.capturar({
         cwd: m.proyecto, session_id: 'padre', hook_event_name: 'SubagentStop',
         agent_id: 'sub-2', agent_type: 'general-purpose', stop_reason: 'max_turns',
-        last_assistant_message: 'Convertí 3 de 12 archivos y me quedé sin turnos.',
+        last_assistant_message: 'Convertí 3 de 12 archivos y me quedé sin turns.',
       });
 
       const e = m.leerEstado();
-      assert.equal(e.subagentes.length, 2);
-      assert.equal(e.subagentes[0].tipo, 'Explore');
-      assert.equal(e.subagentes[0].razon, null, 'end_turn no debería marcarse como razón');
-      assert.equal(e.subagentes[1].razon, 'max_turns');
+      assert.equal(e.subagents.length, 2);
+      assert.equal(e.subagents[0].kind, 'Explore');
+      assert.equal(e.subagents[0].reason, null, 'end_turn no debería marcarse como razón');
+      assert.equal(e.subagents[1].reason, 'max_turns');
 
       const md = m.leerRelevo();
       assert.match(md, /Trabajo delegado/);
       assert.match(md, /refresh\.ts/);
       assert.match(md, /puede no haber acabado/,
-        'no avisó de que un subagente se quedó sin turnos');
+        'no avisó de que un subagente se quedó sin turns');
     } finally {
       rmSync(m.raiz, { recursive: true, force: true });
     }
@@ -354,8 +354,8 @@ describe('promoción de subagentes', () => {
         'la promoción movió la marca de agua del padre');
       assert.equal(despues.transcript, antes.transcript,
         'la promoción cambió el transcript de referencia del padre');
-      assert.equal(despues.turnos, antes.turnos,
-        'la promoción contó los turnos del subagente como del padre');
+      assert.equal(despues.turns, antes.turns,
+        'la promoción contó los turns del subagente como del padre');
     } finally {
       rmSync(m.raiz, { recursive: true, force: true });
     }
@@ -370,8 +370,8 @@ describe('promoción de subagentes', () => {
         agent_id: 'sub-1', transcript_path: m.transcript,
       });
       const despues = m.leerEstado();
-      assert.equal(despues.escrito, antes.escrito,
-        'un evento intermedio de subagente reescribió el relevo del padre');
+      assert.equal(despues.writtenAt, antes.writtenAt,
+        'un event intermedio de subagente reescribió el relevo del padre');
     } finally {
       rmSync(m.raiz, { recursive: true, force: true });
     }
@@ -381,14 +381,14 @@ describe('promoción de subagentes', () => {
     const m = montar('chaski-sub-huerfano-');
     try {
       m.capturar = (payload) => execFileSync(process.execPath,
-        [join(SRC, 'capturar.mjs'), 'SubagentStop', 'claude-code'],
+        [join(SRC, 'capture.mjs'), 'SubagentStop', 'claude-code'],
         { cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: JSON.stringify(payload) });
       m.capturar({
         cwd: m.proyecto, hook_event_name: 'SubagentStop', agent_id: 'sub-1',
         last_assistant_message: 'Algo',
       });
       const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
-      assert.ok(!existsSync(join(m.proyecto, '.tambo', 'ramas', rama, 'relevo.md')),
+      assert.ok(!existsSync(join(m.proyecto, '.tambo', 'branches', rama, 'relevo.md')),
         'creó un relevo con la conclusión de un hijo y ningún hecho');
     } finally {
       rmSync(m.raiz, { recursive: true, force: true });
@@ -419,14 +419,14 @@ describe('concurrencia: varios escritores a la vez', () => {
   //     `rename` es atómico en los tres sistemas, así que el relevo final
   //     siempre es el de alguno de los escritores y nunca uno a medio
   //     escribir. Se comprobó quitando el lock: este test seguía pasando.
-  //   - El LOCK evita trabajo redundante y que un escritor pise los comandos
+  //   - El LOCK evita trabajo redundante y que un escritor pise los commands
   //     que otro acababa de agregar, porque el estado se lee, se modifica y
   //     se escribe, y eso no es atómico.
   //
   // El test cubre la garantía observable: ningún proceso falla, el resultado
   // es válido, no quedan temporales y el lock no queda tomado.
   test('el relevo queda válido y sin temporales sueltos', async () => {
-    // Pasa de verdad: subagentes en paralelo, o dos CLIs en el mismo repo.
+    // Pasa de verdad: subagents en paralelo, o dos CLIs en el mismo repo.
     const m = montar('chaski-conc-');
     try {
       const transcript = join(m.proyecto, 'transcript.jsonl');
@@ -443,7 +443,7 @@ describe('concurrencia: varios escritores a la vez', () => {
       });
 
       const lanzar = () => new Promise((resolver) => {
-        const p = spawn(process.execPath, [join(SRC, 'capturar.mjs'), 'Stop', 'test'],
+        const p = spawn(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'test'],
           { cwd: m.proyecto, env: m.entorno, stdio: ['pipe', 'ignore', 'ignore'] });
         p.on('close', (codigo) => resolver(codigo));
         p.stdin.end(payload);
@@ -456,10 +456,10 @@ describe('concurrencia: varios escritores a la vez', () => {
         `algún proceso falló: ${codigos.join(', ')}`);
 
       const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
-      const dir = join(m.proyecto, '.tambo', 'ramas', rama);
+      const dir = join(m.proyecto, '.tambo', 'branches', rama);
 
       const estado = JSON.parse(readFileSync(join(dir, 'estado.json'), 'utf8'));
-      assert.ok(estado.escrito, 'el estado quedó incompleto');
+      assert.ok(estado.writtenAt, 'el estado quedó incompleto');
       assert.ok(readFileSync(join(dir, 'relevo.md'), 'utf8').includes('# Relevo'),
         'el relevo quedó a medio escribir');
 

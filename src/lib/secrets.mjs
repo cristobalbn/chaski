@@ -6,7 +6,7 @@
 // Lo redactado deja marca visible para que nadie confunda una redacción con
 // un dato ausente.
 
-const PATRONES = [
+const PATTERNS = [
   // Credenciales con prefijo reconocible
   [/\bsk-[A-Za-z0-9_-]{16,}\b/g, 'clave-api'],
   [/\bsk-ant-[A-Za-z0-9_-]{16,}\b/g, 'clave-anthropic'],
@@ -27,7 +27,7 @@ const PATRONES = [
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, 'jwt'],
   [/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g, 'clave-privada'],
 
-  // Asignaciones con nombre sensible: TOKEN=..., api_secret: "...", PASSWORD = '...'
+  // Asignaciones con name sensible: TOKEN=..., api_secret: "...", PASSWORD = '...'
   [/\b([A-Za-z_][A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY|CREDENTIAL|ACCESS_KEY)[A-Za-z0-9_]*)\s*[:=]\s*["']?([^\s"',;]{8,})["']?/gi, 'asignacion'],
 
   // URL con credenciales embebidas
@@ -38,7 +38,7 @@ const PATRONES = [
 ];
 
 /** Patrones extra del usuario, desde chaski.json → redact: ["..."] */
-function patronesUsuario(config) {
+function userPatterns(config) {
   const extra = [];
   for (const p of (config?.redact ?? [])) {
     try { extra.push([new RegExp(p, 'g'), 'patron-usuario']); } catch {}
@@ -47,15 +47,15 @@ function patronesUsuario(config) {
 }
 
 /**
- * Redacta el texto. Devuelve { texto, redacciones } — el conteo sirve para
- * que el relevo declare que hubo redacciones en lugar de callarlas.
+ * Redacta el texto. Devuelve { texto, redactions } — el conteo sirve para
+ * que el relevo declare que hubo redactions en lugar de callarlas.
  */
-export function redactar(texto, config = null) {
-  if (!texto) return { texto: '', redacciones: 0 };
+export function redact(texto, config = null) {
+  if (!texto) return { texto: '', redactions: 0 };
   let out = String(texto);
   let n = 0;
 
-  for (const [re, etiqueta] of [...PATRONES, ...patronesUsuario(config)]) {
+  for (const [re, etiqueta] of [...PATTERNS, ...userPatterns(config)]) {
     out = out.replace(re, (match, ...grupos) => {
       n++;
       // En asignaciones, URLs y cabeceras se conserva la parte no secreta
@@ -69,19 +69,19 @@ export function redactar(texto, config = null) {
 
   // Cadenas largas de alta entropía que ningún patrón nombró.
   out = out.replace(/\b[A-Za-z0-9+/=_-]{40,}\b/g, (m) => {
-    if (!altaEntropia(m)) return m;
+    if (!hasHighEntropy(m)) return m;
     n++;
     return '[redactado: cadena-de-alta-entropia]';
   });
 
-  return { texto: out, redacciones: n };
+  return { texto: out, redactions: n };
 }
 
 /**
  * Entropía de Shannon por carácter. Un hash o un token supera ~3.5 bits;
  * una palabra o un identificador en código queda por debajo.
  */
-function altaEntropia(s, umbral = 3.6) {
+function hasHighEntropy(s, umbral = 3.6) {
   const freq = Object.create(null);
   for (const c of s) freq[c] = (freq[c] || 0) + 1;
   let h = 0;
@@ -93,7 +93,7 @@ function altaEntropia(s, umbral = 3.6) {
 }
 
 /** ¿Esta ruta no debe aparecer nunca en el relevo? */
-export function rutaExcluida(ruta, config = null) {
+export function isExcludedPath(ruta, config = null) {
   const defecto = [
     // Lo que chaski mismo escribe: nunca es parte del trabajo del usuario.
     /(^|[\\/])\.tambo([\\/]|$)/i,

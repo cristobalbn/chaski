@@ -41,7 +41,7 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Promoción de los resultados de subagentes: al terminar, su conclusión sube
   al relevo del padre con atribución, y si no terminó por `end_turn` se avisa
   que puede no haber acabado. Su exploración se descarta.
-- Suite de 91 tests con `node:test`, sin dependencias: contrato de payload y
+- Suite de 92 tests con `node:test`, sin dependencias: contrato de payload y
   de transcript por CLI, corpus de 15 formatos de credencial, invariantes del
   relevo, firma, escritura atómica y lectura incremental. Los fixtures son
   sintéticos: la forma viene de capturas reales, el contenido es inventado.
@@ -49,6 +49,13 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   cada CLI, para cerrar los formatos no documentados y aportar fixtures.
 
 ### Convenciones
+- El código va en inglés: módulos, funciones exportadas, campos de
+  `estado.json` y la API pública. La documentación, los comentarios y los
+  mensajes al usuario siguen en español, y el léxico del producto también
+  (`chaski`, `.tambo/`, `relevo`, `quipu`).
+- Los módulos pasan a `capture.mjs`, `inject.mjs`, `cli.mjs`, `lib/paths.mjs`,
+  `lib/facts.mjs`, `lib/secrets.mjs` y `lib/relay.mjs`; el estado vive en
+  `.tambo/branches/<rama>/`.
 - La API pública va en inglés: subcomandos, flags y claves de `chaski.json`.
   Los identificadores internos, los comentarios y los mensajes siguen en
   español, y el léxico del producto (`chaski`, `.tambo/`, `relevo`) también,
