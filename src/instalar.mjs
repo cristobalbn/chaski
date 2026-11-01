@@ -484,8 +484,8 @@ function sondaPath() { return join(dirGlobal(), 'sonda.mjs'); }
 function logPath() { return join(dirGlobal(), 'sonda.log'); }
 
 function probe(sub) {
-  if (sub === '--ver' || sub === 'ver') return probeVer();
-  if (sub === '--limpiar' || sub === 'limpiar') return probeLimpiar();
+  if (sub === '--show' || sub === 'show') return probeVer();
+  if (sub === '--clean' || sub === 'clean') return probeLimpiar();
 
   console.log('\nchaski probe — captura de payloads\n');
   writeFileSync(sondaPath(), [
@@ -543,8 +543,8 @@ function probe(sub) {
   console.log('  2. Escribile cualquier cosa y espera la respuesta.');
   console.log('  3. Ciérralo.');
   console.log('\nDespués:');
-  console.log('  chaski probe --ver        ver lo capturado');
-  console.log('  chaski probe --limpiar    quitar la sonda\n');
+  console.log('  chaski probe --show       ver lo capturado');
+  console.log('  chaski probe --clean      quitar la sonda\n');
 }
 
 function cmdSonda(evento, agente, viaEnvoltorio = false) {

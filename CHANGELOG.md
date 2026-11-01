@@ -34,19 +34,29 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Limpieza de los relevos de ramas que ya no existen en git, una vez al día.
   El plazo depende de lo que se borra: 30 días si el relevo solo tiene
   hechos —reproducibles desde git— y 90 si tiene narrativa, que no se
-  recupera. Configurable con `limpiarTrasDias`; `0` la desactiva. Un relevo
+  recupera. Configurable con `pruneAfterDays`; `0` la desactiva. Un relevo
   de rama viva no se borra nunca. Si git no responde, no se borra nada.
 - CI en GitHub Actions: la suite corre en Linux, Windows y macOS por tres
   versiones de Node, y falla si se declara alguna dependencia.
 - Promoción de los resultados de subagentes: al terminar, su conclusión sube
   al relevo del padre con atribución, y si no terminó por `end_turn` se avisa
   que puede no haber acabado. Su exploración se descarta.
-- Suite de 88 tests con `node:test`, sin dependencias: contrato de payload y
+- Suite de 91 tests con `node:test`, sin dependencias: contrato de payload y
   de transcript por CLI, corpus de 15 formatos de credencial, invariantes del
   relevo, firma, escritura atómica y lectura incremental. Los fixtures son
   sintéticos: la forma viene de capturas reales, el contenido es inventado.
 - `chaski probe`: instala una sonda que vuelca el payload crudo de los hooks de
   cada CLI, para cerrar los formatos no documentados y aportar fixtures.
+
+### Convenciones
+- La API pública va en inglés: subcomandos, flags y claves de `chaski.json`.
+  Los identificadores internos, los comentarios y los mensajes siguen en
+  español, y el léxico del producto (`chaski`, `.tambo/`, `relevo`) también,
+  porque es identidad. Nada de caracteres no ASCII en identificadores, claves
+  ni nombres de archivo: git escapa en octal las rutas con acentos.
+- `probe --ver` y `probe --limpiar` pasan a `--show` y `--clean`;
+  `limpiarTrasDias` y `limpiarConNarrativaTrasDias` a `pruneAfterDays` y
+  `pruneNarrativeAfterDays`.
 
 ### Corregido en la revisión del 2026-11-01
 -  ya no reescribe una configuración que no puede parsear. Un
@@ -91,8 +101,7 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 El documento de diseño describe estas piezas; el código no las tiene. Están
 registradas como issues.
 
-- Disparo automático de la narrativa. Hoy la narrativa solo se escribe con
-  `/relevo` a mano.
-- `chaski next`, `chaski cost`, `chaski why` y `chaski share`.
-- Reserva de proveedor como `synth-only`.
-- CI, y verificación en macOS y Linux: todo se probó en Windows.
+- Disparo automático de la narrativa. Hoy solo se escribe con `/relevo` a
+  mano. Ver el issue #10.
+- `chaski next`, `chaski cost`, `chaski why` y `chaski share`. Ver #12.
+- Reserva de proveedor como `synth-only`. Ver #12.

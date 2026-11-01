@@ -102,14 +102,14 @@ npm install -g github:cristobalbn/chaski
 ### Opción 2 — desde el código fuente
 
 Si prefieres leer lo que vas a ejecutar antes de instalarlo —algo razonable en
-una herramienta que corre sola en cada turno— clona el repositorio. Son ~1.100
+una herramienta que corre sola en cada turno— clona el repositorio. Son ~2.000
 líneas de JavaScript sin dependencias:
 
 ```bash
 git clone https://github.com/cristobalbn/chaski.git
 cd chaski
 npm run check          # verifica la sintaxis; no hay build
-npm test               # 88 tests, sin dependencias
+npm test               # 91 tests, sin dependencias
 cd ../tu-proyecto
 node ../chaski/src/instalar.mjs init
 ```
@@ -166,8 +166,8 @@ captura, y para aportar fixtures si agregas soporte a otro CLI.
 ```bash
 chaski probe              # instala la sonda en los CLIs que tengas
 # abre cada CLI en modo INTERACTIVO, escribe algo, ciérralo
-chaski probe --ver        # mira lo capturado
-chaski probe --limpiar    # quita la sonda
+chaski probe --show       # mira lo capturado
+chaski probe --clean      # quita la sonda
 ```
 
 Tiene que ser una sesión interactiva: ninguno de los tres dispara hooks en
@@ -272,8 +272,8 @@ Todo tiene valores por defecto razonables. No hace falta configurar nada.
 |---|---|
 | `redact` | Expresiones regulares extra para redactar antes de escribir |
 | `excludePaths` | Rutas que nunca aparecen en el relevo |
-| `limpiarTrasDias` | Días antes de borrar el relevo de una rama que ya no existe. Por defecto 30; `0` desactiva la limpieza |
-| `limpiarConNarrativaTrasDias` | Lo mismo para los relevos que tienen narrativa. Por defecto 90 |
+| `pruneAfterDays` | Días antes de borrar el relevo de una rama que ya no existe. Por defecto 30; `0` desactiva la limpieza |
+| `pruneNarrativeAfterDays` | Lo mismo para los relevos que tienen narrativa. Por defecto 90 |
 
 Los relevos con narrativa viven el triple a propósito: los hechos se
 recalculan desde git en cualquier momento, pero la narrativa existe solo
@@ -376,7 +376,7 @@ riesgo tu cuenta no debería estar a un flag de distancia.
 
 | Límite | Valor | Por qué |
 |---|---|---|
-| Latencia del hook | ~290 ms, casi todo arranque de Node | El presupuesto de `Stop` en Claude Code es de 1,5 s **compartido** entre todos los hooks del evento. Hay margen de 5x, pero si tienes muchos hooks ahí, mide |
+| Latencia del hook | ~340 ms, de los cuales unos 250 son subprocesos de git | El presupuesto de `Stop` en Claude Code es de 1,5 s **compartido** entre todos los hooks del evento. Hay margen de 5x, pero si tienes muchos hooks ahí, mide |
 | Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
 | Narrativa | puede atrasarse unos turnos | Los hechos están siempre al día; el porqué depende de cuándo corriste `/relevo` |
 | Hooks de Codex | requieren conceder confianza | La primera vez que abres Codex con hooks instalados pide confiar en ellos. Hasta que aceptes, no se ejecuta ninguno, y el permiso se aplica desde la sesión siguiente |

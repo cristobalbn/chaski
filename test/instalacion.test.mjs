@@ -216,6 +216,67 @@ describe('uninstall revierte lo que init tocó', () => {
   });
 });
 
+describe('la documentación no promete lo que no existe', () => {
+  // Automatiza una revisión que hasta ahora era manual y por eso se escapaba:
+  // tras renombrar `--ver` a `--show` quedaron cuatro referencias viejas en el
+  // README y en la propia ayuda del comando.
+  const raiz = join(AQUI, '..');
+  const leer = (f) => readFileSync(join(raiz, f), 'utf8');
+
+  test('cada comando y flag del README existe en el código', () => {
+    const instalador = leer('src/instalar.mjs');
+    const docs = ['README.md', 'AGENTS.md', 'CONTRIBUTING.md'].map(leer).join('\n');
+
+    const subcomandos = [...instalador.matchAll(/accion === '(\w+)'/g)].map((m) => m[1]);
+    const flags = [...instalador.matchAll(/'--(\w+)'/g)].map((m) => m[1]);
+
+    // Al revés de lo intuitivo: se parte del código y se verifica la doc. Un
+    // comando sin documentar es un hueco, pero un comando documentado que no
+    // existe hace perder el tiempo a quien lo copia.
+    for (const sub of subcomandos) {
+      assert.ok(docs.includes(`chaski ${sub}`) || docs.includes(`instalar.mjs ${sub}`),
+        `el subcomando "${sub}" no aparece en la documentación`);
+    }
+
+    // Y ninguna doc puede mencionar un flag que ya no existe.
+    const mencionados = [...docs.matchAll(/chaski probe --(\w+)/g)].map((m) => m[1]);
+    for (const f of mencionados) {
+      assert.ok(flags.includes(f), `la documentación menciona --${f}, que no existe`);
+    }
+  });
+
+  test('las claves de configuración del README son las que el código lee', () => {
+    const fuente = ['src/capturar.mjs', 'src/lib/secretos.mjs', 'src/lib/rutas.mjs']
+      .map(leer).join('\n');
+    const readme = leer('README.md');
+
+    // Las claves que el README documenta en su tabla de configuración.
+    const documentadas = [...readme.matchAll(/^\| `(\w+)` \|/gm)].map((m) => m[1]);
+    const deConfig = documentadas.filter((k) =>
+      /redact|exclude|prune|limpiar/i.test(k));
+
+    assert.ok(deConfig.length >= 3, 'la tabla de configuración del README quedó vacía');
+    for (const clave of deConfig) {
+      assert.ok(fuente.includes(clave),
+        `el README documenta la clave "${clave}" y el código no la lee`);
+    }
+  });
+
+  test('la API pública no tiene caracteres fuera de ASCII', () => {
+    // git escapa en octal cualquier ruta con acentos, y eso ya produjo un bug.
+    // La regla vale para flags, claves y nombres de archivo generados.
+    const instalador = leer('src/instalar.mjs');
+    const identificadores = [
+      ...[...instalador.matchAll(/accion === '([^']+)'/g)].map((m) => m[1]),
+      ...[...instalador.matchAll(/'--([^']+)'/g)].map((m) => m[1]),
+      ...[...leer('src/capturar.mjs').matchAll(/config\?\.(\w+)/g)].map((m) => m[1]),
+    ];
+    for (const id of identificadores) {
+      assert.ok(/^[\x20-\x7e]+$/.test(id), `"${id}" tiene caracteres no ASCII`);
+    }
+  });
+});
+
 describe('promoción de subagentes', () => {
   const montarConPadre = (prefijo) => {
     const m = montar(prefijo);
