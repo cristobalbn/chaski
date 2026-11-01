@@ -200,6 +200,7 @@
     <div>
       <p>Contenido</p>
       <ol>
+        <li><a href="#estado">Qué está construido</a></li>
         <li><a href="#problema">El problema</a></li>
         <li><a href="#nombre">El nombre</a></li>
         <li><a href="#principios">Principios</a></li>
@@ -222,6 +223,38 @@
   </nav>
 
   <main>
+
+    <section id="estado">
+      <h2>Qu&eacute; est&aacute; construido y qu&eacute; no</h2>
+      <p class="sub">Este documento describe un dise&ntilde;o completo. El c&oacute;digo implementa una parte.</p>
+      <p class="lede">Lee esta tabla antes de lo dem&aacute;s. Un documento de dise&ntilde;o que no distingue lo construido de lo pensado hace perder el tiempo a cualquiera que venga a usar el proyecto.</p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Pieza</th><th>Estado</th></tr></thead>
+          <tbody>
+            <tr><td class="wrap">Captura de hechos desde git y el transcript</td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Inyecci&oacute;n al arrancar, con precedencia y firma</td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Los tres adaptadores, validados con payloads reales</td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Relevo por rama, con recuperaci&oacute;n al volver</td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Filtro de secretos antes de escribir</td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Aviso de lo que cambi&oacute; y qui&eacute;n lo cambi&oacute;</td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Limpieza escalonada de relevos hu&eacute;rfanos</td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap"><code>init</code>, <code>doctor</code>, <code>uninstall</code>, <code>probe</code></td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Narrativa con <code>/relevo</code>, a mano</td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Disparo autom&aacute;tico de la narrativa</td><td><span class="tag t-crit">no implementado</span></td></tr>
+            <tr><td class="wrap">Promoci&oacute;n de resultados de subagentes</td><td><span class="tag t-crit">no implementado</span></td></tr>
+            <tr><td class="wrap"><code>chaski next</code> y registro de cuotas</td><td><span class="tag t-crit">no implementado</span></td></tr>
+            <tr><td class="wrap"><code>chaski cost</code></td><td><span class="tag t-crit">no implementado</span></td></tr>
+            <tr><td class="wrap"><code>historia/</code> y <code>chaski why</code></td><td><span class="tag t-crit">no implementado</span></td></tr>
+            <tr><td class="wrap"><code>chaski share</code> y <code>decisiones/</code></td><td><span class="tag t-crit">no implementado</span></td></tr>
+            <tr><td class="wrap">Reserva de proveedor <code>synth-only</code></td><td><span class="tag t-crit">no implementado</span></td></tr>
+            <tr><td class="wrap">Verificaci&oacute;n en macOS y Linux</td><td><span class="tag t-warn">solo Windows</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Lo no implementado est&aacute; registrado como issues en el repositorio, con el razonamiento de este documento como referencia. Las secciones que siguen describen el dise&ntilde;o completo &mdash; incluidas las partes que todav&iacute;a no existen &mdash; porque el razonamiento sigue siendo &uacute;til para quien las construya.</p>
+      <p><em>Esta tabla se agreg&oacute; despu&eacute;s de notar que el documento promet&iacute;a seis piezas que el c&oacute;digo no tiene, y que el CHANGELOG afirmaba que el disparo autom&aacute;tico estaba implementado cuando no lo estaba. Un dise&ntilde;o que se lee como un inventario de funciones es peor que no tener documento.</em></p>
+    </section>
 
     <section id="problema">
       <h2>El problema que nadie est&aacute; resolviendo</h2>
