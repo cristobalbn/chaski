@@ -282,8 +282,8 @@ function limpiezaOcasional(cwd, config) {
     }
     escribirAtomico(marca, String(ahora));
     limpiarRelevosHuerfanos(cwd, {
-      soloHechos: config?.limpiarTrasDias,
-      conNarrativa: config?.limpiarConNarrativaTrasDias,
+      soloHechos: config?.pruneAfterDays,
+      conNarrativa: config?.pruneNarrativeAfterDays,
     });
   } catch {}
 }

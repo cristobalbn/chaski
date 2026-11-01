@@ -11,7 +11,7 @@ node src/instalar.mjs doctor       # verifica qué quedó instalado
 node src/instalar.mjs uninstall    # revierte desde respaldo
 node src/instalar.mjs probe        # captura el payload crudo de los hooks
 npm run check                      # chequeo de sintaxis (no hay build)
-npm test                           # 88 tests, node:test, sin dependencias
+npm test                           # 91 tests, node:test, sin dependencias
 ```
 
 Si agregas un archivo de tests, **súmalo al script `test` de package.json**:
@@ -95,7 +95,7 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
 
 | Qué | Límite | Consecuencia de pasarse |
 |---|---|---|
-| Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Actualmente usamos ~290 ms |
+| Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Actualmente usamos ~340 ms |
 | Tamaño del relevo inyectado | 10.000 caracteres | Claude Code manda una ruta en vez del contenido. `MAX_CARACTERES` está en 6.000 |
 | Lectura del transcript | 8 MB por corrida | Protege el presupuesto de latencia |
 | Limpieza de huérfanos | 1 vez al día | Listar ramas es otro subproceso de git |
@@ -130,6 +130,28 @@ skill/SKILL.md        instrucciones del comando /relevo
 - **Comenta el *por qué*, no el *qué*.** La mayoría de las decisiones raras aquí
   responden a un límite real de una herramienta. Si quitas un comentario que
   explica un límite, alguien va a reintroducir el bug.
+
+## Idioma: la API pública va en inglés
+
+Regla, para que nadie la rompa sin querer:
+
+| Qué | Idioma |
+|---|---|
+| Subcomandos y flags (`init`, `probe --clean`) | **inglés** |
+| Claves de `chaski.json` (`redact`, `pruneAfterDays`) | **inglés** |
+| Identificadores internos (`escribirAtomico`, `hechosGit`) | español |
+| Comentarios, documentación y mensajes al usuario | español |
+| Léxico del producto (`chaski`, `.tambo/`, `relevo`) | español, es identidad |
+
+La razón del corte ahí: la API pública la lee cualquiera que instale el
+paquete desde npm, y los hooks con los que integra ya están en inglés
+(`SessionStart`, `Stop`, `SubagentStop`). El interior lo lee quien contribuye,
+y ahí el español no estorba.
+
+**Nada de caracteres no ASCII en identificadores, claves, flags o nombres de
+archivo.** No es purismo: `git` escapa en octal cualquier ruta con acentos, y
+eso ya produjo un bug — un `café.txt` llegaba al relevo como
+`caf\303\251.txt`. La prosa de los comentarios sí lleva tildes.
 
 ## Contrato de hooks por CLI
 

@@ -58,7 +58,7 @@ un comando que tus CLIs van a ejecutar solos. Para que puedas verificarlo:
 `chaski doctor` imprime el comando exacto registrado en cada configuración —
 son unas diez líneas. Revísalo después de instalar y después de cada
 actualización. Si prefieres no confiar en un paquete publicado, clona el
-repositorio y ejecuta desde el código fuente: son ~1.100 líneas sin dependencias.
+repositorio y ejecuta desde el código fuente: son ~2.000 líneas sin dependencias.
 
 ## Versiones soportadas
 

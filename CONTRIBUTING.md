@@ -49,7 +49,7 @@ hook se ejecuta de verdad.
   `src/lib/secretos.mjs` con un caso de prueba.
 - **Adaptadores para otros CLIs.** Un archivo en `src/lib/` más una entrada en
   el mapa `CLIS` de `src/instalar.mjs`.
-- **Más casos en los tests.** Hay 88. Falta cubrir el adaptador de Codex y de
+- **Más casos en los tests.** Hay 91. Falta cubrir el adaptador de Codex y de
   `agy` con fixtures de más de una versión de cada CLI.
 
 ## Qué no se va a aceptar
@@ -82,7 +82,7 @@ Antes de abrir el PR:
 
 ```bash
 npm run check                       # sintaxis; no hay build
-npm test                            # 88 tests
+npm test                            # 91 tests
 ```
 
 Y prueba el cambio a mano según la sección de abajo.
