@@ -18,7 +18,8 @@ export function hechosGit(cwd, config) {
   const numstat = git(cwd, ['diff', 'HEAD', '--numstat']) ?? '';
   const porArchivo = new Map();
   for (const linea of numstat.split('\n').filter(Boolean)) {
-    const [mas, menos, ruta] = linea.split('\t');
+    const [mas, menos, bruto] = linea.split('\t');
+    const ruta = destinoDeRenombre(bruto);
     if (!ruta || rutaExcluida(ruta, config)) continue;
     porArchivo.set(ruta, { ruta, mas: num(mas), menos: num(menos) });
   }
@@ -36,7 +37,14 @@ export function hechosGit(cwd, config) {
       porArchivo.set(ruta, { ruta, mas: null, menos: null, nuevo: m[1].includes('?') });
     }
   }
-  h.sucios = [...porArchivo.values()];
+  // Tope deliberado. El relevo muestra 20, pero el estado guardaba todos: en
+  // un repo con miles de archivos sucios —tras un `npm install` sin
+  // gitignore, o al generar código— el estado.json pasaba del megabyte y se
+  // reescribía completo en cada turno. Se guarda un margen sobre lo que se
+  // muestra y el total aparte, que es lo único que el relevo necesita.
+  const todos = [...porArchivo.values()];
+  h.sucios = todos.slice(0, 50);
+  h.sucioTotal = todos.length;
 
   // Últimos commits, para que el relevo sepa qué ya quedó cerrado.
   const log = git(cwd, ['log', '-5', '--format=%h %s']) ?? '';
@@ -274,6 +282,30 @@ function lineaSignificativa(comando) {
   // es el comando, no el directorio.
   elegida = elegida.replace(/^cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*/i, '');
   return elegida.slice(0, 160);
+}
+
+/**
+ * El archivo de destino, cuando git informa un renombre.
+ *
+ * `--numstat` usa `viejo.txt => nuevo.txt`, y con prefijo común
+ * `src/{viejo.txt => nuevo.txt}`. Sin desarmarlo, el relevo mostraba el
+ * renombre como un archivo llamado "viejo.txt => nuevo.txt" **y además**
+ * el destino por separado: dos entradas para un solo archivo, una con un
+ * nombre que no existe.
+ */
+function destinoDeRenombre(bruto) {
+  if (!bruto) return null;
+  const s = bruto.trim();
+  if (!s.includes('=>')) return s;
+
+  // Forma con llaves: prefijo{antes => después}sufijo
+  const conLlaves = /^(.*)\{(.*?) => (.*?)\}(.*)$/.exec(s);
+  if (conLlaves) {
+    const [, pre, , despues, post] = conLlaves;
+    return (pre + despues + post).replace(/\/{2,}/g, '/');
+  }
+  // Forma simple: antes => después
+  return s.split('=>').pop().trim();
 }
 
 function num(v) { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; }

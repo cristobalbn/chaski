@@ -120,7 +120,7 @@ function ok() { process.exitCode = 0; }
  * guarda lo que el equipo de agentes **logró**, no lo que **tanteó**.
  *
  * Beneficio secundario: como es mecánico, diez subagentes no multiplican por
- * diez el costo. No hay síntesis acá; solo el padre sintetiza, una vez, sobre
+ * diez el costo. No hay síntesis aquí; solo el padre sintetiza, una vez, sobre
  * resultados ya condensados.
  *
  * El diseño original proponía un quipu hijo efímero en `.tambo/sub/<id>.json`.

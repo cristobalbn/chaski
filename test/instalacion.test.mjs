@@ -158,6 +158,51 @@ describe('uninstall revierte lo que init tocó', () => {
     }
   });
 
+  test('no destruye una configuración que no puede parsear', () => {
+    // El peor bug que tuvo el proyecto: un settings.json con una coma final,
+    // un comentario o un BOM hacía que init lo reemplazara por completo. El
+    // usuario perdía model, theme y permissions en el primer comando que
+    // corría, y es el camino que recorre todo usuario nuevo.
+    const m = montar('chaski-destruir-');
+    try {
+      const dir = join(m.casa, '.claude');
+      mkdirSync(dir, { recursive: true });
+      const config = join(dir, 'settings.json');
+      // Coma final: JSON inválido, y un error de tipeo muy común.
+      const original = '{\n  "model": "opus",\n  "permissions": { "allow": ["Bash(npm:*)"] },\n}\n';
+      writeFileSync(config, original);
+
+      let fallo = false;
+      try { m.correr('init'); } catch { fallo = true; }
+
+      assert.equal(readFileSync(config, 'utf8'), original,
+        'init modificó una configuración que no pudo parsear');
+      assert.ok(fallo, 'init no avisó de que la configuración estaba mal');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('tolera un BOM en la configuración', () => {
+    // Frecuente en Windows: un editor guarda el JSON con marca de orden de
+    // bytes y JSON.parse no la tolera. Sin esto, init abortaría sobre una
+    // configuración que en realidad es válida.
+    const m = montar('chaski-bom-');
+    try {
+      const dir = join(m.casa, '.claude');
+      mkdirSync(dir, { recursive: true });
+      const config = join(dir, 'settings.json');
+      writeFileSync(config, '﻿{ "model": "opus" }\n', 'utf8');
+
+      m.correr('init');
+      const tras = readFileSync(config, 'utf8');
+      assert.ok(tras.includes('opus'), 'perdió la configuración del usuario');
+      assert.ok(tras.includes('chaski'), 'no registró los hooks');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
   test('doctor no falla en un proyecto recién inicializado', () => {
     const m = montar('chaski-doc-');
     try {

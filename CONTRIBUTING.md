@@ -49,7 +49,7 @@ hook se ejecuta de verdad.
   `src/lib/secretos.mjs` con un caso de prueba.
 - **Adaptadores para otros CLIs.** Un archivo en `src/lib/` más una entrada en
   el mapa `CLIS` de `src/instalar.mjs`.
-- **Más casos en los tests.** Hay 83. Falta cubrir el adaptador de Codex y de
+- **Más casos en los tests.** Hay 88. Falta cubrir el adaptador de Codex y de
   `agy` con fixtures de más de una versión de cada CLI.
 
 ## Qué no se va a aceptar
@@ -70,7 +70,7 @@ hook se ejecuta de verdad.
 
 ```bash
 git checkout -b feat/lo-que-sea     # o fix/, docs/, test/
-# ... trabajás, commiteás ...
+# ... trabajas, commiteas ...
 git push -u origin feat/lo-que-sea
 gh pr create --fill                 # o desde la web
 ```
@@ -82,7 +82,7 @@ Antes de abrir el PR:
 
 ```bash
 npm run check                       # sintaxis; no hay build
-npm test                            # 83 tests
+npm test                            # 88 tests
 ```
 
 Y prueba el cambio a mano según la sección de abajo.
