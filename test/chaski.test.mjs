@@ -214,17 +214,21 @@ describe('volver después de que otra persona trabajó', () => {
       g('add', '-A'); g('commit', '-qm', 'inicial');
 
       const head = g('rev-parse', '--short', 'HEAD').trim();
+      // El nombre de la rama se pregunta, no se asume: `git init` crea `main`
+      // o `master` según `init.defaultBranch`, y dar por sentado uno hace que
+      // el test pase solo en la máquina de quien lo escribió. Lo encontró el CI.
+      const ramaDePrueba = g('rev-parse', '--abbrev-ref', 'HEAD').trim();
 
       // Relevo de hace una semana, con un pendiente que nombra un archivo.
       const hace7dias = new Date(Date.now() - 7 * 86_400_000).toISOString();
-      const estadoDir = join(dir, '.tambo', 'ramas', 'main');
+      const estadoDir = join(dir, '.tambo', 'ramas', ramaDePrueba);
       execFileSync(process.execPath, ['-e',
         `require('fs').mkdirSync(${JSON.stringify(estadoDir)},{recursive:true})`]);
       const estado = {
         escrito: hace7dias, agente: 'claude-code', head,
         narrativa: 'A medias: falta invalidar el token viejo en refresh.ts:41.',
         narrativaAutor: 'claude-code', narrativaEscrita: hace7dias,
-        hechos: { esRepo: true, rama: 'main', sucios: [], commits: [] },
+        hechos: { esRepo: true, rama: ramaDePrueba, sucios: [], commits: [] },
       };
       writeFileSync(join(estadoDir, 'estado.json'), JSON.stringify(estado));
       writeFileSync(join(estadoDir, 'relevo.md'), '# Relevo viejo\n');
@@ -494,14 +498,17 @@ describe('el relevo no crece con el tiempo', () => {
           `fs.utimesSync(${JSON.stringify(d)},t,t);`]);
       };
 
-      crear('main', 0);                  // rama viva
+      // La rama viva se pregunta a git por la misma razon: su nombre depende
+      // de init.defaultBranch y no es igual en toda maquina.
+      const viva = g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      crear(viva, 0);                    // rama viva
       crear('feat-vieja-borrada', 60);   // no existe y es vieja → se borra
       crear('feat-recien-borrada', 2);   // no existe pero es reciente → queda
 
       const borrados = limpiarRelevosHuerfanos(dir, { soloHechos: 30 });
 
       assert.deepEqual(borrados, ['feat-vieja-borrada']);
-      assert.ok(existsSync(join(ramas, 'main')), 'borró la rama viva');
+      assert.ok(existsSync(join(ramas, viva)), 'borró la rama viva');
       assert.ok(existsSync(join(ramas, 'feat-recien-borrada')),
         'borró un relevo reciente: una rama puede existir en otro worktree');
       assert.ok(!existsSync(join(ramas, 'feat-vieja-borrada')));
