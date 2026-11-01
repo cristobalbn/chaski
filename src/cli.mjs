@@ -18,8 +18,23 @@ import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, re
 import { writeAtomic, isValidSignature } from './lib/relay.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const CAPTURAR = resolve(AQUI, 'capture.mjs');
-const LEER = resolve(AQUI, 'inject.mjs');
+
+// CONTRATO: estos dos nombres de archivo no se cambian nunca.
+//
+// `init` escribe su ruta absoluta en la configuración de cada CLI, que vive
+// fuera del repositorio. Renombrarlos deja a todas las instalaciones
+// existentes invocando un archivo que no existe, y el usuario ve un volcado de
+// Node en cada turno hasta que vuelva a correr `init`. Ya pasó una vez, al
+// pasar `capturar.mjs` a `capture.mjs`.
+//
+// La alternativa —que los hooks invoquen `cli.mjs` con un subcomando, para
+// tener un solo punto de entrada— se midió y cuesta 213 ms más por hook
+// (495 contra 282), porque arrastra todos los imports del instalador. Eso
+// duplicaría el presupuesto más apretado del proyecto.
+//
+// Hay un test que falla si estos nombres cambian.
+const CAPTURE = resolve(AQUI, 'capture.mjs');
+const INJECT = resolve(AQUI, 'inject.mjs');
 const MARCA_INI = '# >>> chaski (no editar a mano) >>>';
 const MARCA_FIN = '# <<< chaski <<<';
 
@@ -240,12 +255,12 @@ function installClaude(ruta) {
       { hooks: [{ type: 'command', command: comando, timeout: 10 }] },
     ];
   };
-  poner('SessionStart', LEER);
-  poner('Stop', CAPTURAR);
-  poner('SessionEnd', CAPTURAR);
-  poner('PreCompact', CAPTURAR);
-  poner('SubagentStop', CAPTURAR);
-  poner('StopFailure', CAPTURAR);
+  poner('SessionStart', INJECT);
+  poner('Stop', CAPTURE);
+  poner('SessionEnd', CAPTURE);
+  poner('PreCompact', CAPTURE);
+  poner('SubagentStop', CAPTURE);
+  poner('StopFailure', CAPTURE);
   mkdirSync(dirname(ruta), { recursive: true });
   writeAtomic(ruta, JSON.stringify(s, null, 2));
 }
@@ -256,8 +271,8 @@ function installAgy(ruta) {
   // El archivo de agy se organiza por propietario: registramos bajo "chaski"
   // sin pisar lo de otras herramientas instaladas.
   h.chaski = {
-    SessionStart: [{ type: 'command', command: cmd(LEER, 'SessionStart', 'agy', true), timeout: 10 }],
-    Stop: [{ type: 'command', command: cmd(CAPTURAR, 'Stop', 'agy', true), timeout: 10 }],
+    SessionStart: [{ type: 'command', command: cmd(INJECT, 'SessionStart', 'agy', true), timeout: 10 }],
+    Stop: [{ type: 'command', command: cmd(CAPTURE, 'Stop', 'agy', true), timeout: 10 }],
   };
   writeAtomic(ruta, JSON.stringify(h, null, 2));
 }
@@ -275,12 +290,12 @@ function installCodex(ruta) {
     'type = "command"',
     // Vía wrapper, igual que Antigravity: Codex también ejecuta con
     // `cmd /c`, así que una ruta con espacios entre comillas es frágil.
-    `command = ${JSON.stringify(cmd(LEER, 'SessionStart', 'codex', true))}`,
+    `command = ${JSON.stringify(cmd(INJECT, 'SessionStart', 'codex', true))}`,
     '',
     '[[hooks.Stop]]',
     '[[hooks.Stop.hooks]]',
     'type = "command"',
-    `command = ${JSON.stringify(cmd(CAPTURAR, 'Stop', 'codex', true))}`,
+    `command = ${JSON.stringify(cmd(CAPTURE, 'Stop', 'codex', true))}`,
     'async = true',
     MARCA_FIN,
   ].join('\n');
@@ -353,7 +368,7 @@ function doctor() {
   }
 
   console.log('\nEjecutables del hook');
-  for (const [etiqueta, script] of [['capturar', CAPTURAR], ['leer', LEER]]) {
+  for (const [etiqueta, script] of [['capture', CAPTURE], ['inject', INJECT]]) {
     console.log(`  ${pad(etiqueta)} ${existsSync(script) ? 'ok' : 'FALTA'}  ${script}`);
   }
 

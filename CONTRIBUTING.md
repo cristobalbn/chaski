@@ -82,7 +82,7 @@ Antes de abrir el PR:
 
 ```bash
 npm run check                       # sintaxis; no hay build
-npm test                            # 92 tests
+npm test                            # 95 tests
 ```
 
 Y prueba el cambio a mano según la sección de abajo.

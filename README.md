@@ -109,7 +109,7 @@ líneas de JavaScript sin dependencias:
 git clone https://github.com/cristobalbn/chaski.git
 cd chaski
 npm run check          # verifica la sintaxis; no hay build
-npm test               # 92 tests, sin dependencias
+npm test               # 95 tests, sin dependencias
 cd ../tu-proyecto
 node ../chaski/src/cli.mjs init
 ```
@@ -173,6 +173,24 @@ chaski probe --clean      # quita la sonda
 Tiene que ser una sesión interactiva: ninguno de los tres dispara hooks en
 modo headless.
 
+### Actualizar
+
+```bash
+npm install -g chaski          # o: npm install -g github:cristobalbn/chaski
+chaski init                    # vuelve a correr init, siempre
+```
+
+**El segundo paso no es opcional.** Los hooks se registran con la ruta absoluta
+de los scripts, así que una actualización que mueva la carpeta de instalación
+—o que cambie un nombre de archivo— deja la configuración apuntando a algo que
+ya no existe, y el CLI imprime un error de módulo no encontrado en cada turno.
+`chaski init` reescribe las rutas y es idempotente: correrlo de nuevo sobre una
+instalación sana no cambia nada.
+
+Si ya estás viendo ese error, es exactamente esto: corre `chaski init` y
+desaparece. `chaski doctor` muestra el comando que quedó registrado, por si
+quieres confirmarlo antes.
+
 ### Desinstalar
 
 ```bash
@@ -180,7 +198,7 @@ chaski uninstall
 ```
 
 Revierte cada configuración desde su respaldo. Tus relevos en `.tambo/` quedan
-en disco porque son tuyos; borralos a mano si quieres.
+en disco porque son tuyos; bórralos a mano si quieres.
 
 ---
 
@@ -240,7 +258,7 @@ Archivos que genera en tu proyecto:
 
 ```
 .tambo/
-  ramas/
+  branches/
     main/relevo.md          ← lo que se inyecta
     main/estado.json        ← hechos, marca de agua, firma
     feat-pagos/relevo.md    ← otra rama, otro contexto
