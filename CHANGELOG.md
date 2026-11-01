@@ -41,7 +41,7 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Promoción de los resultados de subagentes: al terminar, su conclusión sube
   al relevo del padre con atribución, y si no terminó por `end_turn` se avisa
   que puede no haber acabado. Su exploración se descarta.
-- Suite de 92 tests con `node:test`, sin dependencias: contrato de payload y
+- Suite de 95 tests con `node:test`, sin dependencias: contrato de payload y
   de transcript por CLI, corpus de 15 formatos de credencial, invariantes del
   relevo, firma, escritura atómica y lectura incremental. Los fixtures son
   sintéticos: la forma viene de capturas reales, el contenido es inventado.
@@ -66,16 +66,24 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   `pruneNarrativeAfterDays`.
 
 ### Corregido en la revisión del 2026-11-01
--  ya no reescribe una configuración que no puede parsear. Un
-   con una coma final hacía que reemplazara el archivo entero
+- `init` ya no reescribe una configuración que no puede parsear. Un
+  `settings.json` con una coma final hacía que reemplazara el archivo entero,
   y el usuario perdía su configuración en el primer comando que corría.
-- La escritura atómica ya no borra el destino para forzar el : ese
+- La escritura atómica ya no borra el destino para forzar el `rename`: ese
   camino podía dejar sin relevo ni original.
-- Dos ramas distintas ya no comparten relevo ( y ).
+- Dos ramas distintas ya no comparten relevo (`feat/pagos` y `feat-pagos`).
 - Un renombre es un archivo y no dos, y las rutas con acentos son legibles.
-- El estado topa la lista de archivos sucios: miles hacían un 
+- El estado topa la lista de archivos sucios: miles hacían un `estado.json`
   de más de un megabyte reescrito en cada turno.
--  termina con código distinto de cero si algún CLI falló.
+- `doctor` termina con código distinto de cero si algún CLI falló.
+- `doctor` ya no revienta con `LEER is not defined`: quedó una referencia a un
+  nombre viejo tras la homologación a inglés. `npm run check` no lo vio porque
+  solo verifica sintaxis.
+- `capture.mjs` e `inject.mjs` quedan declarados puntos de entrada estables
+  (invariante 8). `init` escribe su ruta absoluta en configuraciones que viven
+  fuera del repositorio, así que un renombre rompe toda instalación existente.
+  Hay un test que falla si cambian. El README explica que actualizar chaski
+  exige volver a correr `chaski init`.
 
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,

@@ -11,7 +11,7 @@
     "chaski": "./src/cli.mjs"
   },
   "scripts": {
-    "check": "node --check src/capture.mjs && node --check src/inject.mjs && node --check src/cli.mjs",
+    "check": "node --check src/capture.mjs && node --check src/inject.mjs && node --check src/cli.mjs && node --check src/lib/paths.mjs && node --check src/lib/facts.mjs && node --check src/lib/secrets.mjs && node --check src/lib/relay.mjs",
     "test": "node --test test/core.test.mjs test/install.test.mjs"
   },
   "files": [

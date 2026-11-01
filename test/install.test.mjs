@@ -474,3 +474,32 @@ describe('concurrencia: varios escritores a la vez', () => {
     }
   });
 });
+
+// --------------------------------------------- puntos de entrada estables
+
+describe('puntos de entrada', () => {
+  // `init` escribe la ruta absoluta de estos dos archivos en la configuración
+  // de cada CLI, que vive fuera del repositorio. Renombrarlos rompe todas las
+  // instalaciones existentes: el usuario ve un error de módulo no encontrado
+  // en cada turno hasta que vuelva a correr `chaski init`. Ya pasó una vez, al
+  // homologar los nombres a inglés (`capturar.mjs` -> `capture.mjs`).
+  //
+  // Este test existe para que ese cambio rompa la build en lugar de la máquina
+  // de alguien. Si lo estás viendo fallar: no cambies el test, deshaz el
+  // renombre.
+  for (const nombre of ['capture.mjs', 'inject.mjs']) {
+    test(`src/${nombre} conserva su nombre`, () => {
+      assert.ok(existsSync(join(SRC, nombre)),
+        `src/${nombre} no existe. Es un punto de entrada registrado en ` +
+        `configuraciones externas: renombrarlo rompe a todo usuario instalado.`);
+    });
+  }
+
+  test('cli.mjs registra exactamente esos dos scripts', () => {
+    // Si alguien agrega un tercer punto de entrada, tiene que entrar también
+    // en la lista de arriba y en el invariante 8 de AGENTS.md.
+    const cli = readFileSync(join(SRC, 'cli.mjs'), 'utf8');
+    const registrados = [...cli.matchAll(/resolve\(AQUI, '([\w.-]+)'\)/g)].map((m) => m[1]);
+    assert.deepEqual([...new Set(registrados)].sort(), ['capture.mjs', 'inject.mjs']);
+  });
+});

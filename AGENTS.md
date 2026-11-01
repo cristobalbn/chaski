@@ -11,7 +11,7 @@ node src/cli.mjs doctor       # verifica qué quedó instalado
 node src/cli.mjs uninstall    # revierte desde respaldo
 node src/cli.mjs probe        # captura el payload crudo de los hooks
 npm run check                      # chequeo de sintaxis (no hay build)
-npm test                           # 92 tests, node:test, sin dependencias
+npm test                           # 95 tests, node:test, sin dependencias
 ```
 
 Si agregas un archivo de tests, **súmalo al script `test` de package.json**:
@@ -91,6 +91,21 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
    uno a medio escribir. El lock evita trabajo redundante y que un escritor
    pise los comandos que otro acababa de agregar.
 
+8. **`capture.mjs` e `inject.mjs` no cambian de nombre nunca.** `init` escribe
+   su ruta absoluta en la configuración de cada CLI, y esas configuraciones
+   viven fuera del repositorio. Renombrarlos deja a toda instalación existente
+   invocando un archivo inexistente: el usuario ve un volcado de Node en cada
+   turno hasta que vuelva a correr `chaski init`. Pasó al homologar los nombres
+   a inglés (`capturar.mjs` -> `capture.mjs`).
+
+   Pasar los hooks por un único punto de entrada (`cli.mjs capture`) se midió:
+   cuesta 213 ms más por hook (495 contra 282), porque arrastra los imports del
+   instalador. Eso duplica el presupuesto más apretado del proyecto, así que la
+   respuesta no es más indirección sino estabilidad de nombres.
+
+   Hay un test en `test/install.test.mjs` que falla si cambian. Si lo ves
+   fallar, deshaz el renombre; no ajustes el test.
+
 ## Presupuestos
 
 | Qué | Límite | Consecuencia de pasarse |
@@ -106,13 +121,13 @@ Si tocas `capture.mjs`, mide la latencia antes y después.
 
 ```
 src/capture.mjs      hook de captura — orquesta, no contiene lógica
-src/inject.mjs          hook de inyección — único código en el camino crítico
-src/cli.mjs      init / doctor / uninstall
-src/lib/paths.mjs     rutas, ramas, lock por mkdir, detección de entorno
+src/inject.mjs       hook de inyección — único código en el camino crítico
+src/cli.mjs          init / doctor / uninstall / probe
+src/lib/paths.mjs    rutas, ramas, lock por mkdir, detección de entorno
 src/lib/facts.mjs    extracción desde git y transcript
 src/lib/secrets.mjs  filtro de secretos y rutas excluidas
 src/lib/relay.mjs    render, firma HMAC, escritura atómica, presupuesto
-skill/SKILL.md        instrucciones del comando /relevo
+skill/SKILL.md       instrucciones del comando /relevo
 ```
 
 ## Al escribir código aquí
