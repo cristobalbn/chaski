@@ -31,10 +31,10 @@ mkdir /tmp/prueba && cd /tmp/prueba && git init
 echo "x" > a.js && git add -A && git commit -m inicial
 echo "y" >> a.js
 
-echo '{"cwd":"'$PWD'","hook_event_name":"Stop"}' | node ruta/a/chaski/src/capturar.mjs Stop "claude code"
-cat .tambo/ramas/*/relevo.md
+echo '{"cwd":"'$PWD'","hook_event_name":"Stop"}' | node ruta/a/chaski/src/capture.mjs Stop "claude code"
+cat .tambo/branches/*/relevo.md
 
-echo '{"cwd":"'$PWD'"}' | node ruta/a/chaski/src/leer.mjs
+echo '{"cwd":"'$PWD'"}' | node ruta/a/chaski/src/inject.mjs
 ```
 
 En Windows, usa rutas nativas: una ruta POSIX de Git Bash no resuelve cuando el
@@ -46,10 +46,10 @@ hook se ejecuta de verdad.
   Si tienes esos CLIs, captura el JSON real que llega por stdin en cada evento y
   envíalo como fixture en `test/fixtures/`.
 - **Formatos de credencial que el filtro no detecta.** Agregalos a
-  `src/lib/secretos.mjs` con un caso de prueba.
+  `src/lib/secrets.mjs` con un caso de prueba.
 - **Adaptadores para otros CLIs.** Un archivo en `src/lib/` más una entrada en
-  el mapa `CLIS` de `src/instalar.mjs`.
-- **Más casos en los tests.** Hay 91. Falta cubrir el adaptador de Codex y de
+  el mapa `CLIS` de `src/cli.mjs`.
+- **Más casos en los tests.** Hay 92. Falta cubrir el adaptador de Codex y de
   `agy` con fixtures de más de una versión de cada CLI.
 
 ## Qué no se va a aceptar
@@ -82,7 +82,7 @@ Antes de abrir el PR:
 
 ```bash
 npm run check                       # sintaxis; no hay build
-npm test                            # 91 tests
+npm test                            # 92 tests
 ```
 
 Y prueba el cambio a mano según la sección de abajo.
@@ -100,7 +100,7 @@ queda escrito **por qué** se hizo un cambio, y eso vale más que el commit.
 
 - Una cosa por PR.
 - Describí qué problema resuelve, no solo qué cambia.
-- Si tocaste `capturar.mjs`, mide la latencia antes y después y ponlo en la
+- Si tocaste `capture.mjs`, mide la latencia antes y después y ponlo en la
   descripción.
 - Si agregaste un comentario que explica el límite de una herramienta, que sea
   evidente por qué está: esos comentarios evitan que alguien reintroduzca el bug.

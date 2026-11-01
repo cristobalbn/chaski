@@ -6,12 +6,12 @@ modules. Si vas a trabajar en este repo, lee esto completo antes de editar.
 ## Comandos
 
 ```bash
-node src/instalar.mjs init         # registra hooks, gitignore, skill
-node src/instalar.mjs doctor       # verifica qué quedó instalado
-node src/instalar.mjs uninstall    # revierte desde respaldo
-node src/instalar.mjs probe        # captura el payload crudo de los hooks
+node src/cli.mjs init         # registra hooks, gitignore, skill
+node src/cli.mjs doctor       # verifica qué quedó instalado
+node src/cli.mjs uninstall    # revierte desde respaldo
+node src/cli.mjs probe        # captura el payload crudo de los hooks
 npm run check                      # chequeo de sintaxis (no hay build)
-npm test                           # 91 tests, node:test, sin dependencias
+npm test                           # 92 tests, node:test, sin dependencias
 ```
 
 Si agregas un archivo de tests, **súmalo al script `test` de package.json**:
@@ -58,14 +58,14 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
    turno; un árbol de npm sería superficie de ataque. Si crees que necesitas un
    paquete, no lo necesitas.
 
-2. **El modelo no puede escribir hechos.** `hechos`, `comandos`, `offset` y
-   `firma` en `estado.json` los escribe `capturar.mjs` desde git y el
-   transcript. La narrativa vive **solo** en los campos `narrativa*`. Nunca
+2. **El modelo no puede escribir hechos.** `facts`, `commands`, `offset` y
+   `signature` en `estado.json` los escribe `capture.mjs` desde git y el
+   transcript. La narrativa vive **solo** en los campos `narrative*`. Nunca
    agregues una ruta por la que texto generado pueda llegar a un campo de
    hechos: eso elimina la clase entera de "el relevo afirma que los tests pasan"
    cuando no pasan.
 
-3. **Nada automático entra a git.** `capturar.mjs` no commitea. `init` agrega
+3. **Nada automático entra a git.** `capture.mjs` no commitea. `init` agrega
    `.tambo/` al `.gitignore` y no lo quita nunca. Esto es lo que evita
    conflictos de merge en repos de equipo y secretos publicados por accidente.
 
@@ -77,10 +77,10 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
    suscripciones de consumidor, y hay suspensiones de cuentas documentadas en
    el caso de Google. **No agregues esa opción ni detrás de un flag.**
 
-6. **Redactar antes de escribir.** El filtro de `lib/secretos.mjs` corre antes
+6. **Redactar antes de escribir.** El filtro de `lib/secrets.mjs` corre antes
    de que algo toque el disco, no solo antes de enviarlo a algún lado.
 
-7. **Escritura atómica siempre.** `escribirAtomico()` de `lib/relevo.mjs`:
+7. **Escritura atómica siempre.** `writeAtomic()` de `lib/relay.mjs`:
    temporal más `rename`. Nunca `writeFileSync` directo sobre un archivo que
    otro proceso pueda leer — los clientes de sincronización bloquean archivos
    mientras los suben.
@@ -96,22 +96,22 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
 | Qué | Límite | Consecuencia de pasarse |
 |---|---|---|
 | Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Actualmente usamos ~340 ms |
-| Tamaño del relevo inyectado | 10.000 caracteres | Claude Code manda una ruta en vez del contenido. `MAX_CARACTERES` está en 6.000 |
+| Tamaño del relevo inyectado | 10.000 caracteres | Claude Code manda una ruta en vez del contenido. `MAX_CHARS` está en 6.000 |
 | Lectura del transcript | 8 MB por corrida | Protege el presupuesto de latencia |
 | Limpieza de huérfanos | 1 vez al día | Listar ramas es otro subproceso de git |
 
-Si tocas `capturar.mjs`, mide la latencia antes y después.
+Si tocas `capture.mjs`, mide la latencia antes y después.
 
 ## Estructura
 
 ```
-src/capturar.mjs      hook de captura — orquesta, no contiene lógica
-src/leer.mjs          hook de inyección — único código en el camino crítico
-src/instalar.mjs      init / doctor / uninstall
-src/lib/rutas.mjs     rutas, ramas, lock por mkdir, detección de entorno
-src/lib/hechos.mjs    extracción desde git y transcript
-src/lib/secretos.mjs  filtro de secretos y rutas excluidas
-src/lib/relevo.mjs    render, firma HMAC, escritura atómica, presupuesto
+src/capture.mjs      hook de captura — orquesta, no contiene lógica
+src/inject.mjs          hook de inyección — único código en el camino crítico
+src/cli.mjs      init / doctor / uninstall
+src/lib/paths.mjs     rutas, ramas, lock por mkdir, detección de entorno
+src/lib/facts.mjs    extracción desde git y transcript
+src/lib/secrets.mjs  filtro de secretos y rutas excluidas
+src/lib/relay.mjs    render, firma HMAC, escritura atómica, presupuesto
 skill/SKILL.md        instrucciones del comando /relevo
 ```
 
@@ -139,14 +139,21 @@ Regla, para que nadie la rompa sin querer:
 |---|---|
 | Subcomandos y flags (`init`, `probe --clean`) | **inglés** |
 | Claves de `chaski.json` (`redact`, `pruneAfterDays`) | **inglés** |
-| Identificadores internos (`escribirAtomico`, `hechosGit`) | español |
+| Identificadores internos (`writeAtomic`, `hechosGit`) | español |
 | Comentarios, documentación y mensajes al usuario | español |
 | Léxico del producto (`chaski`, `.tambo/`, `relevo`) | español, es identidad |
 
-La razón del corte ahí: la API pública la lee cualquiera que instale el
-paquete desde npm, y los hooks con los que integra ya están en inglés
-(`SessionStart`, `Stop`, `SubagentStop`). El interior lo lee quien contribuye,
-y ahí el español no estorba.
+La razón del corte: todo lo que alguien pueda nombrar desde fuera —un flag,
+una clave, un módulo, un campo del estado— va en inglés, igual que los hooks
+con los que integra (`SessionStart`, `Stop`, `SubagentStop`). Las variables
+locales dentro de una función no las nombra nadie desde fuera.
+
+Quedan algunas locales en español de antes del cambio. **No las renombres en
+masa**: se intentó dos veces con script y las dos veces rompió el código, una
+porque el reemplazo entró en los textos que ve el usuario («1 archivo(s) sin
+commitear» quedó «1 file(s)») y otra porque dejó un objeto con la declaración
+renombrada y la lectura sin renombrar. El código nuevo en inglés, y lo viejo
+converge solo.
 
 **Nada de caracteres no ASCII en identificadores, claves, flags o nombres de
 archivo.** No es purismo: `git` escapa en octal cualquier ruta con acentos, y

@@ -109,9 +109,9 @@ líneas de JavaScript sin dependencias:
 git clone https://github.com/cristobalbn/chaski.git
 cd chaski
 npm run check          # verifica la sintaxis; no hay build
-npm test               # 91 tests, sin dependencias
+npm test               # 92 tests, sin dependencias
 cd ../tu-proyecto
-node ../chaski/src/instalar.mjs init
+node ../chaski/src/cli.mjs init
 ```
 
 ### Qué hace `init`
@@ -231,9 +231,9 @@ eso el modelo es el último recurso y no el primero.
 
 | Archivo | Cuándo corre | Qué hace |
 |---|---|---|
-| `src/capturar.mjs` | hooks `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | Lee el transcript desde una marca de agua y git; escribe `relevo.md` y `estado.json` |
-| `src/leer.mjs` | hook `SessionStart` | Imprime el relevo; lo que imprime entra al contexto del agente |
-| `src/instalar.mjs` | a mano | `init`, `doctor`, `uninstall` |
+| `src/capture.mjs` | hooks `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | Lee el transcript desde una marca de agua y git; escribe `relevo.md` y `estado.json` |
+| `src/inject.mjs` | hook `SessionStart` | Imprime el relevo; lo que imprime entra al contexto del agente |
+| `src/cli.mjs` | a mano | `init`, `doctor`, `uninstall` |
 | `skill/SKILL.md` | con `/relevo` | Instrucciones para que el agente escriba la narrativa |
 
 Archivos que genera en tu proyecto:
@@ -397,7 +397,7 @@ El más importante: **cero dependencias de runtime**. La herramienta se ejecuta
 sola en cada turno, así que un árbol de npm sería superficie de ataque.
 
 Agregar soporte para otro CLI es un archivo en `src/lib/` más una entrada en el
-mapa `CLIS` de `src/instalar.mjs`.
+mapa `CLIS` de `src/cli.mjs`.
 
 ## Soporte
 

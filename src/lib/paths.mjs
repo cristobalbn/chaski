@@ -17,29 +17,29 @@ export function tambo(cwd) {
 }
 
 /**
- * Slug seguro para nombre de carpeta a partir de una rama git.
+ * Slug seguro para name de carpeta a partir de una rama git.
  *
- * Lleva un sufijo con un hash corto del nombre original porque el slug solo
+ * Lleva un sufijo con un hash corto del name original porque el slug solo
  * no es único: `feat/a-b` y `feat-a-b` producían el mismo texto y compartían
  * el relevo, igual que dos ramas largas que difirieran después del carácter
  * 80. El sufijo mantiene la carpeta legible y la hace inequívoca.
  */
-export function slugRama(rama) {
-  const nombre = rama || 'sin-rama';
-  const base = nombre
+export function branchSlug(rama) {
+  const name = rama || 'sin-rama';
+  const base = name
     .replace(/[^a-zA-Z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60) || 'sin-rama';
 
-  // El sufijo solo va cuando hubo transformación, que es cuando puede haber
+  // El sufijo solo va at hubo transformación, que es at puede haber
   // ambigüedad. Así `main` sigue siendo `main` —la carpeta queda legible en
   // el caso habitual— y únicamente los nombres con barras, caracteres raros
   // o más de 60 letras reciben el desambiguador.
-  return base === nombre ? base : `${base}-${huella(nombre)}`;
+  return base === name ? base : `${base}-${fingerprint(name)}`;
 }
 
-/** Hash corto y estable de un nombre, para desambiguar slugs. */
-function huella(texto) {
+/** Hash corto y estable de un name, para desambiguar slugs. */
+function fingerprint(texto) {
   // FNV-1a de 32 bits: suficiente para distinguir nombres de rama, y no
   // requiere importar node:crypto en el camino caliente de cada captura.
   let h = 0x811c9dc5;
@@ -51,7 +51,7 @@ function huella(texto) {
 }
 
 /** Rama actual del árbol en cwd, o null si no hay repo. */
-export function rama(cwd) {
+export function currentBranch(cwd) {
   return git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']);
 }
 
@@ -78,17 +78,17 @@ export function git(cwd, args, timeout = 4000) {
 }
 
 /** Directorio de estado de la rama activa. El relevo sigue a la rama, no a la carpeta. */
-export function dirRama(cwd) {
-  const dir = join(tambo(cwd), 'ramas', slugRama(rama(cwd)));
+export function branchDir(cwd) {
+  const dir = join(tambo(cwd), 'branches', branchSlug(currentBranch(cwd)));
   mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-export function rutaRelevo(cwd) { return join(dirRama(cwd), 'relevo.md'); }
-export function rutaEstado(cwd) { return join(dirRama(cwd), 'estado.json'); }
+export function relayPath(cwd) { return join(branchDir(cwd), 'relevo.md'); }
+export function statePath(cwd) { return join(branchDir(cwd), 'estado.json'); }
 
 /** Config y estado global de chaski, fuera de cualquier proyecto. */
-export function dirGlobal() {
+export function globalDir() {
   const dir = join(homedir(), '.chaski');
   mkdirSync(dir, { recursive: true });
   return dir;
@@ -99,7 +99,7 @@ export function dirGlobal() {
  * no hace falta nada más. Devuelve una función para liberarlo, o null si otro
  * proceso lo tiene. Un lock más viejo que maxEdadMs se considera huérfano.
  */
-export function tomarLock(cwd, maxEdadMs = 30000) {
+export function acquireLock(cwd, maxEdadMs = 30000) {
   const lock = join(tambo(cwd), '.lock');
   const crear = () => { mkdirSync(lock); };
   try {
@@ -121,8 +121,8 @@ export function tomarLock(cwd, maxEdadMs = 30000) {
 }
 
 /** Días por defecto antes de borrar el relevo de una rama que ya no existe. */
-export const DIAS_SOLO_HECHOS = 30;
-export const DIAS_CON_NARRATIVA = 90;
+export const DAYS_FACTS_ONLY = 30;
+export const DAYS_WITH_NARRATIVE = 90;
 
 /**
  * Borra los relevos de ramas que ya no existen en git.
@@ -137,7 +137,7 @@ export const DIAS_CON_NARRATIVA = 90;
  *   - La NARRATIVA no se recupera. Existe porque alguien la escribió, costó
  *     un turno de un modelo e incluye el juicio de una persona.
  *
- * Así que los relevos con narrativa viven el triple. Y `dias = 0` desactiva
+ * Así que los relevos con narrative viven el triple. Y `days = 0` desactiva
  * la limpieza: la tolerancia a la basura es una preferencia legítima.
  *
  * Dos resguardos más: solo se borra lo que git confirma que no existe, y una
@@ -145,28 +145,28 @@ export const DIAS_CON_NARRATIVA = 90;
  *
  * Devuelve los nombres borrados.
  */
-export function limpiarRelevosHuerfanos(cwd, opciones = {}) {
+export function pruneOrphanRelays(cwd, opciones = {}) {
   // Compatibilidad: un número suelto se interpreta como los días base.
-  const o = typeof opciones === 'number' ? { soloHechos: opciones } : opciones;
-  const diasHechos = o.soloHechos ?? DIAS_SOLO_HECHOS;
-  const diasNarrativa = o.conNarrativa ?? Math.max(diasHechos * 3, DIAS_CON_NARRATIVA);
+  const o = typeof opciones === 'number' ? { factsOnly: opciones } : opciones;
+  const diasHechos = o.factsOnly ?? DAYS_FACTS_ONLY;
+  const diasNarrativa = o.withNarrative ?? Math.max(diasHechos * 3, DAYS_WITH_NARRATIVE);
 
   const borrados = [];
   if (diasHechos === 0) return borrados; // limpieza desactivada
   try {
-    const dirRamas = join(tambo(cwd), 'ramas');
+    const dirRamas = join(tambo(cwd), 'branches');
     if (!existsSync(dirRamas)) return borrados;
 
     // Si no se puede listar las ramas, no se borra nada: ante la duda, queda.
     const salida = git(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
     if (salida === null) return borrados;
-    const vivas = new Set(salida.split('\n').filter(Boolean).map(slugRama));
+    const vivas = new Set(salida.split('\n').filter(Boolean).map(branchSlug));
 
     for (const entrada of readdirSync(dirRamas, { withFileTypes: true })) {
       if (!entrada.isDirectory() || vivas.has(entrada.name)) continue;
       const ruta = join(dirRamas, entrada.name);
       try {
-        const tieneNarrativa = !!(leerJson(join(ruta, 'estado.json'), {}) ?? {}).narrativa;
+        const tieneNarrativa = !!(readJson(join(ruta, 'estado.json'), {}) ?? {}).narrative;
         const plazo = tieneNarrativa ? diasNarrativa : diasHechos;
         if (statSync(ruta).mtimeMs > Date.now() - plazo * 86_400_000) continue;
         rmSync(ruta, { recursive: true, force: true });
@@ -178,21 +178,21 @@ export function limpiarRelevosHuerfanos(cwd, opciones = {}) {
 }
 
 /** Relevos cuya rama ya no existe, sin borrar nada. Para `doctor`. */
-export function relevosHuerfanos(cwd) {
+export function orphanRelays(cwd) {
   try {
-    const dirRamas = join(tambo(cwd), 'ramas');
+    const dirRamas = join(tambo(cwd), 'branches');
     if (!existsSync(dirRamas)) return [];
     const salida = git(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
     if (salida === null) return [];
-    const vivas = new Set(salida.split('\n').filter(Boolean).map(slugRama));
+    const vivas = new Set(salida.split('\n').filter(Boolean).map(branchSlug));
     return readdirSync(dirRamas, { withFileTypes: true })
       .filter((e) => e.isDirectory() && !vivas.has(e.name))
       .map((e) => {
         const ruta = join(dirRamas, e.name);
-        let dias = 0;
-        try { dias = (Date.now() - statSync(ruta).mtimeMs) / 86_400_000; } catch {}
-        const conNarrativa = !!(leerJson(join(ruta, 'estado.json'), {}) ?? {}).narrativa;
-        return { nombre: e.name, dias: Math.round(dias), conNarrativa };
+        let days = 0;
+        try { days = (Date.now() - statSync(ruta).mtimeMs) / 86_400_000; } catch {}
+        const withNarrative = !!(readJson(join(ruta, 'estado.json'), {}) ?? {}).narrative;
+        return { name: e.name, days: Math.round(days), withNarrative };
       });
   } catch {
     return [];
@@ -200,7 +200,7 @@ export function relevosHuerfanos(cwd) {
 }
 
 /** ¿El proyecto vive en una carpeta sincronizada? Esos clientes bloquean archivos al subirlos. */
-export function carpetaSincronizada(cwd) {
+export function syncedFolder(cwd) {
   const p = resolve(cwd).replace(/\\/g, '/');
   for (const marca of ['OneDrive', 'Dropbox', 'Google Drive', 'iCloudDrive']) {
     if (p.includes('/' + marca)) return marca;
@@ -215,7 +215,7 @@ export function carpetaSincronizada(cwd) {
  * negativo. Como respaldo se lee el .gitignore, para que doctor no reporte
  * un problema que no existe.
  */
-export function tamboIgnorado(cwd) {
+export function tamboIsIgnored(cwd) {
   for (const arg of [TAMBO + '/', TAMBO]) {
     try {
       execFileSync('git', ['check-ignore', '-q', arg], { cwd, stdio: 'ignore', timeout: 3000 });
@@ -233,23 +233,23 @@ export function tamboIgnorado(cwd) {
   }
 }
 
-export function leerJson(ruta, porDefecto = null) {
+export function readJson(ruta, porDefecto = null) {
   try { return JSON.parse(readFileSync(ruta, 'utf8')); } catch { return porDefecto; }
 }
 
 /**
  * Lee un JSON que se va a **modificar y volver a escribir**.
  *
- * Distinto de `leerJson`: si el archivo existe pero no se puede parsear,
+ * Distinto de `readJson`: si el archivo existe pero no se puede parsear,
  * lanza en lugar de devolver un objeto vacío. Esa diferencia evita el peor
  * error posible del proyecto — un `settings.json` con una coma final o un
  * comentario hacía que `init` lo reemplazara por completo, y el usuario
  * perdía su `model`, su `theme` y sus `permissions` en el primer comando que
  * corría.
  *
- * Para leer algo que solo se consulta, `leerJson` sigue siendo lo correcto.
+ * Para leer algo que solo se consulta, `readJson` sigue siendo lo correcto.
  */
-export function leerJsonParaEscribir(ruta) {
+export function readJsonForWrite(ruta) {
   if (!existsSync(ruta)) return {};
   const bruto = readFileSync(ruta, 'utf8');
   if (!bruto.trim()) return {};

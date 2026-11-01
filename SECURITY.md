@@ -49,7 +49,7 @@ rotulado como no verificado en lugar de pasar por legítimo. Además `.tambo/`
 está en `.gitignore`, así que no viaja entre máquinas.
 
 **Captura accidental de secretos.** El transcript contiene todo lo que pasó por
-la sesión. El filtro de `src/lib/secretos.mjs` corre antes de escribir a disco,
+la sesión. El filtro de `src/lib/secrets.mjs` corre antes de escribir a disco,
 no solo antes de enviar algo. Si encuentras un formato de credencial que se nos
 escapa, es un reporte de seguridad válido y lo agradecemos.
 
