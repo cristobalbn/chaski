@@ -193,6 +193,87 @@ describe('la marca de agua pertenece a una sesión', () => {
   });
 });
 
+describe('volver después de que otra persona trabajó', () => {
+  // El escenario: trabajas, dejas algo a medias, te vas una semana, y tu
+  // compañero termina justo eso. El relevo sigue afirmando que falta. Avisar
+  // "el repositorio cambió" no alcanza: hay que decir quién tocó qué, y sobre
+  // todo si toca los archivos que la narrativa declara pendientes.
+  const dir = mkdtempSync(join(tmpdir(), 'chaski-vac-'));
+  const g = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+
+  const inyectado = () => execFileSync(process.execPath,
+    [join(AQUI, '..', 'src', 'leer.mjs'), 'SessionStart', 'claude-code'],
+    { input: JSON.stringify({ cwd: dir }), encoding: 'utf8' });
+
+  test('avisa quién cambió qué, y que lo pendiente puede estar resuelto', () => {
+    try {
+      g('init', '-q');
+      g('config', 'user.email', 'yo@t'); g('config', 'user.name', 'Yo');
+      writeFileSync(join(dir, 'refresh.ts'), 'inicial\n');
+      writeFileSync(join(dir, '.gitignore'), '.tambo/\n');
+      g('add', '-A'); g('commit', '-qm', 'inicial');
+
+      const head = g('rev-parse', '--short', 'HEAD').trim();
+
+      // Relevo de hace una semana, con un pendiente que nombra un archivo.
+      const hace7dias = new Date(Date.now() - 7 * 86_400_000).toISOString();
+      const estadoDir = join(dir, '.tambo', 'ramas', 'main');
+      execFileSync(process.execPath, ['-e',
+        `require('fs').mkdirSync(${JSON.stringify(estadoDir)},{recursive:true})`]);
+      const estado = {
+        escrito: hace7dias, agente: 'claude-code', head,
+        narrativa: 'A medias: falta invalidar el token viejo en refresh.ts:41.',
+        narrativaAutor: 'claude-code', narrativaEscrita: hace7dias,
+        hechos: { esRepo: true, rama: 'main', sucios: [], commits: [] },
+      };
+      writeFileSync(join(estadoDir, 'estado.json'), JSON.stringify(estado));
+      writeFileSync(join(estadoDir, 'relevo.md'), '# Relevo viejo\n');
+
+      // La compañera termina justo lo que estaba pendiente.
+      g('config', 'user.email', 'ana@t'); g('config', 'user.name', 'Ana Perez');
+      writeFileSync(join(dir, 'refresh.ts'), 'inicial\nrotacion lista\n');
+      g('add', '-A'); g('commit', '-qm', 'Cerrar la rotacion');
+
+      const salida = inyectado();
+
+      assert.match(salida, /ATENCIÓN/, 'no avisó de la deriva');
+      assert.match(salida, /Ana Perez/, 'no dijo quién hizo los cambios');
+      assert.match(salida, /7 día\(s\)/, 'no avisó de la antigüedad');
+      assert.match(salida, /refresh\.ts/, 'no señaló el archivo mencionado en la narrativa');
+      assert.match(salida, /ya esté resuelto/, 'no avisó que lo pendiente puede estar hecho');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('re-renderiza si el estado trae una narrativa que el Markdown no tiene', () => {
+    // Pasa al escribir /relevo: el Markdown se renderiza al capturar, así que
+    // una narrativa posterior no aparecería hasta la captura siguiente. Si la
+    // sesión se corta ahí, se perdería lo más valioso del relevo.
+    const d2 = mkdtempSync(join(tmpdir(), 'chaski-narr-'));
+    try {
+      const ed = join(d2, '.tambo', 'ramas', 'sin-rama');
+      execFileSync(process.execPath, ['-e',
+        `require('fs').mkdirSync(${JSON.stringify(ed)},{recursive:true})`]);
+      writeFileSync(join(ed, 'estado.json'), JSON.stringify({
+        escrito: new Date().toISOString(), agente: 'test',
+        narrativa: 'Decidido: refresh token en cookie httpOnly por XSS.',
+        narrativaAutor: 'claude-code', narrativaEscrita: new Date().toISOString(),
+        hechos: { esRepo: false, sucios: [], commits: [] },
+      }));
+      writeFileSync(join(ed, 'relevo.md'), '# Relevo sin narrativa\n');
+
+      const salida = execFileSync(process.execPath,
+        [join(AQUI, '..', 'src', 'leer.mjs'), 'SessionStart', 'claude-code'],
+        { input: JSON.stringify({ cwd: d2 }), encoding: 'utf8' });
+
+      assert.match(salida, /cookie httpOnly/, 'perdió la narrativa recién escrita');
+    } finally {
+      rmSync(d2, { recursive: true, force: true });
+    }
+  });
+});
+
 test('un formato desconocido no lanza', () => {
   const dir = mkdtempSync(join(tmpdir(), 'chaski-test-'));
   try {
