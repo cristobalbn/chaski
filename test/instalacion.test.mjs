@@ -23,11 +23,33 @@ import { execFileSync, spawn } from 'node:child_process';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const SRC = join(AQUI, '..', 'src');
 
-/** Un proyecto git de usar y tirar, con su propio HOME. */
+/**
+ * CLIs de mentira en un directorio propio, para poner al frente del PATH.
+ *
+ * `init` solo registra hooks en los CLIs que detecta instalados, y en una
+ * máquina de CI no hay ninguno. Sin esto los tests pasaban solo donde el
+ * desarrollador tenía los tres — exactamente la clase de dependencia del
+ * entorno que el CI encontró en su primera corrida.
+ */
+function clisDeMentira(dir) {
+  mkdirSync(dir, { recursive: true });
+  const win = process.platform === 'win32';
+  for (const nombre of ['claude', 'codex', 'agy']) {
+    if (win) {
+      writeFileSync(join(dir, nombre + '.cmd'), '@echo off\r\nexit /b 0\r\n');
+    } else {
+      writeFileSync(join(dir, nombre), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    }
+  }
+  return dir;
+}
+
+/** Un proyecto git de usar y tirar, con su propio HOME y sus CLIs falsos. */
 function montar(prefijo) {
   const raiz = mkdtempSync(join(tmpdir(), prefijo));
   const proyecto = join(raiz, 'proyecto');
   const casa = join(raiz, 'casa');
+  const bin = clisDeMentira(join(raiz, 'bin'));
   mkdirSync(proyecto, { recursive: true });
   mkdirSync(casa, { recursive: true });
 
@@ -41,12 +63,19 @@ function montar(prefijo) {
   g('add', '-A');
   g('commit', '-qm', 'inicial');
 
-  const entorno = { ...process.env, HOME: casa, USERPROFILE: casa };
+  const entorno = {
+    ...process.env,
+    HOME: casa,
+    USERPROFILE: casa,
+    // Los CLIs falsos van al frente, para que `instalado()` los encuentre.
+    PATH: bin + (process.platform === 'win32' ? ';' : ':') + process.env.PATH,
+    Path: bin + (process.platform === 'win32' ? ';' : ':') + (process.env.Path ?? process.env.PATH),
+  };
   const correr = (...args) => execFileSync(process.execPath,
     [join(SRC, 'instalar.mjs'), ...args],
     { cwd: proyecto, env: entorno, encoding: 'utf8' });
 
-  return { raiz, proyecto, casa, g, entorno, correr };
+  return { raiz, proyecto, casa, bin, g, entorno, correr };
 }
 
 describe('uninstall revierte lo que init tocó', () => {
