@@ -35,7 +35,18 @@ function main() {
     if (!liberar) return ok();
 
     const previo = leerJson(rutaEstado(cwd), {}) ?? {};
-    const t = hechosTranscript(ev.transcript_path, previo.offset ?? 0, config);
+
+    // La marca de agua pertenece a UNA sesión y a UN transcript. Si cambia
+    // cualquiera de los dos, se lee desde el principio: arrastrar el offset
+    // de ayer a un transcript nuevo haría que se saltee todo el trabajo de
+    // hoy hasta ese byte. El caso aparece al volver a trabajar al día
+    // siguiente, que es justo cuando el relevo importa.
+    const mismaSesion = previo.sesion && ev.session_id && previo.sesion === ev.session_id;
+    const mismoTranscript = previo.transcript && ev.transcript_path
+      && previo.transcript === ev.transcript_path;
+    const desde = (mismaSesion && mismoTranscript) ? (previo.offset ?? 0) : 0;
+
+    const t = hechosTranscript(ev.transcript_path, desde, config);
     const g = hechosGit(cwd, config);
 
     const estado = {
@@ -43,12 +54,16 @@ function main() {
       escrito: new Date().toISOString(),
       agente: ev.__agente ?? 'desconocido',
       sesion: ev.session_id ?? null,
+      // La ruta del transcript se guarda para poder invalidar la marca de agua.
+      transcript: ev.transcript_path ?? null,
       offset: t.offset,
-      turnos: (previo.turnos ?? 0) + t.turnos,
+      // Los turnos se acumulan dentro de una sesión; en una nueva se reinician,
+      // o el relevo diría "1.200 turnos" de trabajo que ya no está en contexto.
+      turnos: (mismaSesion ? (previo.turnos ?? 0) : 0) + t.turnos,
       hechos: g,
       // HEAD al momento de escribir: leer.mjs lo compara para detectar deriva.
       head: g.esRepo ? (gitHead(cwd) ?? null) : null,
-      comandos: fusionar(previo.comandos, t.comandos),
+      comandos: fusionar(mismaSesion ? previo.comandos : [], t.comandos),
       ultimoArchivo: ultimoTocado(g, previo),
       // La narrativa es del agente, no de este script. Se preserva tal cual.
       narrativa: previo.narrativa ?? null,

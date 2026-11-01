@@ -145,6 +145,54 @@ test('un transcript truncado se relee desde el principio', () => {
   assert.ok(r.turnos > 0, 'no recuperó nada tras la rotación');
 });
 
+describe('la marca de agua pertenece a una sesión', () => {
+  // El caso real: hoy la sesión deja un offset de 3 MB. Mañana se abre una
+  // sesión nueva cuyo transcript crece más que eso. Si se arrastra el offset,
+  // se saltea todo el trabajo del día siguiente — y es justo cuando el relevo
+  // importa. El estado guarda sesión y transcript para poder invalidarla.
+  const dir = mkdtempSync(join(tmpdir(), 'chaski-ses-'));
+  const correr = (payload) => {
+    const r = execFileSync(process.execPath,
+      [join(AQUI, '..', 'src', 'capturar.mjs'), 'Stop', 'test'],
+      { input: JSON.stringify(payload), encoding: 'utf8' });
+    return JSON.parse(readFileSync(
+      join(dir, '.tambo', 'ramas', 'sin-rama', 'estado.json'), 'utf8'));
+  };
+
+  test('una sesión nueva lee el transcript desde el principio', () => {
+    try {
+      const t1 = join(dir, 'sesion-de-hoy.jsonl');
+      const t2 = join(dir, 'sesion-de-manana.jsonl');
+      const turno = (txt) => JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: txt }] },
+      }) + '\n';
+
+      // Hoy deja una marca de agua moderada.
+      writeFileSync(t1, turno('x'.repeat(200)).repeat(10));
+      const hoy = correr({ cwd: dir, session_id: 'sesion-A', transcript_path: t1, hook_event_name: 'Stop' });
+      assert.equal(hoy.turnos, 10);
+      const marcaDeAyer = hoy.offset;
+      assert.ok(marcaDeAyer > 1000);
+
+      // Mañana: sesión distinta y transcript MÁS GRANDE que la marca de ayer.
+      // Este es el caso que reproduce el bug: si se arrastra el offset, se
+      // leería desde el byte `marcaDeAyer` del archivo nuevo y se perdería
+      // todo el trabajo anterior a ese punto. Con un transcript más chico no
+      // se reproduce, porque ahí actúa la salvaguarda de rotación.
+      writeFileSync(t2, turno('trabajo de mañana ' + 'y'.repeat(200)).repeat(40));
+      const manana = correr({ cwd: dir, session_id: 'sesion-B', transcript_path: t2, hook_event_name: 'Stop' });
+
+      assert.equal(manana.sesion, 'sesion-B', 'no registró la sesión nueva');
+      assert.equal(manana.transcript, t2, 'no registró el transcript nuevo');
+      assert.equal(manana.turnos, 40,
+        `leyó ${manana.turnos} de 40 turnos: arrastró la marca de agua de la sesión anterior`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 test('un formato desconocido no lanza', () => {
   const dir = mkdtempSync(join(tmpdir(), 'chaski-test-'));
   try {
