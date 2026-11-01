@@ -14,7 +14,7 @@ import { join, resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { dirGlobal, leerJson, carpetaSincronizada, tamboIgnorado, rutaRelevo, rutaEstado, relevosHuerfanos, TAMBO } from './lib/rutas.mjs';
+import { dirGlobal, leerJson, leerJsonParaEscribir, carpetaSincronizada, tamboIgnorado, rutaRelevo, rutaEstado, relevosHuerfanos, TAMBO } from './lib/rutas.mjs';
 import { escribirAtomico, firmaValida } from './lib/relevo.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -138,6 +138,7 @@ function init() {
   }
 
   console.log('');
+  let fallos = 0;
   for (const nombre of detectados) {
     const cli = CLIS[nombre];
     try {
@@ -147,6 +148,7 @@ function init() {
       else if (cli.formato === 'toml-codex') instalarCodex(cli.config);
       console.log(`  ${pad(nombre)} hooks registrados  →  ${cli.config}`);
     } catch (e) {
+      fallos++;
       console.log(`  ${pad(nombre)} FALLÓ: ${e?.message ?? e}`);
     }
   }
@@ -155,6 +157,15 @@ function init() {
   instalarSkill(CWD);
   asegurarAgentsMd(CWD);
   resumenFinal(detectados);
+
+  // Un CLI que no se pudo configurar tiene que verse en el código de salida,
+  // no solo en una línea del informe: si un agente o un script corre init,
+  // el exit 0 le dice que todo salió bien.
+  if (fallos) {
+    console.error(`
+chaski: ${fallos} CLI(s) no se pudieron configurar. Ver arriba.`);
+    process.exitCode = 1;
+  }
 }
 
 /**
@@ -219,7 +230,7 @@ function resumenFinal(detectados) {
 }
 
 function instalarClaude(ruta) {
-  const s = leerJson(ruta, {}) ?? {};
+  const s = leerJsonParaEscribir(ruta);
   s.hooks = s.hooks ?? {};
   const poner = (evento, script) => {
     const comando = cmd(script, evento, 'claude code');
@@ -241,7 +252,7 @@ function instalarClaude(ruta) {
 
 function instalarAgy(ruta) {
   mkdirSync(dirname(ruta), { recursive: true });
-  const h = leerJson(ruta, {}) ?? {};
+  const h = leerJsonParaEscribir(ruta);
   // El archivo de agy se organiza por propietario: registramos bajo "chaski"
   // sin pisar lo de otras herramientas instaladas.
   h.chaski = {
@@ -432,7 +443,7 @@ function uninstall() {
         if (cli.formato === 'toml-codex') {
           escribirAtomico(cli.config, quitarBloque(readFileSync(cli.config, 'utf8')).trimEnd() + '\n');
         } else {
-          const s = leerJson(cli.config, {}) ?? {};
+          const s = leerJsonParaEscribir(cli.config);
           if (cli.formato === 'json-agy') delete s.chaski;
           else if (s.hooks) {
             for (const ev of Object.keys(s.hooks)) {
@@ -494,7 +505,7 @@ function probe(sub) {
         ? ['SessionStart', 'Stop', 'PostInvocation']
         : ['SessionStart', 'Stop', 'SessionEnd'];
       if (cli.formato === 'json-claude') {
-        const s = leerJson(cli.config, {}) ?? {};
+        const s = leerJsonParaEscribir(cli.config);
         s.hooks = s.hooks ?? {};
         for (const ev of eventos) {
           s.hooks[ev] = [...(s.hooks[ev] ?? []).filter((g) => !JSON.stringify(g).includes('sonda')),
@@ -503,7 +514,7 @@ function probe(sub) {
         escribirAtomico(cli.config, JSON.stringify(s, null, 2));
       } else if (cli.formato === 'json-agy') {
         mkdirSync(dirname(cli.config), { recursive: true });
-        const h = leerJson(cli.config, {}) ?? {};
+        const h = leerJsonParaEscribir(cli.config);
         h.chaskiProbe = Object.fromEntries(eventos.map((ev) =>
           [ev, [{ type: 'command', command: cmdSonda(ev, nombre, true), timeout: 15 }]]));
         escribirAtomico(cli.config, JSON.stringify(h, null, 2));
@@ -560,7 +571,7 @@ function probeLimpiar() {
       else if (existsSync(cli.config)) {
         if (cli.formato === 'toml-codex') escribirAtomico(cli.config, quitarBloque(readFileSync(cli.config, 'utf8')).trimEnd() + '\n');
         else {
-          const s = leerJson(cli.config, {}) ?? {};
+          const s = leerJsonParaEscribir(cli.config);
           delete s.chaskiProbe;
           if (s.hooks) for (const ev of Object.keys(s.hooks)) {
             s.hooks[ev] = (s.hooks[ev] ?? []).filter((g) => !JSON.stringify(g).includes('sonda'));

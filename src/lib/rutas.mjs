@@ -16,13 +16,38 @@ export function tambo(cwd) {
   return dir;
 }
 
-/** Slug seguro para nombre de carpeta a partir de una rama git. */
+/**
+ * Slug seguro para nombre de carpeta a partir de una rama git.
+ *
+ * Lleva un sufijo con un hash corto del nombre original porque el slug solo
+ * no es único: `feat/a-b` y `feat-a-b` producían el mismo texto y compartían
+ * el relevo, igual que dos ramas largas que difirieran después del carácter
+ * 80. El sufijo mantiene la carpeta legible y la hace inequívoca.
+ */
 export function slugRama(rama) {
-  const s = (rama || 'sin-rama')
+  const nombre = rama || 'sin-rama';
+  const base = nombre
     .replace(/[^a-zA-Z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-  return s || 'sin-rama';
+    .slice(0, 60) || 'sin-rama';
+
+  // El sufijo solo va cuando hubo transformación, que es cuando puede haber
+  // ambigüedad. Así `main` sigue siendo `main` —la carpeta queda legible en
+  // el caso habitual— y únicamente los nombres con barras, caracteres raros
+  // o más de 60 letras reciben el desambiguador.
+  return base === nombre ? base : `${base}-${huella(nombre)}`;
+}
+
+/** Hash corto y estable de un nombre, para desambiguar slugs. */
+function huella(texto) {
+  // FNV-1a de 32 bits: suficiente para distinguir nombres de rama, y no
+  // requiere importar node:crypto en el camino caliente de cada captura.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < texto.length; i++) {
+    h ^= texto.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36).padStart(6, '0').slice(-6);
 }
 
 /** Rama actual del árbol en cwd, o null si no hay repo. */
@@ -36,10 +61,16 @@ export function rama(cwd) {
  */
 export function git(cwd, args, timeout = 4000) {
   try {
-    return execFileSync('git', args, {
+    return execFileSync('git', [
+      // Sin esto, git escapa en octal cualquier ruta con acentos: un
+      // `café.txt` llegaba al relevo como `caf\303\251.txt`. Importa en
+      // cualquier proyecto en español.
+      '-c', 'core.quotepath=false',
+      ...args,
+    ], {
       cwd, encoding: 'utf8', timeout,
       stdio: ['ignore', 'pipe', 'ignore'],
-      maxBuffer: 4 * 1024 * 1024,
+      maxBuffer: 16 * 1024 * 1024,
     }).trim();
   } catch {
     return null;
@@ -204,6 +235,33 @@ export function tamboIgnorado(cwd) {
 
 export function leerJson(ruta, porDefecto = null) {
   try { return JSON.parse(readFileSync(ruta, 'utf8')); } catch { return porDefecto; }
+}
+
+/**
+ * Lee un JSON que se va a **modificar y volver a escribir**.
+ *
+ * Distinto de `leerJson`: si el archivo existe pero no se puede parsear,
+ * lanza en lugar de devolver un objeto vacío. Esa diferencia evita el peor
+ * error posible del proyecto — un `settings.json` con una coma final o un
+ * comentario hacía que `init` lo reemplazara por completo, y el usuario
+ * perdía su `model`, su `theme` y sus `permissions` en el primer comando que
+ * corría.
+ *
+ * Para leer algo que solo se consulta, `leerJson` sigue siendo lo correcto.
+ */
+export function leerJsonParaEscribir(ruta) {
+  if (!existsSync(ruta)) return {};
+  const bruto = readFileSync(ruta, 'utf8');
+  if (!bruto.trim()) return {};
+  try {
+    // Se quita el BOM: JSON.parse no lo tolera y es frecuente en Windows.
+    return JSON.parse(bruto.replace(/^﻿/, ''));
+  } catch (e) {
+    throw new Error(
+      `${ruta} no es JSON válido (${e.message}).\n` +
+      '  chaski no lo va a tocar: reescribirlo borraría tu configuración.\n' +
+      '  Corrige el archivo y vuelve a intentar.');
+  }
 }
 
 export { existsSync };

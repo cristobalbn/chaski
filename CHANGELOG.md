@@ -41,12 +41,24 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Promoción de los resultados de subagentes: al terminar, su conclusión sube
   al relevo del padre con atribución, y si no terminó por `end_turn` se avisa
   que puede no haber acabado. Su exploración se descarta.
-- Suite de 83 tests con `node:test`, sin dependencias: contrato de payload y
+- Suite de 88 tests con `node:test`, sin dependencias: contrato de payload y
   de transcript por CLI, corpus de 15 formatos de credencial, invariantes del
   relevo, firma, escritura atómica y lectura incremental. Los fixtures son
   sintéticos: la forma viene de capturas reales, el contenido es inventado.
 - `chaski probe`: instala una sonda que vuelca el payload crudo de los hooks de
   cada CLI, para cerrar los formatos no documentados y aportar fixtures.
+
+### Corregido en la revisión del 2026-11-01
+-  ya no reescribe una configuración que no puede parsear. Un
+   con una coma final hacía que reemplazara el archivo entero
+  y el usuario perdía su configuración en el primer comando que corría.
+- La escritura atómica ya no borra el destino para forzar el : ese
+  camino podía dejar sin relevo ni original.
+- Dos ramas distintas ya no comparten relevo ( y ).
+- Un renombre es un archivo y no dos, y las rutas con acentos son legibles.
+- El estado topa la lista de archivos sucios: miles hacían un 
+  de más de un megabyte reescrito en cada turno.
+-  termina con código distinto de cero si algún CLI falló.
 
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,

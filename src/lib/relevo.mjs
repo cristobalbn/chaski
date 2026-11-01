@@ -21,12 +21,35 @@ export const MAX_CARACTERES = 6000; // ~1.500 tokens, con margen bajo el techo d
 export function escribirAtomico(ruta, contenido) {
   const tmp = `${ruta}.${process.pid}.tmp`;
   writeFileSync(tmp, contenido, 'utf8');
+
+  // En Windows el rename falla si otro proceso tiene el destino abierto, y
+  // suele ser momentáneo: un antivirus, un cliente de sincronización, otro
+  // CLI leyendo el relevo. Se reintenta con esperas cortas.
+  //
+  // Lo que NO se hace es borrar el destino para forzar el rename. Esa era la
+  // versión anterior, y tenía un camino que perdía el relevo entero: si el
+  // rename fallaba después de borrar, no quedaba ni el original ni el
+  // temporal. Perder una captura es mucho menos grave que perder el relevo.
+  for (let intento = 0; intento < 5; intento++) {
+    try {
+      renameSync(tmp, ruta);
+      return;
+    } catch {
+      if (intento < 4) dormir(20 * (intento + 1));
+    }
+  }
+
+  try { unlinkSync(tmp); } catch {}
+  throw new Error(`no se pudo escribir ${ruta}: el destino sigue bloqueado`);
+}
+
+/** Espera sincrónica sin dependencias ni busy-loop. */
+function dormir(ms) {
   try {
-    renameSync(tmp, ruta);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
   } catch {
-    // Windows puede fallar el rename si el destino está abierto por otro proceso.
-    try { unlinkSync(ruta); renameSync(tmp, ruta); }
-    catch { try { unlinkSync(tmp); } catch {} throw new Error('no se pudo escribir ' + ruta); }
+    const hasta = Date.now() + ms;
+    while (Date.now() < hasta) { /* sin SharedArrayBuffer disponible */ }
   }
 }
 
@@ -81,14 +104,17 @@ export function render(estado) {
   L.push('');
 
   if (h.sucios?.length) {
-    L.push(`${h.sucios.length} archivo(s) sin commitear:`);
+    // El total puede ser mayor que lo guardado: el estado topa la lista para
+    // no crecer sin límite, pero el relevo debe informar el número real.
+    const total = h.sucioTotal ?? h.sucios.length;
+    L.push(`${total} archivo(s) sin commitear:`);
     L.push('');
     L.push('```');
     for (const f of h.sucios.slice(0, 20)) {
       const delta = f.nuevo ? 'nuevo' : (f.mas === null ? '' : `+${f.mas} -${f.menos}`);
-      L.push(`  ${f.ruta.padEnd(42)} ${delta}`);
+      L.push(`  ${String(f.ruta).padEnd(42)} ${delta}`);
     }
-    if (h.sucios.length > 20) L.push(`  … y ${h.sucios.length - 20} más`);
+    if (total > 20) L.push(`  … y ${total - 20} más`);
     L.push('```');
     L.push('');
   } else if (h.esRepo) {

@@ -4,7 +4,7 @@
 //
 // Los tests de contrato son los que importan de verdad: cada CLI guarda su
 // transcript en un formato propio y ninguno prometió mantenerlo entre
-// versiones. Si una actualización cambia la forma, acá se rompe la build en
+// versiones. Si una actualización cambia la forma, aquí se rompe la build en
 // lugar de fallar en silencio en la máquina de alguien.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -445,19 +445,51 @@ test('escritura atómica: no deja el archivo a medias', () => {
 });
 
 describe('slug de rama', () => {
-  for (const [entrada, esperado] of [
-    ['main', 'main'],
-    ['feat/jwt-refresh', 'feat-jwt-refresh'],
-    ['fix/ñoño con espacios', 'fix-oo-con-espacios'],
-    ['release/v1.0.0', 'release-v1.0.0'],
-    [null, 'sin-rama'],
-  ]) {
-    test(`${entrada} → ${esperado}`, () => {
-      const s = slugRama(entrada);
-      assert.ok(!/[\\/:*?"<>|]/.test(s), `el slug no sirve como nombre de carpeta: ${s}`);
-      if (entrada !== 'fix/ñoño con espacios') assert.equal(s, esperado);
-    });
-  }
+  test('un nombre que ya sirve como carpeta queda intacto', () => {
+    // El caso habitual tiene que ser legible: nadie quiere buscar su relevo
+    // en una carpeta con un hash pegado si el nombre no lo necesitaba.
+    for (const r of ['main', 'master', 'develop', 'feat-login', 'v1.0.0']) {
+      assert.equal(slugRama(r), r);
+    }
+  });
+
+  test('sirve como nombre de carpeta en cualquier sistema', () => {
+    for (const r of ['feat/jwt-refresh', 'fix/ñoño con espacios', 'a/b/c',
+      'release/v1.0.0', 'feat/#123', null, '', 'x'.repeat(200)]) {
+      const s = slugRama(r);
+      assert.ok(s.length > 0, `slug vacío para ${r}`);
+      assert.ok(s.length <= 70, `slug demasiado largo: ${s.length}`);
+      assert.ok(!/[\\/:*?"<>|]/.test(s), `el slug no sirve como carpeta: ${s}`);
+    }
+  });
+
+  test('dos ramas distintas nunca comparten slug', () => {
+    // Antes colisionaban: `feat/a-b` y `feat-a-b` daban el mismo texto, así
+    // que compartían el relevo. Igual dos nombres largos que difirieran
+    // después del carácter de corte.
+    const pares = [
+      ['feat/a-b', 'feat-a-b'],
+      ['fix/login', 'fix-login'],
+      ['a/b/c', 'a-b-c'],
+      ['feat/' + 'x'.repeat(100), 'feat/' + 'x'.repeat(101)],
+      ['tema/ñ', 'tema/n'],
+    ];
+    for (const [a, b] of pares) {
+      assert.notEqual(slugRama(a), slugRama(b), `${a} y ${b} comparten slug`);
+    }
+  });
+
+  test('el slug es estable: el mismo nombre da siempre el mismo', () => {
+    // Si no lo fuera, cada captura escribiría en una carpeta distinta.
+    for (const r of ['feat/login', 'main', 'a/b/c']) {
+      assert.equal(slugRama(r), slugRama(r));
+    }
+  });
+
+  test('sin rama tiene un nombre propio', () => {
+    assert.equal(slugRama(null), 'sin-rama');
+    assert.equal(slugRama(''), 'sin-rama');
+  });
 });
 
 describe('el relevo no crece con el tiempo', () => {
@@ -584,6 +616,73 @@ describe('el relevo no crece con el tiempo', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('hechos de git en casos que rompían', () => {
+  const conRepo = (fn) => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-git-'));
+    const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    try {
+      g('init', '-q');
+      g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+      return fn(dir, g);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  test('un renombre es un archivo, no dos', () => {
+    // `--numstat` informa renombres como `viejo.txt => nuevo.txt`. Sin
+    // desarmarlo, el relevo mostraba ese texto como si fuera un archivo
+    // **más** el destino por separado: dos entradas y una ruta inexistente.
+    conRepo((dir, g) => {
+      writeFileSync(join(dir, 'viejo.txt'), 'contenido\n');
+      g('add', '-A'); g('commit', '-qm', 'inicial');
+      g('mv', 'viejo.txt', 'nuevo.txt');
+
+      const { sucios } = hechosGit(dir, {});
+      const rutas = sucios.map((s) => s.ruta);
+      assert.deepEqual(rutas, ['nuevo.txt'], `quedó ${JSON.stringify(rutas)}`);
+      assert.ok(!rutas.some((r) => r.includes('=>')), 'dejó una ruta con "=>"');
+    });
+  });
+
+  test('las rutas con acentos son legibles', () => {
+    // git las escapa en octal por defecto: `café.txt` llegaba al relevo como
+    // `caf\303\251.txt`. Importa en cualquier proyecto en español.
+    conRepo((dir, g) => {
+      writeFileSync(join(dir, 'base.txt'), 'x');
+      g('add', '-A'); g('commit', '-qm', 'inicial');
+      writeFileSync(join(dir, 'café.txt'), 'y');
+      writeFileSync(join(dir, 'ñandú.js'), 'z');
+
+      const rutas = hechosGit(dir, {}).sucios.map((s) => s.ruta);
+      assert.ok(rutas.includes('café.txt'), `no decodificó: ${JSON.stringify(rutas)}`);
+      assert.ok(rutas.includes('ñandú.js'));
+      assert.ok(!rutas.some((r) => r.includes('\\3')), 'quedó una ruta en octal');
+    });
+  });
+
+  test('el estado no crece sin límite con muchos archivos sucios', () => {
+    // Pasaba tras un npm install sin gitignore, o generando código: miles de
+    // archivos hacían un estado.json de más de un megabyte, reescrito entero
+    // en cada turno. El relevo muestra 20, así que guardar todos era inútil.
+    conRepo((dir, g) => {
+      writeFileSync(join(dir, 'base.txt'), 'x');
+      g('add', '-A'); g('commit', '-qm', 'inicial');
+      for (let i = 0; i < 300; i++) {
+        writeFileSync(join(dir, `generado-${i}.txt`), String(i));
+      }
+
+      const h = hechosGit(dir, {});
+      assert.ok(h.sucios.length <= 50, `guardó ${h.sucios.length}, sin tope`);
+      assert.equal(h.sucioTotal, 300, 'perdió el total real');
+
+      // Y el relevo informa el número real aunque la lista esté topada.
+      const md = render({ escrito: new Date().toISOString(), agente: 't', hechos: h });
+      assert.match(md, /300 archivo\(s\)/, 'el relevo miente sobre cuántos hay');
+    });
   });
 });
 
