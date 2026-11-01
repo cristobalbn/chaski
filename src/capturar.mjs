@@ -10,7 +10,7 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { rutaEstado, rutaRelevo, leerJson, tomarLock, dirGlobal, git } from './lib/rutas.mjs';
+import { rutaEstado, rutaRelevo, leerJson, tomarLock, dirGlobal, git, limpiarRelevosHuerfanos, existsSync } from './lib/rutas.mjs';
 import { hechosGit, hechosTranscript } from './lib/hechos.mjs';
 import { render, escribirAtomico, firmar } from './lib/relevo.mjs';
 import { redactar } from './lib/secretos.mjs';
@@ -90,6 +90,7 @@ function main() {
     escribirAtomico(rutaRelevo(cwd), md);
     escribirAtomico(rutaEstado(cwd), JSON.stringify(estado, null, 2));
     latido(estado.agente);
+    limpiezaOcasional(cwd);
   } catch (e) {
     process.stderr.write(`chaski: captura omitida (${e?.message ?? e})\n`);
   } finally {
@@ -177,6 +178,26 @@ function tareasVivas(ev) {
       tipo: t.type ?? null,
     }))
     .slice(0, 6);
+}
+
+/**
+ * Limpieza de relevos de ramas borradas, una vez al día como máximo.
+ *
+ * No va en cada turno: listar las ramas es otro subproceso de git, y el
+ * presupuesto del hook `Stop` es de 1,5 s compartido. Una vez al día alcanza
+ * de sobra para algo que acumula unos KB por rama.
+ */
+function limpiezaOcasional(cwd) {
+  try {
+    const marca = join(dirGlobal(), 'ultima-limpieza');
+    const ahora = Date.now();
+    if (existsSync(marca)) {
+      const previa = parseInt(readFileSync(marca, 'utf8'), 10);
+      if (Number.isFinite(previa) && ahora - previa < 86_400_000) return;
+    }
+    escribirAtomico(marca, String(ahora));
+    limpiarRelevosHuerfanos(cwd);
+  } catch {}
 }
 
 /** Latido por CLI: doctor avisa si alguno dejó de ejecutar su hook. */

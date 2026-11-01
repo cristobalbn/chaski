@@ -3,7 +3,7 @@
 // espacios y acentos sincronizadas por OneDrive, donde se rompen los scripts
 // escritos asumiendo rutas POSIX.
 import { join, resolve } from 'node:path';
-import { mkdirSync, rmSync, statSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, statSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 
@@ -87,6 +87,65 @@ export function tomarLock(cwd, maxEdadMs = 30000) {
   }
   try { writeFileSync(join(lock, 'pid'), String(process.pid)); } catch {}
   return () => { try { rmSync(lock, { recursive: true, force: true }); } catch {} };
+}
+
+/**
+ * Borra los relevos de ramas que ya no existen en git.
+ *
+ * Sin esto, cada rama mergeada y borrada deja su relevo para siempre: en un
+ * proyecto de un año son cientos de carpetas huérfanas. Y el daño no es el
+ * espacio —son unos KB— sino que si alguien recrea una rama con el mismo
+ * nombre meses después, hereda un relevo viejo y sin relación.
+ *
+ * Dos resguardos: solo borra lo que git confirma que no existe, y solo si el
+ * relevo tiene más de `diasMinimos`. Una rama recién creada en otro worktree,
+ * o un `detached HEAD` momentáneo, no deben costarte el relevo del día.
+ *
+ * Devuelve los nombres borrados.
+ */
+export function limpiarRelevosHuerfanos(cwd, diasMinimos = 30) {
+  const borrados = [];
+  try {
+    const dirRamas = join(tambo(cwd), 'ramas');
+    if (!existsSync(dirRamas)) return borrados;
+
+    // Si no se puede listar las ramas, no se borra nada: ante la duda, queda.
+    const salida = git(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
+    if (salida === null) return borrados;
+    const vivas = new Set(salida.split('\n').filter(Boolean).map(slugRama));
+
+    const limite = Date.now() - diasMinimos * 86_400_000;
+    for (const entrada of readdirSync(dirRamas, { withFileTypes: true })) {
+      if (!entrada.isDirectory() || vivas.has(entrada.name)) continue;
+      const ruta = join(dirRamas, entrada.name);
+      try {
+        if (statSync(ruta).mtimeMs > limite) continue;
+        rmSync(ruta, { recursive: true, force: true });
+        borrados.push(entrada.name);
+      } catch {}
+    }
+  } catch {}
+  return borrados;
+}
+
+/** Relevos cuya rama ya no existe, sin borrar nada. Para `doctor`. */
+export function relevosHuerfanos(cwd) {
+  try {
+    const dirRamas = join(tambo(cwd), 'ramas');
+    if (!existsSync(dirRamas)) return [];
+    const salida = git(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
+    if (salida === null) return [];
+    const vivas = new Set(salida.split('\n').filter(Boolean).map(slugRama));
+    return readdirSync(dirRamas, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !vivas.has(e.name))
+      .map((e) => {
+        let dias = 0;
+        try { dias = (Date.now() - statSync(join(dirRamas, e.name)).mtimeMs) / 86_400_000; } catch {}
+        return { nombre: e.name, dias: Math.round(dias) };
+      });
+  } catch {
+    return [];
+  }
 }
 
 /** ¿El proyecto vive en una carpeta sincronizada? Esos clientes bloquean archivos al subirlos. */

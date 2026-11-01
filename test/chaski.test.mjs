@@ -8,7 +8,7 @@
 // lugar de fallar en silencio en la máquina de alguien.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,7 @@ import { execFileSync } from 'node:child_process';
 import { hechosTranscript, hechosGit } from '../src/lib/hechos.mjs';
 import { redactar, rutaExcluida } from '../src/lib/secretos.mjs';
 import { render, firmar, firmaValida, escribirAtomico, MAX_CARACTERES } from '../src/lib/relevo.mjs';
-import { slugRama } from '../src/lib/rutas.mjs';
+import { slugRama, limpiarRelevosHuerfanos } from '../src/lib/rutas.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FIX = join(AQUI, 'fixtures');
@@ -454,6 +454,75 @@ describe('slug de rama', () => {
       if (entrada !== 'fix/ñoño con espacios') assert.equal(s, esperado);
     });
   }
+});
+
+describe('el relevo no crece con el tiempo', () => {
+  test('el presupuesto no depende de cuántos hechos haya', () => {
+    // Un proyecto de un año no produce un relevo más grande que uno de un día:
+    // los hechos se recalculan y están acotados, no se acumulan.
+    const muchos = {
+      escrito: new Date().toISOString(), agente: 'test',
+      narrativa: 'Tarea en curso.',
+      hechos: {
+        esRepo: true, rama: 'main',
+        sucios: Array.from({ length: 500 }, (_, i) => ({ ruta: `src/archivo-${i}.ts`, mas: 10, menos: 1 })),
+        commits: Array.from({ length: 200 }, (_, i) => `abc${i} commit numero ${i}`),
+      },
+      comandos: Array.from({ length: 300 }, (_, i) => ({ cmd: `comando-${i} --con-argumentos`, exit: 0 })),
+    };
+    const md = render(muchos);
+    assert.ok(md.length <= MAX_CARACTERES + 200,
+      `${md.length} caracteres: el relevo crece sin control`);
+  });
+
+  test('limpia los relevos de ramas que ya no existen', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-limpieza-'));
+    const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    try {
+      g('init', '-q');
+      g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+      writeFileSync(join(dir, 'a.txt'), 'x');
+      g('add', '-A'); g('commit', '-qm', 'inicial');
+
+      const ramas = join(dir, '.tambo', 'ramas');
+      const crear = (nombre, diasDeAntiguedad) => {
+        const d = join(ramas, nombre);
+        execFileSync(process.execPath, ['-e',
+          `const fs=require('fs');fs.mkdirSync(${JSON.stringify(d)},{recursive:true});` +
+          `fs.writeFileSync(${JSON.stringify(join(d, 'relevo.md'))},'x');` +
+          `const t=new Date(Date.now()-${diasDeAntiguedad}*86400000);` +
+          `fs.utimesSync(${JSON.stringify(d)},t,t);`]);
+      };
+
+      crear('main', 0);                  // rama viva
+      crear('feat-vieja-borrada', 60);   // no existe y es vieja → se borra
+      crear('feat-recien-borrada', 2);   // no existe pero es reciente → queda
+
+      const borrados = limpiarRelevosHuerfanos(dir, 30);
+
+      assert.deepEqual(borrados, ['feat-vieja-borrada']);
+      assert.ok(existsSync(join(ramas, 'main')), 'borró la rama viva');
+      assert.ok(existsSync(join(ramas, 'feat-recien-borrada')),
+        'borró un relevo reciente: una rama puede existir en otro worktree');
+      assert.ok(!existsSync(join(ramas, 'feat-vieja-borrada')));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('no borra nada si git no responde', () => {
+    // Ante la duda, el relevo queda. Un fallo de git no debe costar contexto.
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-sin-git-'));
+    try {
+      const d = join(dir, '.tambo', 'ramas', 'alguna-rama');
+      execFileSync(process.execPath, ['-e',
+        `require('fs').mkdirSync(${JSON.stringify(d)},{recursive:true})`]);
+      assert.deepEqual(limpiarRelevosHuerfanos(dir, 0), []);
+      assert.ok(existsSync(d), 'borró un relevo sin poder consultar git');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 test('hechosGit no lanza fuera de un repo', () => {
