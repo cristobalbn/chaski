@@ -1,0 +1,12 @@
+{
+  "conversationId": "dddddddd-eeee-ffff-0000-111111111111",
+  "workspacePaths": ["/tmp/proyecto"],
+  "transcriptPath": "/tmp/proyecto/agy.transcript.jsonl",
+  "artifactDirectoryPath": "/tmp/artifacts",
+  "modelName": "gemini-4-argon-medium",
+  "lastUserInput": "corre los tests",
+  "terminationReason": "NO_TOOL_CALL",
+  "executionNum": 0,
+  "fullyIdle": true,
+  "error": ""
+}

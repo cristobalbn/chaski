@@ -23,6 +23,10 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - `init`, `doctor` y `uninstall`, con respaldo y reversión de cada config.
 - Skill `/relevo` para que el agente en sesión escriba la narrativa.
 - Adaptadores para Claude Code, Codex CLI y Antigravity CLI (`agy`).
+- Suite de 64 tests con `node:test`, sin dependencias: contrato de payload y
+  de transcript por CLI, corpus de 15 formatos de credencial, invariantes del
+  relevo, firma, escritura atómica y lectura incremental. Los fixtures son
+  sintéticos: la forma viene de capturas reales, el contenido es inventado.
 - `chaski probe`: instala una sonda que vuelca el payload crudo de los hooks de
   cada CLI, para cerrar los formatos no documentados y aportar fixtures.
 
@@ -54,5 +58,4 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   8 turnos).
 
 ### Pendiente antes de 1.0
-- Suite de tests con `node:test` y fixtures de los tres formatos.
 - Disparo automático de la narrativa (implementado y apagado por defecto).

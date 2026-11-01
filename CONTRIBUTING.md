@@ -49,7 +49,8 @@ hook se ejecuta de verdad.
   `src/lib/secretos.mjs` con un caso de prueba.
 - **Adaptadores para otros CLIs.** Un archivo en `src/lib/` más una entrada en
   el mapa `CLIS` de `src/instalar.mjs`.
-- **Tests** con `node:test`.
+- **Más casos en los tests.** Hay 64; faltan los de concurrencia del lock y
+  los de `init`/`uninstall` sobre configuraciones reales.
 
 ## Qué no se va a aceptar
 
@@ -81,6 +82,7 @@ Antes de abrir el PR:
 
 ```bash
 npm run check                       # sintaxis; no hay build
+npm test                            # 64 tests
 ```
 
 Y probá el cambio a mano según la sección de arriba. No hay CI todavía, así

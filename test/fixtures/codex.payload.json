@@ -1,0 +1,9 @@
+{
+  "session_id": "cccccccc-9999-aaaa-bbbb-cccccccccccc",
+  "transcript_path": "/tmp/proyecto/codex.transcript.jsonl",
+  "cwd": "/tmp/proyecto",
+  "hook_event_name": "SessionStart",
+  "model": "gpt-6.1-sol",
+  "permission_mode": "default",
+  "source": "startup"
+}
