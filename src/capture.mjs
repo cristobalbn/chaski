@@ -6,7 +6,11 @@
 //     hook que revienta le arruina la sesión al usuario.
 //   - Nunca llama a un modelo. Cero tokens, cero red, cero términos de uso.
 //   - Nunca tarda. El presupuesto del hook Stop de Claude Code es de 1,5 s
-//     COMPARTIDO con los demás hooks del event; apuntamos a menos de 50 ms.
+//     COMPARTIDO con los demás hooks del event. El caso normal usa unos
+//     260-340 ms; con miles de archivos modificados a la vez, el reloj de
+//     lib/budget.mjs corta trabajo caro antes de llegar ahí (ver gitFacts en
+//     lib/facts.mjs) en vez de dejar que el hook se cancele y se pierda el
+//     relevo entero.
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,10 +18,19 @@ import { statePath, relayPath, readJson, acquireLock, globalDir, git, pruneOrpha
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
+import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
 
 main();
 
 function main() {
+  // Reloj único para todo el hook, desde la primera línea de main(). Es la
+  // mitad "presupuesto global" del arreglo: cada paso caro de gitFacts
+  // consulta budget.remaining() antes de lanzar un subproceso en vez de
+  // intentarlo siempre y confiar en que algún timeout lo salve. Arranca aquí
+  // y no antes porque todo lo anterior (imports, parseo de este archivo) ya
+  // corrió antes de que exista un reloj que lo cuente — es overhead de Node
+  // que no podemos medir desde dentro del script.
+  const budget = createBudget(STOP_HOOK_BUDGET_MS);
   let liberar = null;
   try {
     const ev = readPayload();
@@ -57,8 +70,8 @@ function main() {
       && previo.transcript === ev.transcript_path;
     const desde = (mismaSesion && mismoTranscript) ? (previo.offset ?? 0) : 0;
 
-    const t = transcriptFacts(ev.transcript_path, desde, config);
-    const g = gitFacts(cwd, config);
+    const t = transcriptFacts(ev.transcript_path, desde, config, budget);
+    const g = gitFacts(cwd, config, budget);
 
     const estado = {
       version: 1,
@@ -73,7 +86,14 @@ function main() {
       turns: (mismaSesion ? (previo.turns ?? 0) : 0) + t.turns,
       facts: g,
       // HEAD al momento de escribir: inject.mjs lo compara para detectar deriva.
-      head: g.isRepo ? (gitHead(cwd) ?? null) : null,
+      // Siempre con su propio intento aunque el presupuesto esté muy ajustado:
+      // es el valor más barato y más esencial de todos, y git() ya no lo deja
+      // exceder lo que queda.
+      head: g.isRepo ? (gitHead(cwd, budget) ?? null) : null,
+      // Si algún paso de gitFacts se quedó sin presupuesto, se declara aquí
+      // -en un campo de hechos, no de narrative- para que el agent siguiente
+      // sepa que el relevo es incompleto por diseño y no por error silencioso.
+      trimmed: g.trimmed ?? [],
       commands: fusionar(mismaSesion ? previo.commands : [], t.commands),
       lastFile: lastTouched(g, previo),
       // La narrative es del agent, no de este script. Se preserva tal cual.
@@ -102,6 +122,15 @@ function main() {
     writeAtomic(statePath(cwd), JSON.stringify(estado, null, 2));
     heartbeat(estado.agent);
     occasionalPrune(cwd, config);
+
+    // Aviso para quien mire stderr (doctor, una terminal, logs del CLI). El
+    // relevo mismo ya lo dice -- esto es la copia para quien no lo abra.
+    if (estado.trimmed.length) {
+      process.stderr.write(
+        `chaski: relevo recortado por presupuesto de tiempo (${budget.elapsed()} ms) -- `
+        + `${estado.trimmed.length} paso(s) omitido(s)\n`,
+      );
+    }
   } catch (e) {
     process.stderr.write(`chaski: captura omitida (${e?.message ?? e})\n`);
   } finally {
@@ -262,7 +291,7 @@ function lastTouched(g, previo) {
   return cand[0].ruta;
 }
 
-function gitHead(cwd) { return git(cwd, ['rev-parse', '--short', 'HEAD']); }
+function gitHead(cwd, budget) { return git(cwd, ['rev-parse', '--short', 'HEAD'], { budget }); }
 
 /**
  * Tareas en segundo plano todavía corriendo, del payload del hook.

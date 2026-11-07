@@ -134,17 +134,25 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
 
 | Qué | Límite | Consecuencia de pasarse |
 |---|---|---|
-| Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Actualmente usamos ~340 ms |
+| Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Usamos ~340 ms, y el presupuesto propio de `budget.mjs` recorta trabajo antes de llegar al límite |
 | Tamaño del relevo inyectado | 10.000 caracteres | Claude Code manda una ruta en vez del contenido. `MAX_CHARS` está en 6.000 |
 | Lectura del transcript | 8 MB por corrida | Protege el presupuesto de latencia |
 | Limpieza de huérfanos | 1 vez al día | Listar ramas es otro subproceso de git |
 
 Si tocas `capture.mjs`, mide la latencia antes y después.
 
-A ~4.000-6.000 archivos modificados en un solo turno (formateo masivo, merge
-grande), el hook supera el presupuesto y se pierde el relevo entero de ese
-turno, no solo los hechos nuevos. Tiene arreglo pendiente para otro cambio;
-ver [Límites conocidos](README.md#límites-conocidos) en el README.
+El presupuesto vive en `src/lib/budget.mjs` y es doble a propósito: un reloj
+global desde el arranque del hook, que cada paso consulta ANTES de lanzar un
+subproceso, y un timeout por llamada derivado de lo que queda. Hacen falta los
+dos: el reloj permite decidir qué omitir, y el timeout derivado es la red para
+cuando la estimación de costo de un paso resultó optimista. Antes el único
+timeout era el de `git()` —4.000 ms, más que el presupuesto entero— así que no
+protegía nada.
+
+Si agregas un paso que lance git, dale un piso de costo y consúltalo contra el
+presupuesto. Y si tu paso puede omitirse, **decláralo en `trimmed`**: un relevo
+recortado que se presenta como completo es la clase de mentira que esta
+herramienta existe para evitar.
 
 ## Estructura
 

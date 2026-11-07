@@ -11,10 +11,20 @@
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { relayPath, statePath, readJson, currentBranch, git } from './lib/paths.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS } from './lib/relay.mjs';
+import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
 
 main();
 
 function main() {
+  // Mismo mecanismo que capture.mjs (ver lib/budget.mjs), aplicado aquí
+  // porque este es el único código de chaski en el camino crítico: lo que
+  // imprime entra al contexto antes de que el usuario pueda escribir. Las
+  // llamadas a git de detectDrift están medidas como baratas incluso en
+  // casos extremos (ver auditoría), pero el presupuesto de 4.000 ms por
+  // llamada tampoco se justificaba aquí solo, por la misma razón que en
+  // capture.mjs: ningún timeout por llamada protege si nadie lo deriva de
+  // cuánto queda.
+  const budget = createBudget(SESSION_START_BUDGET_MS);
   try {
     const cwd = cwdFromPayload();
     const ruta = relayPath(cwd);
@@ -45,7 +55,7 @@ function main() {
 
     // Si el repo se movió desde que se escribió el relevo, hay que decirlo:
     // un relevo desactualizado presentado como verdad es peor que nada.
-    const deriva = detectDrift(cwd, estado);
+    const deriva = detectDrift(cwd, estado, budget);
     if (deriva) partes.push('', deriva);
 
     partes.push('', CLOSING_MARK);
@@ -88,10 +98,10 @@ function emitir(texto, agent) {
 }
 
 /** ¿Cambió el repo desde que se escribió el relevo? */
-function detectDrift(cwd, estado) {
+function detectDrift(cwd, estado, budget = null) {
   const avisos = [];
 
-  const ramaActual = currentBranch(cwd);
+  const ramaActual = currentBranch(cwd, budget);
   if (estado.facts?.branch && ramaActual && estado.facts.branch !== ramaActual) {
     avisos.push(`- El relevo se escribió en \`${estado.facts.branch}\` y ahora estás en \`${ramaActual}\`.`);
   }
@@ -101,7 +111,7 @@ function detectDrift(cwd, estado) {
     avisos.push(`- Tiene ${Math.round(edadHoras / 24)} día(s) de antigüedad.`);
   }
 
-  avisos.push(...changesSinceRelay(cwd, estado));
+  avisos.push(...changesSinceRelay(cwd, estado, budget));
 
   if (!avisos.length) return null;
   return [
@@ -121,14 +131,14 @@ function detectDrift(cwd, estado) {
  * repositorio cambió" no alcanza: hay que decir QUÉ cambió, QUIÉN lo hizo y,
  * sobre todo, si toca los archivos que la narrative declara pendientes.
  */
-function changesSinceRelay(cwd, estado) {
+function changesSinceRelay(cwd, estado, budget = null) {
   const avisos = [];
-  const head = git(cwd, ['rev-parse', '--short', 'HEAD']);
+  const head = git(cwd, ['rev-parse', '--short', 'HEAD'], { budget });
   if (!estado.head || !head || estado.head === head) return avisos;
 
   // Si el commit del relevo ya no existe, la historia se reescribió
   // (rebase, squash, fuerza). Nada de lo que sigue es comparable.
-  const existe = git(cwd, ['cat-file', '-e', `${estado.head}^{commit}`]) !== null;
+  const existe = git(cwd, ['cat-file', '-e', `${estado.head}^{commit}`], { budget }) !== null;
   if (!existe) {
     avisos.push(`- El commit del relevo (\`${estado.head}\`) ya no existe: la historia se reescribió.`);
     avisos.push('  Trata todo este relevo como una hipótesis y verifica cada punto.');
@@ -136,7 +146,7 @@ function changesSinceRelay(cwd, estado) {
   }
 
   const rango = `${estado.head}..HEAD`;
-  const log = git(cwd, ['log', rango, '--format=%h|%an|%s']) ?? '';
+  const log = git(cwd, ['log', rango, '--format=%h|%an|%s'], { budget }) ?? '';
   const commits = log.split('\n').filter(Boolean).map((l) => {
     const [h, autor, ...resto] = l.split('|');
     return { h, autor, asunto: resto.join('|') };
@@ -152,7 +162,10 @@ function changesSinceRelay(cwd, estado) {
   }
 
   // Lo importante: ¿alguien tocó lo que la narrative dice que está pendiente?
-  const tocados = new Set((git(cwd, ['diff', '--name-only', rango]) ?? '')
+  // `--name-only` compara árboles, no contenido: a diferencia de `--numstat`
+  // en facts.mjs, no escala con el tamaño del diff. Medido con 10.000
+  // archivos cambiados en un commit: ~50 ms.
+  const tocados = new Set((git(cwd, ['diff', '--name-only', rango], { budget }) ?? '')
     .split('\n').filter(Boolean));
   const mencionados = mentionedPaths(estado.narrative);
   const collisions = mencionados.filter((r) =>

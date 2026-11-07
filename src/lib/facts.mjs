@@ -6,37 +6,113 @@
 import { readFileSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { git, currentBranch } from './paths.mjs';
 import { isExcludedPath, redact } from './secrets.mjs';
+import { hasTime } from './budget.mjs';
+
+// Costo de `diff --numstat` por archivo modificado, calibrado contra git
+// real: 1.000/5.000/10.000 archivos sin commitear tardaron ~0,45 ms/archivo
+// de forma consistente en el caso de prueba (ver docs/auditoria-2026-11.md).
+// Se usa 0,6 con un piso fijo para quedar con margen sin ser tan conservador
+// que un turno de 1.000 archivos —un `prettier --write` normal— pierda el
+// detalle que sí le cabe en el presupuesto.
+const MS_BASE_NUMSTAT = 30;
+const MS_POR_ARCHIVO_NUMSTAT = 0.6;
+// Lo que se reserva después de numstat para upstream, render, sign y las dos
+// escrituras atómicas. Medido: ese resto cuesta decenas de ms, no cientos;
+// 200 ms es margen generoso, no ajustado al límite.
+const RESERVA_DESPUES_DE_NUMSTAT_MS = 200;
 
 /** Hechos de git: rama, archivos sin commitear, diff y divergencia con upstream. */
-export function gitFacts(cwd, config) {
-  const h = { branch: currentBranch(cwd), isRepo: false, dirty: [], commits: [], upstream: null };
+export function gitFacts(cwd, config, budget = null) {
+  const h = {
+    branch: currentBranch(cwd, budget), isRepo: false, dirty: [], commits: [], upstream: null,
+    trimmed: [],
+  };
   if (h.branch === null) return h;
   h.isRepo = true;
 
-  // Archivos modificados, con su diff. --numstat da números, no texto del diff:
-  // nunca leemos contenido de archivos, así que no hay riesgo de arrastrar secretos.
-  const numstat = git(cwd, ['diff', 'HEAD', '--numstat']) ?? '';
-  const porArchivo = new Map();
-  for (const linea of numstat.split('\n').filter(Boolean)) {
-    const [mas, menos, bruto] = linea.split('\t');
-    const ruta = renameTarget(bruto);
-    if (!ruta || isExcludedPath(ruta, config)) continue;
-    porArchivo.set(ruta, { ruta, mas: num(mas), menos: num(menos) });
-  }
-
-  // Sin trackear: aparecen en status pero no en diff HEAD.
+  // status --porcelain es la fuente PRIMARIA, no numstat. Antes era al
+  // revés, y eso es justo el defecto: numstat calcula diff real por archivo
+  // y con miles de archivos sin commitear tarda segundos (medido: ~4,5 s con
+  // 10.000, contra ~0,1 s de status --porcelain sobre el mismo árbol), más
+  // que el presupuesto entero del hook. status ya trae todo lo que el relevo
+  // necesita para la lista y el total — rama, ruta, si es nuevo, incluso
+  // renombres (`viejo -> nuevo`) — y numstat solo agrega el detalle de
+  // líneas +/-, que es justamente lo que un relevo con miles de archivos no
+  // necesita mostrar.
+  //
   // El parseo NO usa columnas fijas: el stdout llega sin el espacio inicial de
   // la primera línea, así que un slice(3) cortaría un carácter del name.
-  const status = git(cwd, ['status', '--porcelain']) ?? '';
-  for (const linea of status.split('\n')) {
-    const m = /^\s*(\S{1,2})\s+(.+?)\s*$/.exec(linea);
-    if (!m) continue;
-    const ruta = m[2].replace(/^"|"$/g, '').split(' -> ').pop();
-    if (!ruta || isExcludedPath(ruta, config)) continue;
-    if (!porArchivo.has(ruta)) {
+  //
+  // Si no queda presupuesto ni para ESTE llamado, no hay que confundir "no lo
+  // sabemos" con "está limpio": sin status no hay con qué decir que el árbol
+  // está limpio, y afirmarlo sería mentir. Por eso se distingue null (no se
+  // pudo pedir) de '' (se pidió y no hay nada sucio) en vez de usar `?? ''`
+  // como hacían todas las llamadas de esta función en la versión anterior.
+  const status = hasTime(budget, 100) ? git(cwd, ['status', '--porcelain'], { budget }) : null;
+  const porArchivo = new Map();
+  if (status !== null) {
+    for (const linea of status.split('\n')) {
+      const m = /^\s*(\S{1,2})\s+(.+?)\s*$/.exec(linea);
+      if (!m) continue;
+      const ruta = m[2].replace(/^"|"$/g, '').split(' -> ').pop();
+      if (!ruta || isExcludedPath(ruta, config)) continue;
       porArchivo.set(ruta, { ruta, mas: null, menos: null, nuevo: m[1].includes('?') });
     }
+  } else {
+    h.dirtyUnknown = true;
+    h.trimmed.push(
+      'lista de archivos sin commitear: se omitió "git status --porcelain" por presupuesto de tiempo '
+      + '-- no se puede afirmar que el árbol está limpio, solo que no se comprobó',
+    );
   }
+
+  // Últimos commits: barato (cinco líneas fijas) y de alto valor — el relevo
+  // nuevo necesita saber qué ya quedó cerrado. Va antes de numstat a
+  // propósito: es justo el tipo de paso que SÍ debe sobrevivir un recorte.
+  if (hasTime(budget)) {
+    const log = git(cwd, ['log', '-5', '--format=%h %s'], { budget }) ?? '';
+    h.commits = log.split('\n').filter(Boolean);
+  } else {
+    h.trimmed.push('últimos commits: se omitió, no quedaba presupuesto de tiempo');
+  }
+
+  // El detalle +/- por archivo (numstat) es el paso caro y de bajo valor
+  // informativo cuando hay miles de archivos: el relevo solo lista 20 y el
+  // total aparte, así que el detalle de los otros 9.980 no aporta nada. Se
+  // omite si no cabe en lo que queda del presupuesto — y si se omite, el
+  // archivo no desaparece del relevo: sigue viniendo de status, solo que sin
+  // el "+X -Y".
+  const estimadoNumstat = MS_BASE_NUMSTAT + porArchivo.size * MS_POR_ARCHIVO_NUMSTAT;
+  const alcanza = porArchivo.size > 0
+    && hasTime(budget, estimadoNumstat + RESERVA_DESPUES_DE_NUMSTAT_MS);
+
+  let numstatOk = porArchivo.size === 0; // nada que enriquecer: no es un recorte
+  if (alcanza) {
+    const numstat = git(cwd, ['diff', 'HEAD', '--numstat'], { budget });
+    // `null` es "no corrió" (timeout, presupuesto, repo sin HEAD); `''` es
+    // "corrió y no hay nada que informar", que es el caso NORMAL cuando todo
+    // lo sucio está sin seguimiento: numstat no lista archivos untracked.
+    // Tratar los dos igual hacía que el relevo declarara un recorte que nunca
+    // ocurrió — la misma clase de mentira que el recorte vino a evitar, en la
+    // dirección contraria.
+    if (numstat !== null) {
+      numstatOk = true;
+      for (const linea of numstat.split('\n').filter(Boolean)) {
+        const [mas, menos, bruto] = linea.split('\t');
+        const ruta = renameTarget(bruto);
+        if (!ruta || isExcludedPath(ruta, config)) continue;
+        const previo = porArchivo.get(ruta);
+        porArchivo.set(ruta, { ruta, mas: num(mas), menos: num(menos), nuevo: previo?.nuevo ?? false });
+      }
+    }
+  }
+  if (!numstatOk) {
+    h.trimmed.push(
+      `detalle de líneas +/- de los ${porArchivo.size} archivo(s) sin commitear: se omitió, no quedaba `
+      + 'presupuesto de tiempo para "git diff --numstat" (la lista de archivos y el total siguen completos)',
+    );
+  }
+
   // Tope deliberado. El relevo muestra 20, pero el estado guardaba todos: en
   // un repo con miles de archivos dirty —tras un `npm install` sin
   // gitignore, o al generar código— el estado.json pasaba del megabyte y se
@@ -46,11 +122,14 @@ export function gitFacts(cwd, config) {
   h.dirty = todos.slice(0, 50);
   h.dirtyTotal = todos.length;
 
-  // Últimos commits, para que el relevo sepa qué ya quedó cerrado.
-  const log = git(cwd, ['log', '-5', '--format=%h %s']) ?? '';
-  h.commits = log.split('\n').filter(Boolean);
+  // Divergencia con upstream: la más cara de las tres cadenas (hasta 3
+  // subprocesos) y la de menor prioridad de las cuatro — va último.
+  if (hasTime(budget, 150)) {
+    h.upstream = upstreamDivergence(cwd, h.dirty.map((s) => s.ruta), budget);
+  } else {
+    h.trimmed.push('divergencia con upstream: se omitió, no quedaba presupuesto de tiempo');
+  }
 
-  h.upstream = upstreamDivergence(cwd, h.dirty.map((s) => s.ruta));
   return h;
 }
 
@@ -58,15 +137,17 @@ export function gitFacts(cwd, config) {
  * Qué hicieron los demás en los archivos que estás tocando.
  * Sale de la información que git ya tiene local: no hace fetch, no usa red.
  */
-function upstreamDivergence(cwd, misArchivos) {
-  const up = git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']);
+function upstreamDivergence(cwd, misArchivos, budget = null) {
+  const up = git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], { budget });
   if (!up) return null;
+  if (!hasTime(budget)) return null;
 
-  const cuenta = git(cwd, ['rev-list', '--count', `HEAD..${up}`]);
+  const cuenta = git(cwd, ['rev-list', '--count', `HEAD..${up}`], { budget });
   const ahead = parseInt(cuenta ?? '0', 10) || 0;
   if (ahead === 0) return { ref: up, ahead: 0, collisions: [] };
+  if (!hasTime(budget)) return { ref: up, ahead, collisions: [] };
 
-  const tocados = git(cwd, ['diff', '--name-only', `HEAD..${up}`]) ?? '';
+  const tocados = git(cwd, ['diff', '--name-only', `HEAD..${up}`], { budget }) ?? '';
   const suyos = new Set(tocados.split('\n').filter(Boolean));
   const collisions = misArchivos.filter((r) => suyos.has(r));
   return { ref: up, ahead, collisions };
@@ -76,9 +157,13 @@ function upstreamDivergence(cwd, misArchivos) {
  * Comandos ejecutados y su resultado, leídos del transcript desde la marca de
  * agua anterior. Solo se lee el delta: el costo no crece con la sesión.
  */
-export function transcriptFacts(rutaTranscript, desdeOffset = 0, config = null) {
+export function transcriptFacts(rutaTranscript, desdeOffset = 0, config = null, budget = null) {
   const res = { commands: [], filesRead: [], lastMessage: null, offset: desdeOffset, turns: 0 };
   if (!rutaTranscript) return res;
+  // Medido: hasta 8 MB (el techo de MAX más abajo) tarda ~35-40 ms, muy por
+  // debajo de cualquier presupuesto razonable. No necesita cortes internos;
+  // esta única guarda es para el caso en que algo ANTES ya agotó el reloj.
+  if (budget?.expired()) return res;
 
   let bruto;
   try {
