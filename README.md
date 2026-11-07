@@ -344,6 +344,7 @@ chaski cost                 # muestra el gasto externo ($0) y los turnos extra d
 chaski why [tema]           # busca decisiones anteriores en .tambo/historia/ y decisiones/
 chaski share [tema]         # publica la decisión de la rama actual en decisiones/ (pide confirmación)
 chaski share [tema] --yes   # publica sin pedir confirmación interactiva
+chaski version              # muestra la versión instalada (también chaski --version)
 ```
 
 - **`chaski next`** lee `~/.chaski/quota.json` (alimentado cuando un hook detecta

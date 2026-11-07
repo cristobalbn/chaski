@@ -14,6 +14,7 @@ node src/cli.mjs why [tema]   # busca decisiones pasadas en .tambo/historia/ y d
 node src/cli.mjs share [tema] # publica la narrativa en decisiones/ (con confirmación o --yes)
 node src/cli.mjs uninstall    # revierte desde respaldo
 node src/cli.mjs probe        # captura el payload crudo de los hooks
+node src/cli.mjs version      # imprime la versión de package.json (--version / -v)
 npm run check                      # chequeo de sintaxis (no hay build)
 npm test                           # node:test, sin dependencias
 ```
@@ -108,6 +109,27 @@ gh pr create --fill
 
 El merge lo decide una persona. No lo hagas por tu cuenta salvo que te lo
 pidan explícitamente.
+
+## Sincronización entre GitHub y npm
+
+Quien instala con `npm install -g github:cristobalbn/chaski` recibe `main`;
+quien instala con `npm install -g chaski` recibe la última versión publicada en
+el registro de npm. **Si actualizas `main` con cambios para usuarios, recuerda
+que npm no se entera hasta que se corta una versión.**
+
+- En cada merge a `main`, el job `Estado de sincronización con npm y tags` de
+  [`.github/workflows/test.yml`](.github/workflows/test.yml) compara la versión
+  de `package.json`, el último tag `vX.Y.Z` y la versión publicada en npm, y
+  deja un aviso visible en el resumen de GitHub Actions si están desfasados.
+- Para publicar una versión nueva en ambos lados:
+  1. Pasa los cambios de `## [No publicado]` a `## [X.Y.Z] - YYYY-MM-DD` en
+     `CHANGELOG.md` y sube `version` en `package.json` mediante un PR a `main`.
+  2. En `main` actualizado, crea y empuja el tag:
+     `git tag vX.Y.Z && git push origin vX.Y.Z`.
+  3. El workflow [`.github/workflows/release.yml`](.github/workflows/release.yml)
+     verifica que tag, `package.json` y `CHANGELOG.md` coincidan, corre toda la
+     suite, crea el GitHub Release y publica en npm (si `NPM_TOKEN` o Trusted
+     Publishing está configurado en el repo; si no, ejecuta `npm publish` local).
 
 ## Invariantes
 
