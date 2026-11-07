@@ -148,7 +148,7 @@ function init() {
     console.error('chaski está corriendo desde el caché temporal de npx.');
     console.error('Los hooks guardarían una ruta que va a desaparecer.\n');
     console.error('Instala de forma permanente y vuelve a correr init:\n');
-    console.error('  npm install -g chaski');
+    console.error('  npm install -g "@cristobalbn/chaski"');
     console.error('  chaski init\n');
     process.exitCode = 1;
     throw new Error('instalación efímera: abortado');

@@ -1,6 +1,7 @@
 # chaski
 
 [![test](https://github.com/cristobalbn/chaski/actions/workflows/test.yml/badge.svg)](https://github.com/cristobalbn/chaski/actions/workflows/test.yml)
+[![npm](https://img.shields.io/npm/v/@cristobalbn/chaski.svg)](https://www.npmjs.com/package/@cristobalbn/chaski)
 [![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org)
 [![Dependencias](https://img.shields.io/badge/dependencias-0-brightgreen.svg)](package.json)
@@ -44,7 +45,7 @@ sigue exactamente esto y no hace falta que leas el resto del README.
 
 ```bash
 node --version                      # debe ser >= 20; si no, detente y avisa
-npm install -g chaski               # o: npm install -g github:cristobalbn/chaski
+npm install -g @cristobalbn/chaski  # o: npm install -g github:cristobalbn/chaski
 cd <el proyecto del usuario>
 chaski init
 chaski doctor
@@ -84,12 +85,14 @@ Después:
 ### Opción 1 — npm (recomendada)
 
 ```bash
-npm install -g chaski
+npm install -g "@cristobalbn/chaski"
 cd tu-proyecto
 chaski init
 ```
 
-Mientras no esté publicado en npm, se instala igual desde GitHub:
+*(Las comillas alrededor de `"@cristobalbn/chaski"` evitan que PowerShell interprete `@` como operador de splatting; en bash/zsh funcionan con o sin comillas).*
+
+También se puede instalar directo desde GitHub:
 
 ```bash
 npm install -g github:cristobalbn/chaski
@@ -197,9 +200,9 @@ modo headless.
 ### Actualizar
 
 ```bash
-npm install -g chaski          # o: npm install -g github:cristobalbn/chaski
+npm install -g "@cristobalbn/chaski"   # o: npm install -g github:cristobalbn/chaski
 cd tu-proyecto
-chaski init                    # repítelo en cada proyecto que uses con Chaski
+chaski init                            # repítelo en cada proyecto que uses con Chaski
 ```
 
 **Ejecutar `chaski init` no es opcional.** Los hooks se registran con la ruta absoluta

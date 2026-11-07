@@ -104,19 +104,18 @@ jobs:
         shell: bash
         run: |
           pkg_ver=$(node -e "console.log(require('./package.json').version)")
-          published_ver=$(npm view "chaski@$pkg_ver" version 2>/dev/null || echo "")
+          published_ver=$(npm view "@cristobalbn/chaski@$pkg_ver" version 2>/dev/null || echo "")
           if [ "$published_ver" = "$pkg_ver" ]; then
-            echo "chaski@$pkg_ver ya está publicado en npm."
+            echo "@cristobalbn/chaski@$pkg_ver ya está publicado en npm."
             exit 0
           fi
+          # Si no hay NPM_TOKEN, intentamos publicar mediante OIDC Trusted Publishing
+          # (requiere npm >= 11.5.1 y id-token: write).
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::warning title=Publicación en npm pendiente (v$pkg_ver)::Se creó el tag y el GitHub Release v$pkg_ver, pero chaski@$pkg_ver aún no está en npm porque falta NPM_TOKEN en GitHub Secrets (o Trusted Publisher en npmjs.com). Ejecuta 'npm publish' localmente o configura NPM_TOKEN."
-            {
-              echo "### Publicación en npm pendiente (\`chaski@$pkg_ver\`)"
-              echo "El tag \`v$pkg_ver\` y el GitHub Release están al día, pero \`chaski@$pkg_ver\` aún no figura en npm porque falta el secret \`NPM_TOKEN\`."
-              echo "1. Genera un Granular Access Token en [npmjs.com](https://www.npmjs.com/) (o configura **Trusted Publishing** para \`cristobalbn/chaski\` y \`release.yml\`)."
-              echo "2. Guárdalo como secret \`NPM_TOKEN\` en GitHub (\`Settings → Secrets and variables → Actions\`) y re-ejecuta este workflow, o corre \`npm publish\` desde tu terminal."
-            } >> "$GITHUB_STEP_SUMMARY"
+            npm install -g npm@latest
+            rm -f ~/.npmrc "$NPM_CONFIG_USERCONFIG"
+          fi
+          if ! npm publish --provenance --access public; then
+            echo "::warning title=Publicación en npm pendiente (v$pkg_ver)::Se creó el tag y el GitHub Release v$pkg_ver, pero @cristobalbn/chaski@$pkg_ver aún no pudo publicarse automáticamente en npm. Configura Trusted Publisher (OIDC) en npmjs.com para cristobalbn/chaski (release.yml) o el secret NPM_TOKEN."
             exit 0
           fi
-          npm publish --provenance --access public
