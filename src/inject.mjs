@@ -9,7 +9,7 @@
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync, statSync } from 'node:fs';
-import { relayPath, statePath, readJson, currentBranch, git } from './lib/paths.mjs';
+import { relayPath, statePath, readJson, currentBranch, git, projectDir } from './lib/paths.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS } from './lib/relay.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
 
@@ -26,7 +26,7 @@ function main() {
   // cuánto queda.
   const budget = createBudget(SESSION_START_BUDGET_MS);
   try {
-    const cwd = cwdFromPayload();
+    const cwd = projectDir(cwdFromPayload());
     const ruta = relayPath(cwd);
     if (!existsSync(ruta)) return;
 

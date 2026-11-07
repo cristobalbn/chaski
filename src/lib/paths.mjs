@@ -2,17 +2,55 @@
 // Todo path se construye con path.join: el caso real incluye carpetas con
 // espacios y acentos sincronizadas por OneDrive, donde se rompen los scripts
 // escritos asumiendo rutas POSIX.
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { mkdirSync, rmSync, statSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { MIN_GIT_CALL_MS, effectiveTimeout } from './budget.mjs';
 
 export const TAMBO = '.tambo';
 
+/**
+ * Directorio raíz del proyecto a partir del cwd que informa el CLI.
+ *
+ * Resuelve dos casos reales sin lanzar subprocesos de git:
+ *   1. El CLI se abrió en una subcarpeta del repositorio (`repo/src`): sube
+ *      hasta encontrar `.git`.
+ *   2. El CLI se abrió en una carpeta contenedora que envuelve a un único
+ *      repositorio hijo (`workspace/repo/.git`): usa ese repositorio en vez
+ *      de caer en `sin-rama` en la carpeta padre. Si hay cero o varios repos
+ *      hijos, no adivina y conserva `cwd`.
+ */
+export function projectDir(cwd) {
+  const base = resolve(cwd);
+  if (existsSync(join(base, '.git'))) return base;
+
+  const tope = resolve(homedir());
+  const tmp = resolve(tmpdir());
+  if (base === tope || base === tmp) return base;
+
+  let actual = base;
+  while (actual !== tope && actual !== tmp) {
+    const padre = dirname(actual);
+    if (padre === actual || padre === tope || padre === tmp) break;
+    if (existsSync(join(padre, '.git'))) return padre;
+    actual = padre;
+  }
+
+  try {
+    const hijos = readdirSync(base, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+      .map((e) => join(base, e.name))
+      .filter((ruta) => existsSync(join(ruta, '.git')));
+    if (hijos.length === 1) return hijos[0];
+  } catch {}
+
+  return base;
+}
+
 /** Directorio .tambo del proyecto, creado si falta. */
 export function tambo(cwd) {
-  const dir = join(resolve(cwd), TAMBO);
+  const dir = join(projectDir(cwd), TAMBO);
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -75,6 +113,7 @@ export function git(cwd, args, opciones = {}) {
   // Sin tiempo ni para que valga la pena intentarlo: ni se spawnea.
   if (budget && budget.remaining() <= MIN_GIT_CALL_MS) return null;
   const timeoutEfectivo = effectiveTimeout(timeout, budget);
+  const root = projectDir(cwd);
   try {
     return execFileSync('git', [
       // Sin esto, git escapa en octal cualquier ruta con acentos: un
@@ -83,7 +122,7 @@ export function git(cwd, args, opciones = {}) {
       '-c', 'core.quotepath=false',
       ...args,
     ], {
-      cwd, encoding: 'utf8', timeout: timeoutEfectivo,
+      cwd: root, encoding: 'utf8', timeout: timeoutEfectivo,
       stdio: ['ignore', 'pipe', 'ignore'],
       maxBuffer: 16 * 1024 * 1024,
     }).trim();
@@ -231,14 +270,15 @@ export function syncedFolder(cwd) {
  * un problema que no existe.
  */
 export function tamboIsIgnored(cwd) {
+  const root = projectDir(cwd);
   for (const arg of [TAMBO + '/', TAMBO]) {
     try {
-      execFileSync('git', ['check-ignore', '-q', arg], { cwd, stdio: 'ignore', timeout: 3000 });
+      execFileSync('git', ['check-ignore', '-q', arg], { cwd: root, stdio: 'ignore', timeout: 3000 });
       return true;
     } catch {}
   }
   try {
-    const txt = readFileSync(join(resolve(cwd), '.gitignore'), 'utf8');
+    const txt = readFileSync(join(root, '.gitignore'), 'utf8');
     return txt.split(/\r?\n/).some((l) => {
       const s = l.trim();
       return s === TAMBO || s === TAMBO + '/';

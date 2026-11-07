@@ -4,3 +4,4 @@ node_modules/
 
 # el skill instalado es copia de skill/SKILL.md
 .claude/
+.agents/
