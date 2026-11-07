@@ -190,6 +190,21 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   sesión siguiente. Ahora se rescata y se vuelve a escribir dentro del bloque,
   para que `uninstall` siga siendo una resta exacta.
 
+- `init` ya no escribe archivos de proyecto en la carpeta desde la que se lo
+  invoca cuando esa carpeta no es el repositorio. Antes instalaba la skill y el
+  `AGENTS.md` en las dos, para que un agent abierto en la carpeta contenedora
+  tuviera la skill a mano; pero una contenedora suele tener varios proyectos
+  dentro, y ahí la skill aplica a todos y el `AGENTS.md` habla de chaski a
+  quien trabaja en otro proyecto. El texto de la petición automática pasa a ser
+  autosuficiente: trae las instrucciones para escribir la narrativa sin skill.
+- Ya no se promueve como conclusión de un subagente algo que no lo es. En
+  producción, la sección «Trabajo delegado» quedó con cuatro mensajes del
+  usuario presentados como conclusiones, con la etiqueta vacía: algún CLI
+  dispara el evento con el último mensaje de la conversación, que puede ser el
+  del usuario. Lo que llegaba era el campo `agent_type` presente y **vacío**,
+  no ausente, así que el `??` no lo cubría. Ausente se sigue aceptando con un
+  nombre genérico; presente y vacío se rechaza.
+
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,
   `codex exec`, `agy -p`). chaski es para sesiones interactivas.

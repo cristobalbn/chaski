@@ -824,21 +824,35 @@ describe('skill del relevo', () => {
     }
   });
 
-  test('init desde una carpeta contenedora configura el repo hijo y deja la skill disponible en ambas', () => {
+  test('init desde una carpeta contenedora NO deja nada en la contenedora', () => {
+    // Este test invierte uno anterior, que exigía la skill y el AGENTS.md en
+    // las dos carpetas. Se cambió con un motivo: una carpeta contenedora suele
+    // tener varios proyectos dentro, y ahí la skill aplicaría a todos y el
+    // AGENTS.md le hablaría de chaski a quien esté trabajando en otro
+    // proyecto. El usuario lo vio como "se me ensució la carpeta".
+    //
+    // El agent abierto en la contenedora no queda sin recursos: los hooks son
+    // de nivel de usuario, `projectDir()` resuelve el repositorio hijo, y el
+    // texto de la petición automática trae las instrucciones completas para
+    // escribir la narrativa sin skill.
     const m = montar('chaski-skill-parent-');
     try {
       execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'],
         { cwd: m.raiz, env: m.entorno, encoding: 'utf8' });
 
+      // En el repositorio hijo, todo.
       assert.ok(readFileSync(join(m.proyecto, '.gitignore'), 'utf8').includes('.tambo/'),
         'no configuró .gitignore en el repositorio hijo');
-      for (const dir of [m.proyecto, m.raiz]) {
-        assert.ok(existsSync(join(dir, '.claude', 'skills', 'relevo', 'SKILL.md')),
-          `falta .claude/skills en ${dir}`);
-        assert.ok(existsSync(join(dir, '.agents', 'skills', 'relevo', 'SKILL.md')),
-          `falta .agents/skills en ${dir}`);
-        assert.ok(existsSync(join(dir, 'AGENTS.md')),
-          `falta AGENTS.md en ${dir}`);
+      for (const base of [['.claude', 'skills'], ['.agents', 'skills']]) {
+        assert.ok(existsSync(join(m.proyecto, ...base, 'relevo', 'SKILL.md')),
+          `falta ${base.join('/')} en el repositorio`);
+      }
+      assert.ok(existsSync(join(m.proyecto, 'AGENTS.md')), 'falta AGENTS.md en el repositorio');
+
+      // En la contenedora, nada.
+      for (const basura of ['.claude', '.agents', 'AGENTS.md', '.tambo']) {
+        assert.ok(!existsSync(join(m.raiz, basura)),
+          `init ensució la carpeta contenedora con ${basura}`);
       }
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
@@ -1123,5 +1137,82 @@ describe('el contador de la narrativa, en el hook real', () => {
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
+  });
+});
+
+describe('no promover lo que no es un subagente', () => {
+  // Pasó en producción. La sección "Trabajo delegado" del relevo quedó con
+  // cuatro MENSAJES DEL USUARIO —"dale, abre el issue", "ya, gracias, ahora
+  // vuelvo"— presentados como conclusiones de subagentes y con la etiqueta
+  // vacía, que se renderizaba como `****`.
+  //
+  // Algún CLI dispara el evento con el último mensaje de la conversación,
+  // que puede ser el del usuario, donde Claude Code pone el del subagente. Y
+  // lo que llegaba no era el campo ausente sino el campo VACÍO, así que el
+  // `??` del código no lo cubría.
+  //
+  // Un relevo que afirma que alguien concluyó algo que nunca pasó es peor que
+  // uno sin la sección: es justo la clase de mentira que esta herramienta
+  // existe para no cometer. Y desde el #28 esas entradas sobreviven entre
+  // sesiones, así que se arrastraban.
+  const promover = (m, payload) => execFileSync(process.execPath,
+    [join(SRC, 'capture.mjs'), 'SubagentStop', 'claude-code'],
+    { cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: JSON.stringify(payload) });
+
+  const relevo = (m) => {
+    const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+    return readFileSync(join(m.proyecto, '.tambo', 'branches', rama, 'relevo.md'), 'utf8');
+  };
+
+  const conPadre = (prefijo, fn) => {
+    const m = montar(prefijo);
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 5;\n');
+      execFileSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'],
+        { cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+          input: JSON.stringify({ session_id: 'p', cwd: m.proyecto, hook_event_name: 'Stop' }) });
+      return fn(m);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  };
+
+  test('un agent_type vacío no se promueve', () => {
+    conPadre('chaski-nopromo-', (m) => {
+      promover(m, {
+        session_id: 'p', cwd: m.proyecto, hook_event_name: 'SubagentStop',
+        agent_type: '', last_assistant_message: 'dale, abre el issue',
+      });
+      const md = relevo(m);
+      assert.ok(!/Trabajo delegado/.test(md),
+        'promovió algo sin identidad de subagente');
+      assert.ok(!/dale, abre el issue/.test(md),
+        'el mensaje del usuario quedó en el relevo como conclusión de un subagente');
+    });
+  });
+
+  test('un agent_type real sí se promueve, con su nombre', () => {
+    conPadre('chaski-sipromo-', (m) => {
+      promover(m, {
+        session_id: 'p', cwd: m.proyecto, hook_event_name: 'SubagentStop',
+        agent_type: 'revisor', last_assistant_message: 'El refresh no rota el token viejo.',
+      });
+      const md = relevo(m);
+      assert.match(md, /Trabajo delegado/);
+      assert.match(md, /\*\*revisor\*\*/, 'perdió el nombre del subagente');
+      assert.ok(!/\*\*\*\*/.test(md), 'quedó una etiqueta vacía');
+    });
+  });
+
+  test('sin el campo, se acepta con un nombre genérico', () => {
+    // Un CLI puede no mandarlo y la promoción sigue siendo legítima: la huella
+    // del defecto era el campo presente y vacío, no su ausencia.
+    conPadre('chaski-generico-', (m) => {
+      promover(m, {
+        session_id: 'p', cwd: m.proyecto, hook_event_name: 'SubagentStop',
+        last_assistant_message: 'Revisé los tres adaptadores.',
+      });
+      assert.match(relevo(m), /\*\*subagente\*\*/);
+    });
   });
 });
