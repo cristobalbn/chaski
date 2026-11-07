@@ -1305,26 +1305,31 @@ describe('cuándo se pide la narrativa', () => {
       'pidió otra vez dentro del mismo bucle: eso no termina nunca');
   });
 
-  test('el texto es corto: lo ve el usuario en pantalla', () => {
-    // El CLI muestra esto en pantalla, debajo de sus propias líneas. Una
-    // versión anterior ocupaba veinte renglones explicando las cuatro
-    // secciones, el presupuesto de palabras y el camino sin skill, y el
-    // usuario lo dijo claro: "es muy largo, muy extenso, tapa mucha parte de
-    // la pantalla". El detalle vive en la skill, que es donde se lee cuando
-    // hace falta. Este test existe para que no vuelva a crecer.
-    const t = askText('hay commits nuevos');
-    const lineas = t.split('\n').length;
-    assert.ok(lineas <= 5, `ocupa ${lineas} líneas en la pantalla del usuario`);
-    assert.ok(t.length <= 400, `${t.length} caracteres: de nuevo tapa la pantalla`);
+  test('con skill instalada, el mensaje visible es UNA línea legible', () => {
+    // El CLI muestra esto en pantalla del usuario, así que no puede ser jerga.
+    // El usuario lo reportó dos veces: primero "es muy largo, tapa mucha parte
+    // de la pantalla", y después, sobre la versión de cuatro líneas, "queda
+    // como raro, muy técnico para el usuario". El cómo lo lee el agent de la
+    // skill, que no se ve en pantalla.
+    const t = askText('hay commits nuevos desde la última narrativa', true);
+    assert.equal(t.split('\n').length, 1, `ocupa ${t.split('\n').length} líneas`);
+    assert.ok(t.length <= 200, `${t.length} caracteres para una sola línea`);
+    assert.match(t, /skill `relevo`/, 'no le dice al agent dónde está el cómo');
+    // Nada de nombres de campo ni rutas: eso no le sirve a quien lo lee en
+    // pantalla y es lo que hacía que se viera técnico.
+    assert.ok(!/narrativeWrittenAt|estado\.json|\.tambo/.test(t),
+      'filtró detalle técnico al mensaje que ve el usuario');
   });
 
-  test('el texto sigue siendo accionable aunque sea corto', () => {
-    const t = askText('hay commits nuevos');
-    assert.match(t, /a medias/i, 'no pide lo que quedó a medias');
-    assert.match(t, /skill `relevo`/, 'no nombra la skill');
-    assert.match(t, /narrativeWrittenAt/, 'no deja el camino sin skill');
-    assert.match(t, /estado\.json/, 'no dice dónde se escribe');
-    assert.ok(!/\/relevo/.test(t), 'nombra un comando que no existe en los tres CLIs');
+  test('sin skill, la petición trae lo necesario para ser accionable', () => {
+    // Un agent en una carpeta donde nadie corrió `chaski init` no tiene la
+    // skill: si el mensaje solo la nombrara, la petición sería inservible.
+    // El caso raro paga su costo en pantalla; el normal no.
+    const t = askText('el relevo todavía no tiene narrativa', false);
+    assert.match(t, /narrative`, `narrativeAuthor` y `narrativeWrittenAt/);
+    assert.match(t, /estado\.json/);
+    assert.match(t, /a medias/i);
+    assert.ok(t.split('\n').length <= 5, 'ni el caso raro debe tapar la pantalla');
   });
 });
 
@@ -1379,6 +1384,6 @@ describe('no pedir la narrativa de más', () => {
   test('la primera línea se lee como una petición, no como un error', () => {
     // El CLI la muestra con "Stop hook error:" delante, y es la única línea
     // que aparece en su resumen.
-    assert.match(askText('hay commits nuevos').split('\n')[0], /^chaski: guarda el relevo/);
+    assert.match(askText('hay commits nuevos').split('\n')[0], /^chaski: antes de cerrar, guarda el relevo/);
   });
 });
