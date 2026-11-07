@@ -8,6 +8,10 @@ modules. Si vas a trabajar en este repo, lee esto completo antes de editar.
 ```bash
 node src/cli.mjs init         # registra hooks, gitignore, skill
 node src/cli.mjs doctor       # verifica qué quedó instalado
+node src/cli.mjs next         # sugiere a qué CLI cambiar y resume lo pendiente
+node src/cli.mjs cost         # reporta gasto externo ($0) y turnos extra pedidos
+node src/cli.mjs why [tema]   # busca decisiones pasadas en .tambo/historia/ y decisiones/
+node src/cli.mjs share [tema] # publica la narrativa en decisiones/ (con confirmación o --yes)
 node src/cli.mjs uninstall    # revierte desde respaldo
 node src/cli.mjs probe        # captura el payload crudo de los hooks
 npm run check                      # chequeo de sintaxis (no hay build)
@@ -215,7 +219,7 @@ herramienta existe para evitar.
 ```
 src/capture.mjs      hook de captura — orquesta, no contiene lógica
 src/inject.mjs       hook de inyección — único código en el camino crítico
-src/cli.mjs          init / doctor / uninstall / probe
+src/cli.mjs          init / doctor / next / cost / why / share / uninstall / probe
 src/lib/paths.mjs    rutas, ramas, lock por mkdir, detección de entorno
 src/lib/facts.mjs    extracción desde git y transcript
 src/lib/secrets.mjs  filtro de secretos y rutas excluidas

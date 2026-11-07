@@ -1267,3 +1267,177 @@ describe('no promover lo que no es un subagente', () => {
     });
   });
 });
+
+describe('comandos next, cost, why y share', () => {
+  const capturar = (m, agente, payload) => execFileSync(process.execPath,
+    [join(SRC, 'capture.mjs'), payload.hook_event_name ?? 'Stop', agente],
+    { cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: JSON.stringify(payload) });
+
+  test('next reporta CLIs agotados, sugiere el siguiente disponible y resume lo pendiente', () => {
+    const m = montar('chaski-next-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 99;\n');
+      capturar(m, 'claude-code', {
+        session_id: 's1', cwd: m.proyecto, hook_event_name: 'Stop',
+      });
+
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const rutaEstado = join(m.proyecto, '.tambo', 'branches', rama, 'estado.json');
+      const est = JSON.parse(readFileSync(rutaEstado, 'utf8'));
+      est.narrative = '**Objetivo:** Rotar refresh tokens.\n**Pendiente:** Terminar refresh.ts:41.';
+      est.narrativeAuthor = 'claude code';
+      est.narrativeWrittenAt = new Date().toISOString();
+      writeFileSync(rutaEstado, JSON.stringify(est, null, 2));
+
+      // Se agota la cuota de Claude Code vía StopFailure.
+      capturar(m, 'claude-code', {
+        session_id: 's1', cwd: m.proyecto,
+        hook_event_name: 'StopFailure', error_type: 'rate_limit',
+        error_message: 'You hit your limit',
+      });
+
+      const salida = m.correr('next');
+      assert.match(salida, /claude code\s+agotado/, 'no marcó claude code como agotado');
+      assert.match(salida, /→\s+codex\s+disponible/, 'no sugirió codex como siguiente CLI disponible');
+      assert.match(salida, /1 archivo\(s\) sin commitear/, 'no mostró los archivos sucios');
+      assert.match(salida, /Terminar refresh\.ts:41/, 'no mostró el paso pendiente de la narrativa');
+
+      // Cuando Claude Code vuelve a completar un Stop normal, sale de agotados.
+      capturar(m, 'claude-code', {
+        session_id: 's2', cwd: m.proyecto, hook_event_name: 'Stop',
+      });
+      const salidaRecuperada = m.correr('next');
+      assert.match(salidaRecuperada, /claude code\s+disponible/, 'no limpió el agotamiento tras un Stop normal');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('cost reporta $0.00 de gasto externo y contabiliza peticiones y narrativas por CLI', () => {
+    const m = montar('chaski-cost-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 42;\n');
+      // Primer turno con trabajo sucio y sin narrativa: dispara petición automática.
+      capturar(m, 'claude-code', {
+        session_id: 's1', cwd: m.proyecto, hook_event_name: 'Stop',
+      });
+
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const rutaEstado = join(m.proyecto, '.tambo', 'branches', rama, 'estado.json');
+      const est = JSON.parse(readFileSync(rutaEstado, 'utf8'));
+      est.narrative = 'Se decidió usar cookies HttpOnly para el refresh token.';
+      est.narrativeAuthor = 'codex';
+      est.narrativeWrittenAt = new Date().toISOString();
+      writeFileSync(rutaEstado, JSON.stringify(est, null, 2));
+
+      // La captura siguiente contabiliza la narrativa nueva escrita por codex.
+      capturar(m, 'codex', {
+        session_id: 's2', cwd: m.proyecto, hook_event_name: 'Stop',
+      });
+
+      const salida = m.correr('cost');
+      assert.match(salida, /0 tokens · \$0\.00/);
+      assert.match(salida, /peticiones\s+1 en 7d · 1 total/);
+      assert.match(salida, /narrativas\s+1 en 7d · 1 total/);
+      assert.match(salida, /claude code\s+0 narrativa\(s\) en 7d \(0 total\) · 1 petición\(es\)/);
+      assert.match(salida, /codex\s+1 narrativa\(s\) en 7d \(1 total\)/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('why recupera narrativas archivadas en .tambo/historia/ aunque el relevo activo haya cambiado', () => {
+    const m = montar('chaski-why-');
+    try {
+      capturar(m, 'claude-code', {
+        session_id: 's1', cwd: m.proyecto, hook_event_name: 'Stop',
+      });
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const rutaEstado = join(m.proyecto, '.tambo', 'branches', rama, 'estado.json');
+
+      // Primera narrativa: habla de GraphQL.
+      let est = JSON.parse(readFileSync(rutaEstado, 'utf8'));
+      est.narrative = 'Descartamos GraphQL porque complica el caché HTTP en el CDN.';
+      est.narrativeAuthor = 'claude code';
+      est.narrativeWrittenAt = '2026-11-01T10:00:00.000Z';
+      writeFileSync(rutaEstado, JSON.stringify(est, null, 2));
+      capturar(m, 'claude-code', {
+        session_id: 's1', cwd: m.proyecto, hook_event_name: 'Stop',
+      });
+
+      // Segunda narrativa: reemplaza la anterior en estado.json con otro tema.
+      est = JSON.parse(readFileSync(rutaEstado, 'utf8'));
+      est.narrative = 'Ahora estamos migrando las colas a SQLite con WAL.';
+      est.narrativeAuthor = 'agy';
+      est.narrativeWrittenAt = '2026-11-02T12:00:00.000Z';
+      writeFileSync(rutaEstado, JSON.stringify(est, null, 2));
+      capturar(m, 'agy', {
+        session_id: 's2', cwd: m.proyecto, hook_event_name: 'Stop',
+      });
+
+      // La narrativa de GraphQL ya no está en estado.json, pero sigue en historia/.
+      const actual = JSON.parse(readFileSync(rutaEstado, 'utf8'));
+      assert.ok(!actual.narrative.includes('GraphQL'));
+
+      const encontrado = m.correr('why', 'graphql');
+      assert.match(encontrado, /Descartamos GraphQL/);
+      assert.match(encontrado, /\(historia\)/);
+
+      const sinMatch = m.correr('why', 'kubernetes');
+      assert.match(sinMatch, /No encontré decisiones/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('share redacta secretos, exige confirmación y escribe archivos únicos en decisiones/', () => {
+    const m = montar('chaski-share-');
+    try {
+      capturar(m, 'claude-code', {
+        session_id: 's1', cwd: m.proyecto, hook_event_name: 'Stop',
+      });
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const rutaEstado = join(m.proyecto, '.tambo', 'branches', rama, 'estado.json');
+      const tokenFalso = 'ghp_1234567890abcdefghijklmnopqrstuvwxAB';
+      const est = JSON.parse(readFileSync(rutaEstado, 'utf8'));
+      est.narrative = `Elegimos cookies HttpOnly. Token de prueba: ${tokenFalso}`;
+      est.narrativeAuthor = 'claude code';
+      est.narrativeWrittenAt = new Date().toISOString();
+      writeFileSync(rutaEstado, JSON.stringify(est, null, 2));
+
+      // Caso positivo de control: el token está en estado.json antes de share.
+      assert.ok(readFileSync(rutaEstado, 'utf8').includes(tokenFalso));
+
+      // Sin confirmación ('n' en stdin), share no escribe nada y sale con error.
+      const rechazado = spawnSync(process.execPath,
+        [join(SRC, 'cli.mjs'), 'share', 'refresh en cookie'],
+        { cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: 'n\n' });
+      assert.notEqual(rechazado.status, 0, 'share sin confirmación debería salir con código != 0');
+      assert.ok(!existsSync(join(m.proyecto, 'decisiones')),
+        'share creó decisiones/ a pesar de haber sido cancelado');
+
+      // Con --yes escribe decisiones/YYYY-MM-DD-refresh-en-cookie.md y redacta el secreto.
+      const publicado1 = m.correr('share', 'refresh en cookie', '--yes');
+      assert.match(publicado1, /Publicado en decisiones\//);
+      const archivos1 = readdirSync(join(m.proyecto, 'decisiones'));
+      assert.equal(archivos1.length, 1);
+      assert.match(archivos1[0], /^\d{4}-\d{2}-\d{2}-refresh-en-cookie\.md$/);
+
+      const textoPublicado = readFileSync(join(m.proyecto, 'decisiones', archivos1[0]), 'utf8');
+      assert.ok(!textoPublicado.includes(tokenFalso), 'share filtró un secreto al archivo compartido');
+      assert.match(textoPublicado, /\[redactado:/, 'no dejó marca de redacción');
+
+      // Segunda corrida con el mismo tema: append-only con sufijo -2, sin pisar el primero.
+      const confirmadoStdin = spawnSync(process.execPath,
+        [join(SRC, 'cli.mjs'), 'share', 'refresh en cookie'],
+        { cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: 's\n' });
+      assert.equal(confirmadoStdin.status, 0);
+      const archivos2 = readdirSync(join(m.proyecto, 'decisiones')).sort();
+      assert.equal(archivos2.length, 2);
+      assert.ok(archivos2.some((f) => /-refresh-en-cookie-2\.md$/.test(f)),
+        `no creó el archivo con sufijo -2: ${archivos2.join(', ')}`);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});

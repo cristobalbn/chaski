@@ -12,9 +12,9 @@
 //     lib/facts.mjs) en vez de dejar que el hook se cancele y se pierda el
 //     relevo entero.
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir } from './lib/paths.mjs';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
@@ -125,8 +125,13 @@ function main() {
     };
 
     // Un corte por cuota se sella y se deja anotado: es el instante del relevo.
-    if (ev.hook_event_name === 'StopFailure' && /rate.?limit/i.test(ev.error_type ?? '')) {
-      estado.sealedAtLimit = { at: estado.writtenAt, motivo: ev.error_type };
+    const detalleLimite = `${ev.error_type ?? ''} ${ev.error_message ?? ''} ${ev.error ?? ''} ${ev.terminationReason ?? ''}`;
+    if ((ev.hook_event_name === 'StopFailure' && /rate.?limit/i.test(ev.error_type ?? ''))
+      || /rate.?limit|quota.?exceeded|MAX_TOKEN_BUDGET_EXCEEDED/i.test(detalleLimite)) {
+      estado.sealedAtLimit = {
+        at: estado.writtenAt,
+        motivo: ev.error_type || ev.terminationReason || 'rate_limit',
+      };
     }
 
     const { redactions } = redact(JSON.stringify(estado.commands), config);
@@ -170,6 +175,9 @@ function main() {
     writeAtomic(rutaRelevo, md);
     writeAtomic(rutaEstado, JSON.stringify(estado, null, 2));
     heartbeat(estado.agent);
+    recordQuota(ev, estado);
+    if (narrativaNueva && estado.narrative) recordHistory(cwd, estado, config);
+    if (motivo || (narrativaNueva && estado.narrative)) recordCost(estado, motivo, narrativaNueva);
     occasionalPrune(cwd, config);
 
     // La petición va por stdout y solo después de que el relevo esté escrito:
@@ -454,5 +462,84 @@ function heartbeat(agent) {
     }
     l[name] = l[name] > ahora ? l[name] : ahora;
     writeAtomic(ruta, JSON.stringify(l, null, 2));
+  } catch {}
+}
+
+/**
+ * Estado de cuota por CLI en `~/.chaski/quota.json`, leído por `chaski next`.
+ * Solo escribe cuando ocurre un corte por límite o cuando un CLI que estaba
+ * marcado como agotado vuelve a completar un turno normal.
+ */
+function recordQuota(ev, estado) {
+  try {
+    const ruta = join(globalDir(), 'quota.json');
+    const q = readJson(ruta, {}) ?? {};
+    const name = canonicalAgent(estado.agent);
+    if (estado.sealedAtLimit) {
+      const msg = String(ev.error_message ?? ev.error ?? '').trim().slice(0, 200) || null;
+      q[name] = {
+        at: estado.writtenAt,
+        reason: estado.sealedAtLimit.motivo,
+        message: msg,
+      };
+      writeAtomic(ruta, JSON.stringify(q, null, 2));
+    } else if (ev.hook_event_name === 'Stop' && q[name]) {
+      delete q[name];
+      writeAtomic(ruta, JSON.stringify(q, null, 2));
+    }
+  } catch {}
+}
+
+/**
+ * Registro append-only de narrativas en `.tambo/historia/entries.jsonl`,
+ * consultado por `chaski why`. Cuando la narrativa se reescribe en el relevo,
+ * la anterior sigue viva aquí sin ocupar presupuesto de contexto al inyectar.
+ */
+function recordHistory(cwd, estado, config) {
+  try {
+    const dir = join(tambo(cwd), 'historia');
+    mkdirSync(dir, { recursive: true });
+    const ruta = join(dir, 'entries.jsonl');
+    const { texto } = redact(String(estado.narrative ?? '').trim(), config);
+    if (!texto) return;
+    const previas = existsSync(ruta) ? readFileSync(ruta, 'utf8') : '';
+    const lineas = previas.split('\n').filter(Boolean);
+    const ultima = lineas.length ? JSON.parse(lineas[lineas.length - 1]) : null;
+    const branch = estado.facts?.branch ?? 'sin-rama';
+    if (ultima && ultima.branch === branch && ultima.narrative === texto) return;
+    const entrada = {
+      at: estado.narrativeWrittenAt ?? estado.writtenAt,
+      author: canonicalAgent(estado.narrativeAuthor ?? estado.agent),
+      branch,
+      head: estado.head ?? null,
+      narrative: texto,
+    };
+    const nuevo = (previas ? previas.trimEnd() + '\n' : '') + JSON.stringify(entrada) + '\n';
+    writeAtomic(ruta, nuevo);
+  } catch {}
+}
+
+/**
+ * Contabilidad local de turnos extra pedidos por chaski y narrativas escritas,
+ * en `~/.chaski/cost.json`, para `chaski cost`.
+ */
+function recordCost(estado, motivo, narrativaNueva) {
+  try {
+    const ruta = join(globalDir(), 'cost.json');
+    const c = readJson(ruta, { asks: [], narratives: [] }) ?? { asks: [], narratives: [] };
+    const agent = canonicalAgent(estado.agent);
+    const branch = estado.facts?.branch ?? 'sin-rama';
+    if (motivo) {
+      c.asks = [...(Array.isArray(c.asks) ? c.asks : []), {
+        at: estado.writtenAt, agent, branch, reason: motivo,
+      }].slice(-500);
+    }
+    if (narrativaNueva && estado.narrative) {
+      const author = canonicalAgent(estado.narrativeAuthor ?? estado.agent);
+      c.narratives = [...(Array.isArray(c.narratives) ? c.narratives : []), {
+        at: estado.narrativeWrittenAt ?? estado.writtenAt, agent: author, branch,
+      }].slice(-500);
+    }
+    writeAtomic(ruta, JSON.stringify(c, null, 2));
   } catch {}
 }
