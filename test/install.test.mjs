@@ -108,7 +108,7 @@ describe('uninstall revierte lo que init tocó', () => {
       assert.ok(!existsSync(config + '.chaski-backup'),
         'dejó el respaldo tirado después de restaurar');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -123,7 +123,7 @@ describe('uninstall revierte lo que init tocó', () => {
           'quedaron hooks de chaski tras desinstalar');
       }
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -139,7 +139,7 @@ describe('uninstall revierte lo que init tocó', () => {
       assert.equal(contar(tresVeces), contar(unaVez),
         'correr init de nuevo duplicó los hooks');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -154,7 +154,7 @@ describe('uninstall revierte lo que init tocó', () => {
       assert.equal((ign.match(/^\.tambo\/$/gm) || []).length, 1,
         'duplicó la línea de .tambo/');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -179,7 +179,7 @@ describe('uninstall revierte lo que init tocó', () => {
         'init modificó una configuración que no pudo parsear');
       assert.ok(fallo, 'init no avisó de que la configuración estaba mal');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -199,7 +199,7 @@ describe('uninstall revierte lo que init tocó', () => {
       assert.ok(tras.includes('opus'), 'perdió la configuración del usuario');
       assert.ok(tras.includes('chaski'), 'no registró los hooks');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -217,7 +217,7 @@ describe('uninstall revierte lo que init tocó', () => {
       rmSync(join(m.bin, 'agy.cmd'));
       assert.match(run(), /agy\s+no instalado/);
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -229,7 +229,7 @@ describe('uninstall revierte lo que init tocó', () => {
       assert.match(salida, /CLIs y hooks/);
       assert.match(salida, /Qué sale de esta máquina/);
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -268,7 +268,7 @@ describe('probe', () => {
       const salidaLimpiar = m.correr('probe', '--clean');
       assert.match(salidaLimpiar, /sonda removida|restaurado/);
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -278,7 +278,7 @@ describe('probe', () => {
       const salida = m.correr('probe', '--show');
       assert.match(salida, /No se capturó nada/);
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -291,7 +291,7 @@ describe('subcomando desconocido', () => {
       try { m.correr('lo-que-sea'); } catch { fallo = true; }
       assert.ok(fallo, 'un subcomando inválido no marcó error de salida');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -403,7 +403,7 @@ describe('promoción de subagents', () => {
       assert.match(md, /puede no haber acabado/,
         'no avisó de que un subagente se quedó sin turns');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -437,7 +437,7 @@ describe('promoción de subagents', () => {
       assert.equal(despues.turns, antes.turns,
         'la promoción contó los turns del subagente como del padre');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -453,7 +453,7 @@ describe('promoción de subagents', () => {
       assert.equal(despues.writtenAt, antes.writtenAt,
         'un event intermedio de subagente reescribió el relevo del padre');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -471,7 +471,7 @@ describe('promoción de subagents', () => {
       assert.ok(!existsSync(join(m.proyecto, '.tambo', 'branches', rama, 'relevo.md')),
         'creó un relevo con la conclusión de un hijo y ningún hecho');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -487,7 +487,7 @@ describe('promoción de subagents', () => {
       assert.ok(!todo.includes(token), 'se filtró un secreto desde un subagente');
       assert.match(todo, /redactado/);
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -550,7 +550,7 @@ describe('concurrencia: varios escritores a la vez', () => {
       assert.ok(!existsSync(join(m.proyecto, '.tambo', '.lock')),
         'el lock quedó tomado: la próxima captura se saltearía');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -610,7 +610,7 @@ describe('compatibilidad con los nombres de archivo viejos', () => {
       assert.ok(existsSync(md), `el puente no escribió el relevo. stdout: ${salida}`);
       assert.match(readFileSync(md, 'utf8'), /# Relevo/);
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -635,7 +635,7 @@ describe('compatibilidad con los nombres de archivo viejos', () => {
       assert.ok(!r.stdout.includes('chaski init'),
         'el aviso se filtró a stdout: eso entra al contexto del agent como dato');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -671,7 +671,7 @@ describe('grafía del agent', () => {
       const md = readFileSync(join(m.proyecto, '.tambo', 'branches', rama, 'relevo.md'), 'utf8');
       assert.match(md.split('\n')[0], /claude code/, 'el relevo quedó con la grafía del argumento');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -699,7 +699,7 @@ describe('skill del relevo', () => {
           `la copia en ${base.join('/')} no coincide con skill/SKILL.md`);
       }
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -716,7 +716,7 @@ describe('skill del relevo', () => {
       const origen = readFileSync(join(SRC, '..', 'skill', 'SKILL.md'), 'utf8');
       for (const ruta of rutas) assert.equal(readFileSync(ruta, 'utf8'), origen);
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -750,7 +750,7 @@ describe('skill del relevo', () => {
         m.correr('init');
         assert.equal(readFileSync(ruta, 'utf8'), actualizado, 'repetir init duplica instrucciones');
       } finally {
-        rmSync(m.raiz, { recursive: true, force: true });
+        rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
       }
     });
   }
@@ -769,7 +769,7 @@ describe('skill del relevo', () => {
       m.correr('init');
       assert.equal(readFileSync(ruta, 'utf8'), actualizado);
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -792,7 +792,7 @@ describe('skill del relevo', () => {
         assert.equal(readFileSync(ruta, 'utf8'), contenido);
       }
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -820,7 +820,7 @@ describe('skill del relevo', () => {
       assert.match(seccion, /narrativeWrittenAt/, 'no nombra los campos exactos');
       assert.match(seccion, /No edites `relevo\.md`/i, 'no advierte de no editar relevo.md');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -841,7 +841,7 @@ describe('skill del relevo', () => {
           `falta AGENTS.md en ${dir}`);
       }
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -888,7 +888,7 @@ describe('trabajo delegado', () => {
       assert.match(despues.md, /Trabajo delegado/, 'la sección desapareció del relevo');
       assert.match(despues.md, /refresh no rota/, 'se perdió la conclusión');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -909,7 +909,7 @@ describe('trabajo delegado', () => {
       assert.match(leer(m).md, /Encontré el bug en el parser/,
         'otro CLI abriendo el proyecto perdió el trabajo delegado');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -928,7 +928,7 @@ describe('trabajo delegado', () => {
       assert.match(leer(m).md, /\*\*revisor\*\* — hace \d+ min/,
         'no muestra la antigüedad de la conclusión');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -953,7 +953,7 @@ describe('contrato del bloqueo por CLI', () => {
       assert.ok(!/async\s*=\s*true/.test(bloque),
         'el hook Stop quedó en segundo plano: no podrá mantener al agent un turno más');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -972,7 +972,7 @@ describe('contrato del bloqueo por CLI', () => {
       assert.equal(o.decision, 'continue', `agy recibió "${o.decision}", que lo deja parar`);
       assert.match(o.reason, /a medias/i, 'el motivo no pide el estado en vuelo');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -986,7 +986,7 @@ describe('contrato del bloqueo por CLI', () => {
       });
       assert.equal(JSON.parse(salida.trim()).decision, 'block');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -1015,7 +1015,7 @@ describe('el hook no se traga errores propios', () => {
         assert.ok(!/captura omitida/.test(r.stderr),
           `el hook se tragó un error propio: ${r.stderr.trim()}`);
       } finally {
-        rmSync(m.raiz, { recursive: true, force: true });
+        rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
       }
     });
   }
@@ -1052,7 +1052,7 @@ describe('la confianza de los hooks de Codex sobrevive a init', () => {
       assert.equal(despues.split('>>> chaski').length - 1, 1, 'duplicó el bloque');
       assert.equal(despues.split('[[hooks.Stop]]').length - 1, 1, 'duplicó el hook Stop');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -1063,7 +1063,7 @@ describe('la confianza de los hooks de Codex sobrevive a init', () => {
       const toml = readFileSync(join(m.casa, '.codex', 'config.toml'), 'utf8');
       assert.ok(!/hooks\.state/.test(toml), 'inventó un bloque de estado que Codex no escribió');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -1121,7 +1121,7 @@ describe('el contador de la narrativa, en el hook real', () => {
         `el contador quedó en ${d.turnsAtNarrative} con turns en ${d.turns}: `
         + 'la política va a creer que pasaron todos los turnos de la sesión');
     } finally {
-      rmSync(m.raiz, { recursive: true, force: true });
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });

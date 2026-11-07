@@ -81,6 +81,14 @@ salen de lo que falló durante esa ronda, no de la teoría.
   entre llamadas. El aislamiento va en la misma línea de comando, con las dos
   variables.
 
+- **Las limpiezas de temporales llevan reintento.** En Windows, `rmSync` falla
+  con `EBUSY: resource busy or locked` cuando git, un antivirus o un cliente de
+  sincronización todavía tienen un handle abierto sobre el directorio que el
+  test acaba de usar. No es un bug del código: es carrera de sistema de
+  archivos, y aparece como un fallo intermitente en CI que no se reproduce en
+  la máquina de nadie. Usa siempre
+  `{ recursive: true, force: true, maxRetries: 5, retryDelay: 50 }`.
+
 ## Nunca commitees a main
 
 `main` está protegida y exige pull request. Es lo que la gente instala con
