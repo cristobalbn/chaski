@@ -293,7 +293,7 @@ conservadores, y en este orden:
 | | |
 |---|---|
 | Apagarlo | `"askNarrative": false` en `chaski.json` o `chaski.local.json` |
-| Cómo se ve | **«Stop hook feedback»**. En Claude Code la petición se emite con `hookSpecificOutput.additionalContext`, que la documentación llama «non-error feedback»: mantiene el turno extra y las protecciones contra bucles, pero no se rotula como error. Si usas una versión de Claude Code anterior a ese campo, la petición simplemente no llega — no rompe nada |
+| Cómo se ve | Cuatro líneas bajo el rótulo **«Stop hook feedback»**. Ese rótulo y el `Ran 1 stop hook` los pinta Claude Code al ejecutar cualquier hook y no se pueden suprimir; lo nuestro es el texto, y es corto a propósito porque ocupa pantalla del usuario. Se emite con `hookSpecificOutput.additionalContext`, que la documentación llama «non-error feedback»: mantiene el turno extra y las protecciones contra bucles sin rotularse como error. En una versión de Claude Code anterior a ese campo la petición no llega — no rompe nada |
 | Dónde funciona | Los tres, con el contrato de cada uno: `decision: "block"` en Claude Code y Codex, `decision: "continue"` en Antigravity, que trata cualquier otro valor como permiso para parar |
 | En Codex | su hook `Stop` se registra **síncrono**, porque un hook en segundo plano no puede bloquear. Esperas la captura (~340 ms) al cerrar cada turno |
 

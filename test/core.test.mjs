@@ -1305,11 +1305,25 @@ describe('cuándo se pide la narrativa', () => {
       'pidió otra vez dentro del mismo bucle: eso no termina nunca');
   });
 
-  test('el texto pide el estado en vuelo, que es lo que motiva todo', () => {
-    const t = askText('el relevo todavía no tiene narrativa');
+  test('el texto es corto: lo ve el usuario en pantalla', () => {
+    // El CLI muestra esto en pantalla, debajo de sus propias líneas. Una
+    // versión anterior ocupaba veinte renglones explicando las cuatro
+    // secciones, el presupuesto de palabras y el camino sin skill, y el
+    // usuario lo dijo claro: "es muy largo, muy extenso, tapa mucha parte de
+    // la pantalla". El detalle vive en la skill, que es donde se lee cuando
+    // hace falta. Este test existe para que no vuelva a crecer.
+    const t = askText('hay commits nuevos');
+    const lineas = t.split('\n').length;
+    assert.ok(lineas <= 5, `ocupa ${lineas} líneas en la pantalla del usuario`);
+    assert.ok(t.length <= 400, `${t.length} caracteres: de nuevo tapa la pantalla`);
+  });
+
+  test('el texto sigue siendo accionable aunque sea corto', () => {
+    const t = askText('hay commits nuevos');
     assert.match(t, /a medias/i, 'no pide lo que quedó a medias');
-    assert.match(t, /ruta y la línea/i, 'no pide ser específico');
     assert.match(t, /skill `relevo`/, 'no nombra la skill');
+    assert.match(t, /narrativeWrittenAt/, 'no deja el camino sin skill');
+    assert.match(t, /estado\.json/, 'no dice dónde se escribe');
     assert.ok(!/\/relevo/.test(t), 'nombra un comando que no existe en los tres CLIs');
   });
 });
@@ -1365,6 +1379,6 @@ describe('no pedir la narrativa de más', () => {
   test('la primera línea se lee como una petición, no como un error', () => {
     // El CLI la muestra con "Stop hook error:" delante, y es la única línea
     // que aparece en su resumen.
-    assert.match(askText('hay commits nuevos').split('\n')[0], /^chaski pide guardar el relevo/);
+    assert.match(askText('hay commits nuevos').split('\n')[0], /^chaski: guarda el relevo/);
   });
 });

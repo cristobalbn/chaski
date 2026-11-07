@@ -215,6 +215,15 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   «Stop hook feedback». En Codex y Antigravity el formato no cambia: su
   documentación no describe un equivalente.
 
+- El texto de la petición pasa de veinte líneas a cuatro. Lo muestra el CLI en
+  pantalla, y explicaba ahí las cuatro secciones, el presupuesto de palabras y
+  el camino sin skill — detalle que ya vive en la skill `relevo`, que es donde
+  se lee cuando hace falta. Queda una línea para el caso sin skill, que es lo
+  mínimo que lo hace autosuficiente. Hay un test que falla si vuelve a crecer.
+- Lo que chaski **no** puede quitar: las líneas `Ran 1 stop hook` y
+  `Stop hook feedback` las pinta Claude Code al ejecutar cualquier hook, y
+  `suppressOutput` no tiene efecto sobre ellas.
+
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,
   `codex exec`, `agy -p`). chaski es para sesiones interactivas.
