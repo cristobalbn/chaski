@@ -657,3 +657,59 @@ describe('grafía del agent', () => {
     }
   });
 });
+
+// -------------------------------------- la skill, en los tres CLIs
+
+describe('skill del relevo', () => {
+  // Hasta esta versión la skill se instalaba solo en `.claude/skills/`, así que
+  // Codex y Antigravity recibían el relevo pero no tenían cómo escribir la
+  // narrativa de vuelta: el traspaso era simétrico para los hechos y
+  // asimétrico para la intención, que es lo contrario de lo que promete la
+  // herramienta. Los dos leen `.agents/skills/` con el mismo formato que
+  // Claude Code, así que un archivo copiado dos veces cubre a los tres.
+
+  test('init la deja en .claude/skills y en .agents/skills, idénticas al origen', () => {
+    const m = montar('chaski-skill-');
+    try {
+      m.correr('init');
+      const origen = readFileSync(join(SRC, '..', 'skill', 'SKILL.md'), 'utf8');
+
+      for (const base of [['.claude', 'skills'], ['.agents', 'skills']]) {
+        const ruta = join(m.proyecto, ...base, 'relevo', 'SKILL.md');
+        assert.ok(existsSync(ruta), `falta la skill en ${base.join('/')}/relevo/`);
+        assert.equal(readFileSync(ruta, 'utf8'), origen,
+          `la copia en ${base.join('/')} no coincide con skill/SKILL.md`);
+      }
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('el frontmatter trae name y description, que los tres exigen', () => {
+    // Sin `name` o sin `description` la skill se ignora en silencio: no hay
+    // error, simplemente no aparece en el menú de ningún CLI.
+    const txt = readFileSync(join(SRC, '..', 'skill', 'SKILL.md'), 'utf8');
+    const fm = /^---\n([\s\S]*?)\n---/.exec(txt);
+    assert.ok(fm, 'el SKILL.md no empieza con frontmatter YAML');
+    assert.match(fm[1], /^name:\s*relevo\s*$/m, 'falta el campo name');
+    assert.match(fm[1], /^description:\s*\S/m, 'falta el campo description');
+  });
+
+  test('las instrucciones no mandan editar relevo.md a mano', () => {
+    // relevo.md lo regenera capture.mjs desde estado.json, y la firma lo
+    // cubre: una edición a mano se pierde Y hace que el próximo agente reciba
+    // un aviso de manipulación por algo legítimo. El bloque que init escribía
+    // en AGENTS.md mandaba exactamente eso.
+    const m = montar('chaski-skill-doc-');
+    try {
+      m.correr('init');
+      const agents = readFileSync(join(m.proyecto, 'AGENTS.md'), 'utf8');
+      const seccion = agents.slice(agents.indexOf('## Relevo de contexto'));
+      assert.match(seccion, /estado\.json/, 'no dice dónde se escribe la narrativa');
+      assert.match(seccion, /narrativeWrittenAt/, 'no nombra los campos exactos');
+      assert.match(seccion, /No edites `relevo\.md`/i, 'no advierte de no editar relevo.md');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+});
