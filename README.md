@@ -336,6 +336,30 @@ No es obligatorio. Sin narrativa el relevo sigue siendo útil, porque los hechos
 son lo que evita que el siguiente agente rompa algo. La narrativa es lo que
 evita que reabra decisiones ya cerradas.
 
+### Otros comandos del día a día
+
+```bash
+chaski next                 # muestra qué CLI está disponible y qué quedó pendiente
+chaski cost                 # muestra el gasto externo ($0) y los turnos extra de chaski
+chaski why [tema]           # busca decisiones anteriores en .tambo/historia/ y decisiones/
+chaski share [tema]         # publica la decisión de la rama actual en decisiones/ (pide confirmación)
+chaski share [tema] --yes   # publica sin pedir confirmación interactiva
+```
+
+- **`chaski next`** lee `~/.chaski/quota.json` (alimentado cuando un hook detecta
+  un corte por `rate_limit`) y el `estado.json` de tu rama para decirte en un
+  segundo a qué CLI cambiarte y qué archivos o pasos quedaron en vuelo.
+- **`chaski cost`** reporta el gasto externo (`0 tokens · $0.00`, porque chaski
+  nunca llama a APIs ni modelos externos) y contabiliza cuántos turnos extra
+  pidió chaski y cuántas narrativas escribió cada CLI en los últimos 7 días.
+- **`chaski why [tema]`** busca en `.tambo/historia/entries.jsonl` —el archivo
+  append-only donde `capture.mjs` preserva cada narrativa antes de que la
+  siguiente la reemplace—, en las ramas activas y en `decisiones/`.
+- **`chaski share [tema]`** toma la narrativa de la rama actual, vuelve a pasar
+  el filtro de secretos de `src/lib/secrets.mjs`, muestra en pantalla la ruta
+  `decisiones/YYYY-MM-DD-<tema>.md` y el contenido exacto, y pide confirmación
+  antes de escribir (o usa `--yes`). Nunca sobrescribe un archivo existente.
+
 ---
 
 ## Arquitectura
@@ -352,9 +376,9 @@ eso el modelo es el último recurso y no el primero.
 
 | Archivo | Cuándo corre | Qué hace |
 |---|---|---|
-| `src/capture.mjs` | hooks `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | Lee el transcript desde una marca de agua y git; escribe `relevo.md` y `estado.json` |
+| `src/capture.mjs` | hooks `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | Lee el transcript desde una marca de agua y git; escribe `relevo.md`, `estado.json` y `.tambo/historia/` |
 | `src/inject.mjs` | hook `SessionStart` | Imprime el relevo; lo que imprime entra al contexto del agente |
-| `src/cli.mjs` | a mano | `init`, `doctor`, `uninstall` |
+| `src/cli.mjs` | a mano | `init`, `doctor`, `next`, `cost`, `why`, `share`, `uninstall`, `probe` |
 | `skill/SKILL.md` | al pedir «relevo» | Instrucciones para que el agente escriba la narrativa |
 
 Archivos que genera en tu proyecto:
@@ -365,9 +389,12 @@ Archivos que genera en tu proyecto:
     main/relevo.md          ← lo que se inyecta
     main/estado.json        ← hechos, marca de agua, firma
     feat-pagos/relevo.md    ← otra rama, otro contexto
+  historia/
+    entries.jsonl           ← narrativas históricas (append-only, para chaski why)
 ```
 
-Y en `~/.chaski/`: la clave de firma, los latidos de cada CLI y la config global.
+Y en `~/.chaski/`: la clave de firma, los latidos de cada CLI, el estado de
+cuota (`quota.json`), la contabilidad de turnos (`cost.json`) y la config global.
 
 El diseño completo, con los riesgos y la investigación de términos de uso, está
 en [`docs/diseno.html`](docs/diseno.html). Describe el diseño entero, incluidas
