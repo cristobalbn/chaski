@@ -17,7 +17,7 @@ import { execFileSync } from 'node:child_process';
 import { transcriptFacts, gitFacts } from '../src/lib/facts.mjs';
 import { redact, isExcludedPath } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS } from '../src/lib/relay.mjs';
-import { branchSlug, pruneOrphanRelays, git } from '../src/lib/paths.mjs';
+import { branchSlug, pruneOrphanRelays, git, projectDir } from '../src/lib/paths.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
 
 /** Presupuesto falso: `remaining()` fijo, no atado al reloj real. Para
@@ -1132,6 +1132,66 @@ describe('inject.mjs con el agent agy', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
       rmSync(casa, { recursive: true, force: true });
+    }
+  });
+});
+
+// ------------------------------ resolución del directorio del proyecto
+
+describe('resolución del directorio del proyecto (subcarpeta y carpeta contenedora)', () => {
+  test('encuentra el repo cuando el CLI se abre en la carpeta contenedora o en una subcarpeta', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'chaski-ws-'));
+    const casa = mkdtempSync(join(tmpdir(), 'chaski-ws-home-'));
+    const entorno = { ...process.env, HOME: casa, USERPROFILE: casa };
+    const repo = join(ws, 'mi-repo');
+    const sub = join(repo, 'src', 'lib');
+    execFileSync(process.execPath, ['-e',
+      `require('fs').mkdirSync(${JSON.stringify(sub)},{recursive:true})`]);
+    const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    try {
+      g('init', '-q');
+      g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+      writeFileSync(join(repo, '.gitignore'), '.tambo/\n');
+      writeFileSync(join(repo, 'index.js'), 'export default 1;\n');
+      g('add', '-A'); g('commit', '-qm', 'inicial');
+
+      assert.equal(projectDir(ws), repo, 'desde la carpeta contenedora no bajó al único repo hijo');
+      assert.equal(projectDir(sub), repo, 'desde una subcarpeta no subió a la raíz del repo');
+
+      // Captura abriendo el CLI en la carpeta contenedora (ws) y lectura desde una subcarpeta (sub).
+      execFileSync(process.execPath, [join(AQUI, '..', 'src', 'capture.mjs'), 'Stop', 'codex'],
+        { cwd: ws, env: entorno, encoding: 'utf8',
+          input: JSON.stringify({ cwd: ws, session_id: 'ws-1', hook_event_name: 'Stop' }) });
+
+      const rama = g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      assert.ok(existsSync(join(repo, '.tambo', 'branches', rama, 'estado.json')),
+        'no escribió el relevo en el repo hijo');
+      assert.ok(!existsSync(join(ws, '.tambo')),
+        'creó un .tambo falso en la carpeta contenedora');
+
+      const salida = execFileSync(process.execPath,
+        [join(AQUI, '..', 'src', 'inject.mjs'), 'SessionStart', 'claude-code'],
+        { cwd: sub, env: entorno, encoding: 'utf8', input: JSON.stringify({ cwd: sub }) });
+      assert.match(salida, new RegExp(`codex · ${rama}`),
+        'inject.mjs desde subcarpeta no leyó el relevo de la raíz del repo');
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
+      rmSync(casa, { recursive: true, force: true });
+    }
+  });
+
+  test('no adivina si la carpeta contenedora tiene varios repositorios hijos', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'chaski-multi-'));
+    try {
+      for (const n of ['repo-a', 'repo-b']) {
+        const r = join(ws, n);
+        execFileSync(process.execPath, ['-e',
+          `require('fs').mkdirSync(${JSON.stringify(r)},{recursive:true})`]);
+        execFileSync('git', ['init', '-q'], { cwd: r });
+      }
+      assert.equal(projectDir(ws), ws, 'eligió un repo arbitrario habiendo varios');
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
     }
   });
 });

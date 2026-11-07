@@ -823,4 +823,25 @@ describe('skill del relevo', () => {
       rmSync(m.raiz, { recursive: true, force: true });
     }
   });
+
+  test('init desde una carpeta contenedora configura el repo hijo y deja la skill disponible en ambas', () => {
+    const m = montar('chaski-skill-parent-');
+    try {
+      execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'],
+        { cwd: m.raiz, env: m.entorno, encoding: 'utf8' });
+
+      assert.ok(readFileSync(join(m.proyecto, '.gitignore'), 'utf8').includes('.tambo/'),
+        'no configuró .gitignore en el repositorio hijo');
+      for (const dir of [m.proyecto, m.raiz]) {
+        assert.ok(existsSync(join(dir, '.claude', 'skills', 'relevo', 'SKILL.md')),
+          `falta .claude/skills en ${dir}`);
+        assert.ok(existsSync(join(dir, '.agents', 'skills', 'relevo', 'SKILL.md')),
+          `falta .agents/skills en ${dir}`);
+        assert.ok(existsSync(join(dir, 'AGENTS.md')),
+          `falta AGENTS.md en ${dir}`);
+      }
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
 });

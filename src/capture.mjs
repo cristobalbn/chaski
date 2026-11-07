@@ -14,7 +14,7 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, pruneOrphanRelays, existsSync } from './lib/paths.mjs';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, pruneOrphanRelays, existsSync, projectDir } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
@@ -34,7 +34,7 @@ function main() {
   let liberar = null;
   try {
     const ev = readPayload();
-    const cwd = ev.cwd || process.cwd();
+    const cwd = projectDir(ev.cwd || process.cwd());
 
     const config = loadConfig(cwd);
 

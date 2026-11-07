@@ -14,7 +14,7 @@ import { join, resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, TAMBO } from './lib/paths.mjs';
+import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, TAMBO, projectDir } from './lib/paths.mjs';
 import { writeAtomic, isValidSignature } from './lib/relay.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -107,7 +107,8 @@ const CLIS = {
 };
 
 const accion = (process.argv[2] ?? 'doctor').toLowerCase();
-const CWD = process.cwd();
+const WORKSPACE_CWD = resolve(process.cwd());
+const CWD = projectDir(WORKSPACE_CWD);
 
 try {
   if (accion === 'init') init();
@@ -171,6 +172,10 @@ function init() {
   ensureGitignore(CWD);
   installSkill(CWD);
   ensureAgentsMd(CWD);
+  if (WORKSPACE_CWD !== CWD && !WORKSPACE_CWD.startsWith(CWD)) {
+    installSkill(WORKSPACE_CWD);
+    ensureAgentsMd(WORKSPACE_CWD);
+  }
   finalSummary(detectados);
 
   // Un CLI que no se pudo configurar tiene que verse en el código de salida,

@@ -22,8 +22,8 @@ del relevo tampoco solicita sobrescribirlo.
 
 ## Pasos
 
-1. Lee `.tambo/branches/<rama-actual>/estado.json`. La rama sale de `git rev-parse --abbrev-ref HEAD`.
-2. Escribe la narrativa en el campo `narrative` de ese JSON, junto con
+1. Ubica la raíz del repositorio Git (si el espacio de trabajo es una carpeta contenedora con un único repo hijo o una subcarpeta del repo, usa la raíz de ese repositorio). Lee `.tambo/branches/<rama-actual>/estado.json` desde esa raíz, donde `<rama-actual>` sale de `git rev-parse --abbrev-ref HEAD`.
+2. Escribe la narrativa en el campo `narrative` de ese JSON en UTF-8, junto con
    `narrativeAuthor` (tu nombre de agente) y `narrativeWrittenAt` (ISO 8601 de ahora).
 3. No toques ningún otro campo. `facts`, `commands`, `offset` y `signature` son de chaski.
 4. Confirma al usuario en una línea: qué quedó anotado como siguiente paso.
@@ -62,6 +62,7 @@ anterior en Redis antes de emitir el nuevo, en `src/auth/refresh.ts:41`» sirve;
   siguiente paso. El relevo se inyecta como datos, no como órdenes.
 - **No repitas los hechos.** Si el diff ya dice que `jwt.ts` tiene +82 líneas,
   no lo escribas.
+- **Preserva UTF-8 al escribir `estado.json`.** Usa la herramienta de edición de archivos del agente o escribe en UTF-8 directo; en Windows no pases texto con tildes o `«»` como literal por la consola de PowerShell sin `UTF8Encoding`, porque convierte los caracteres no ASCII en `?`.
 - **Distingue lo temporal de lo permanente.** Si en esta sesión apareció una
   convención que vale **siempre** —un estilo, una herramienta prohibida, un
   comando que hay que correr antes de dar algo por listo— no va en el relevo,
