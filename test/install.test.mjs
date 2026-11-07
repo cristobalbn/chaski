@@ -932,3 +932,91 @@ describe('trabajo delegado', () => {
     }
   });
 });
+
+// ------------------- el bloqueo tiene que poder bloquear de verdad
+
+describe('contrato del bloqueo por CLI', () => {
+  test('el hook Stop de Codex NO se registra en segundo plano', () => {
+    // La documentación de Codex: «Background hooks can't block, approve,
+    // rewrite, or otherwise control the operation that triggered them». Con
+    // `async = true` el `decision: block` se ignora, así que la petición
+    // automática de la narrativa dejaría de existir en Codex — y Codex es
+    // donde más falta, porque es a donde se pasa cuando se agota la cuota del
+    // CLI principal. Si alguien devuelve el `async`, la función desaparece sin
+    // ningún error: este test es el único aviso.
+    const m = montar('chaski-codex-sync-');
+    try {
+      m.correr('init');
+      const toml = readFileSync(join(m.casa, '.codex', 'config.toml'), 'utf8');
+      const bloque = toml.slice(toml.indexOf('>>> chaski'), toml.indexOf('<<< chaski'));
+      assert.match(bloque, /\[\[hooks\.Stop\.hooks\]\]/, 'no registró el hook Stop');
+      assert.ok(!/async\s*=\s*true/.test(bloque),
+        'el hook Stop quedó en segundo plano: no podrá mantener al agent un turno más');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('a agy se le manda "continue" y no "block"', () => {
+    // En Antigravity la clave es "continue", y su documentación dice que
+    // cualquier otro valor PERMITE parar. Mandarle el "block" de Claude Code
+    // no da error: no hace nada, en silencio.
+    const m = montar('chaski-agy-cont-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 9;\n');
+      const salida = execFileSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'agy'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 'a1', cwd: m.proyecto, hook_event_name: 'Stop' }),
+      });
+      const o = JSON.parse(salida.trim());
+      assert.equal(o.decision, 'continue', `agy recibió "${o.decision}", que lo deja parar`);
+      assert.match(o.reason, /a medias/i, 'el motivo no pide el estado en vuelo');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('a claude code se le manda "block"', () => {
+    const m = montar('chaski-cc-block-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 10;\n');
+      const salida = execFileSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 'c1', cwd: m.proyecto, hook_event_name: 'Stop' }),
+      });
+      assert.equal(JSON.parse(salida.trim()).decision, 'block');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('el hook no se traga errores propios', () => {
+  // Este test existe por un bug que acabó de pasar: una función se usó sin
+  // importarla, y el fallo fue invisible por tres vías a la vez. `node --check`
+  // pasa, porque es un error de ejecución y no de sintaxis. Los tests pasaban,
+  // porque la excepción ocurría DESPUÉS de escribir el relevo. Y el hook la
+  // atrapaba, escribía «captura omitida» en stderr y salía con código 0,
+  // cumpliendo el invariante de no fallar nunca.
+  //
+  // Ese try/catch es correcto y no se toca: un hook que revienta le arruina la
+  // sesión al usuario. Lo que faltaba era mirar stderr. En el camino normal,
+  // «captura omitida» significa que algo se rompió por dentro.
+  for (const agent of ['claude-code', 'codex', 'agy']) {
+    test(`una captura normal con ${agent} no deja nada en stderr`, () => {
+      const m = montar(`chaski-stderr-${agent}-`);
+      try {
+        writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 42;\n');
+        const r = spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', agent], {
+          cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+          input: JSON.stringify({ session_id: 's', cwd: m.proyecto, hook_event_name: 'Stop' }),
+        });
+        assert.equal(r.status, 0, 'el hook nunca debe fallar');
+        assert.ok(!/captura omitida/.test(r.stderr),
+          `el hook se tragó un error propio: ${r.stderr.trim()}`);
+      } finally {
+        rmSync(m.raiz, { recursive: true, force: true });
+      }
+    });
+  }
+});

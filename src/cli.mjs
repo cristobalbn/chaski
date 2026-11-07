@@ -304,7 +304,22 @@ function installCodex(ruta) {
     '[[hooks.Stop.hooks]]',
     'type = "command"',
     `command = ${JSON.stringify(cmd(CAPTURE, 'Stop', 'codex', true))}`,
-    'async = true',
+    // Síncrono a propósito. Estaba en `async = true` para no hacer esperar al
+    // usuario al cerrar el turno, pero la documentación de Codex es explícita:
+    // «Background hooks can't block, approve, rewrite, or otherwise control
+    // the operation that triggered them». Con `async` el `decision: block`
+    // se ignora, así que la petición automática de la narrativa no existiría
+    // en Codex — y Codex es donde más falta, porque es a donde se pasa cuando
+    // se agota la cuota del CLI principal.
+    //
+    // El costo es la espera de la captura al cerrar cada turno: ~340 ms
+    // medidos, con el presupuesto de `budget.mjs` recortando trabajo antes de
+    // pasarse, así que el techo real lo pone chaski y no el CLI.
+    //
+    // No se declara un timeout en el TOML a propósito: el de un hook síncrono
+    // de Codex es de 600 s por defecto, que para esto sería absurdo, pero el
+    // nombre exacto de esa clave no está verificado y una clave inventada
+    // puede hacer que Codex rechace el bloque entero. Pendiente de confirmar.
     MARCA_FIN,
   ].join('\n');
   writeAtomic(ruta, `${limpio.trimEnd()}\n\n${bloque}\n`);

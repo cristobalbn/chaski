@@ -153,6 +153,21 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   entre sesiones, su antigüedad tiene que verse: una de hace tres días se lee
   distinto que una de hace diez minutos.
 
+- La petición automática de la narrativa funciona en los tres CLIs. El formato
+  no es el mismo: Claude Code y Codex usan `decision: "block"`, y Antigravity
+  usa `decision: "continue"` y trata cualquier otro valor como permiso para
+  parar — mandarle el `"block"` de Claude Code no daría error, no haría nada.
+- El hook `Stop` de Codex se registra síncrono. Estaba en `async = true`, y la
+  documentación de Codex dice que un hook en segundo plano no puede bloquear.
+  El costo es esperar la captura (~340 ms) al cerrar cada turno en Codex.
+- En Antigravity la protección contra bucles la pone chaski: no existe un
+  equivalente de `stop_hook_active`, así que se usa `executionNum` y solo se
+  pide en la primera vuelta del bucle.
+- Un test corre una captura normal en los tres CLIs y falla si stderr trae
+  algo. Nace de un bug de esta misma ronda: una función usada sin importar, que
+  `node --check` no veía, que los tests no veían porque la excepción ocurría
+  después de escribir el relevo, y que el hook atrapaba saliendo con código 0.
+
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,
   `codex exec`, `agy -p`). chaski es para sesiones interactivas.

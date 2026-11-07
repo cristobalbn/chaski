@@ -45,17 +45,20 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
   // Apagable. Quien no quiera un turno extra nunca, pone `askNarrative: false`.
   if (config?.askNarrative === false) return null;
 
-  // Solo donde el contrato está documentado y verificado. Codex y Antigravity
-  // no tienen un equivalente comprobado de `decision: block`: bloquear a
-  // ciegas ahí significaría imprimir un JSON que el CLI no entiende, y eso sí
-  // puede romperle la sesión al usuario. Mientras no se verifique con
-  // `chaski probe`, no se intenta.
-  if (!/^claude/i.test(estado.agent ?? '')) return null;
+  // Los tres soportan mantener al agent un turno más, pero NO con el mismo
+  // contrato (ver `blockPayload`). Un CLI desconocido no se intenta.
+  if (!blockPayload(estado.agent, '')) return null;
 
-  // `stop_hook_active` viene en el payload exactamente para esto: si ya
-  // estamos dentro de un turno provocado por un bloqueo nuestro, volver a
-  // bloquear es un bucle infinito.
+  // Protección contra bucles. Sin esto, un hook que bloquea vuelve a
+  // bloquear en el turno que él mismo provocó, y no termina nunca.
+  //
+  // Claude Code y Codex traen `stop_hook_active` justamente para esto.
+  // Antigravity no documenta nada equivalente: trae `executionNum`, que
+  // cuenta las vueltas del bucle del agent, y un tope propio de
+  // continuaciones forzadas cuyo valor no está documentado. Así que ahí la
+  // protección la pone chaski: solo se pide en la primera vuelta.
   if (ev.stop_hook_active) return null;
+  if (Number(ev.executionNum ?? 1) > 1) return null;
 
   // Un `Stop` sin trabajo detrás no necesita narrativa: no hay nada que
   // contar y el turno extra sería puro ruido.
@@ -109,4 +112,31 @@ export function askText(motivo) {
     'relevo. Escribe solo lo que no se deduce del código. 120-200 palabras.',
     'Después de guardarla, termina el turno sin hacer nada más.',
   ].join('\n');
+}
+
+/**
+ * El objeto que hay que imprimir por stdout para que el agent siga un turno
+ * más, en el contrato de SU CLI. Devuelve `null` para un CLI desconocido.
+ *
+ * Los tres lo soportan, y ninguno igual. La diferencia que más importa es la
+ * de Antigravity: su clave es `"continue"`, y su documentación dice que
+ * **cualquier otro valor permite parar**. Así que imprimirle el `"block"` de
+ * Claude Code no da error — simplemente no hace nada, en silencio, que es el
+ * peor modo de fallo posible para esta herramienta. Por eso la salida se arma
+ * por CLI y no se comparte.
+ *
+ * Verificado contra la documentación de cada uno, no en vivo: la primera
+ * sesión real de cada CLI es la verificación de verdad. El riesgo de
+ * equivocarse es bajo y asimétrico: si el contrato estuviera mal, el agent
+ * termina el turno como siempre y se pierde la petición, no el relevo.
+ */
+export function blockPayload(agent, reason) {
+  const a = String(agent ?? '').toLowerCase();
+  // Claude Code y Codex comparten formato: `decision: "block"`, y el `reason`
+  // se convierte en el prompt de continuación.
+  if (/^claude/.test(a) || a === 'codex') return { decision: 'block', reason };
+  // Antigravity: `continue` bloquea el stop y reentra al bucle; el `reason` se
+  // inyecta como mensaje de sistema.
+  if (a === 'agy' || a === 'antigravity') return { decision: 'continue', reason };
+  return null;
 }
