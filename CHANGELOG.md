@@ -75,7 +75,9 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Un renombre es un archivo y no dos, y las rutas con acentos son legibles.
 - El estado topa la lista de archivos sucios: miles hacían un `estado.json`
   de más de un megabyte reescrito en cada turno.
-- `doctor` termina con código distinto de cero si algún CLI falló.
+- `init` termina con código distinto de cero si algún CLI falló al
+  configurarse. `doctor` sigue terminando siempre en 0 — ver
+  [Límites conocidos](README.md#límites-conocidos) en el README.
 - `doctor` ya no revienta con `LEER is not defined`: quedó una referencia a un
   nombre viejo tras la homologación a inglés. `npm run check` no lo vio porque
   solo verifica sintaxis.

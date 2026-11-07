@@ -11,7 +11,7 @@ node src/cli.mjs doctor       # verifica qué quedó instalado
 node src/cli.mjs uninstall    # revierte desde respaldo
 node src/cli.mjs probe        # captura el payload crudo de los hooks
 npm run check                      # chequeo de sintaxis (no hay build)
-npm test                           # 95 tests, node:test, sin dependencias
+npm test                           # node:test, sin dependencias
 ```
 
 Si agregas un archivo de tests, **súmalo al script `test` de package.json**:
@@ -33,6 +33,22 @@ contrato: sin eso el adaptador no entra.
 Los fixtures son **sintéticos a propósito**. Un transcript real lleva rutas con
 el nombre de usuario y la conversación completa de alguien, y este repo es
 público. Lo que se prueba es la forma, no el contenido.
+
+## Reglas para escribir tests
+
+- **Ningún test toca el `HOME` real.** `cli.mjs` escribe en `~/.claude/`,
+  `~/.codex/` y `~/.gemini/`; un test que no redirija `HOME`/`USERPROFILE` a un
+  directorio descartable modifica la configuración real de quien corre la
+  suite. `test/install.test.mjs` ya arma un `HOME` de usar y tirar por caso —
+  sigue ese patrón para cualquier test nuevo que llame a `init`, `doctor` o
+  `uninstall`.
+- **Una aserción negativa necesita la prueba del caso positivo.** Afirmar que
+  algo *no aparece* (un secreto, una clave vieja, un patrón) no demuestra nada
+  si ese algo no estaba en el fixture para empezar: el test pasa siempre,
+  detecte o no detecte. Antes de escribir `assert(!contiene(x))`, confirma con
+  otro caso que `x` sí se detecta cuando está presente. Pasó con un test de
+  secretos que afirmaba la ausencia de una cadena que no aparecía en ningún
+  fixture.
 
 ## Nunca commitees a main
 
@@ -116,6 +132,11 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
 | Limpieza de huérfanos | 1 vez al día | Listar ramas es otro subproceso de git |
 
 Si tocas `capture.mjs`, mide la latencia antes y después.
+
+A ~4.000-6.000 archivos modificados en un solo turno (formateo masivo, merge
+grande), el hook supera el presupuesto y se pierde el relevo entero de ese
+turno, no solo los hechos nuevos. Tiene arreglo pendiente para otro cambio;
+ver [Límites conocidos](README.md#límites-conocidos) en el README.
 
 ## Estructura
 

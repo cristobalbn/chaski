@@ -234,7 +234,7 @@
           <tbody>
             <tr><td class="wrap">Captura de hechos desde git y el transcript</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Inyecci&oacute;n al arrancar, con precedencia y firma</td><td><span class="tag t-ok">funcionando</span></td></tr>
-            <tr><td class="wrap">Los tres adaptadores, validados con payloads reales</td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Soporte a los tres CLIs, validado con payloads reales (sin la interfaz formal de adaptadores de la secci&oacute;n <a href="#adaptadores">Adaptadores</a>: hoy es c&oacute;digo por CLI en <code>src/lib/</code> y el mapa <code>CLIS</code>)</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Relevo por rama, con recuperaci&oacute;n al volver</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Filtro de secretos antes de escribir</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Aviso de lo que cambi&oacute; y qui&eacute;n lo cambi&oacute;</td><td><span class="tag t-ok">funcionando</span></td></tr>
@@ -344,14 +344,14 @@
         <div class="stage">
           <div class="n">01</div>
           <div><h4>Captura</h4>
-            <p>El hook <code>Stop</code> recibe por stdin la ruta del transcript y el <code>session_id</code>. Encola un job en disco, hace spawn del worker en modo detached y retorna.</p></div>
-          <div class="cost"><span class="free">0 tokens</span><span class="lat">&lt;5 ms</span></div>
+            <p><strong>As&iacute; funciona hoy (F1):</strong> el hook <code>Stop</code> recibe por stdin la ruta del transcript y el <code>session_id</code>, y hace el trabajo &eacute;l mismo, en l&iacute;nea &mdash; s&iacute;ncrono, sin cola ni worker aparte. No encola nada ni hace spawn de nada: el CLI espera a que termine antes de seguir. Lo que mantiene esto dentro del presupuesto no es desacoplarlo, sino que cada paso es barato.</p></div>
+          <div class="cost"><span class="free">0 tokens</span><span class="lat">~340 ms medidos (ver AGENTS.md)</span></div>
         </div>
         <div class="stage">
           <div class="n">02</div>
           <div><h4>Extracci&oacute;n de hechos</h4>
-            <p>El worker lee el transcript desde la marca de agua anterior, no desde el principio. Cruza con <code>git status</code>, <code>diff --stat</code> y <code>log</code>. Escribe <code>quipu.json</code>.</p></div>
-          <div class="cost"><span class="free">0 tokens</span><span class="lat">~20 ms</span></div>
+            <p>El mismo proceso del hook lee el transcript desde la marca de agua anterior, no desde el principio. Cruza con <code>git status</code>, <code>diff --stat</code> y <code>log</code>. Escribe <code>quipu.json</code>. Esto es la mayor parte de los ~340 ms de la etapa anterior, no una etapa aparte con su propio presupuesto.</p></div>
+          <div class="cost"><span class="free">0 tokens</span><span class="lat">incluido arriba</span></div>
         </div>
         <div class="stage">
           <div class="n">03</div>
@@ -373,7 +373,7 @@
         </div>
       </div>
       <p>Las etapas 1 a 3 son el caso com&uacute;n: corren en cada turno, no cuestan nada y no se notan. La etapa 4 corre pocas veces por sesi&oacute;n. La etapa 5 corre una vez al abrir.</p>
-      <p>La raz&oacute;n por la que nada de esto a&ntilde;ade latencia percibida es estructural, no un truco de optimizaci&oacute;n: el hook <code>Stop</code> se dispara <em>despu&eacute;s</em> de que el agente ya te contest&oacute;, as&iacute; que la respuesta nunca espera. Y como encola y se desacopla en lugar de trabajar, tampoco retrasa el prompt siguiente.</p>
+      <p>La raz&oacute;n por la que nada de esto a&ntilde;ade latencia percibida es estructural, no un truco de optimizaci&oacute;n: el hook <code>Stop</code> se dispara <em>despu&eacute;s</em> de que el agente ya te contest&oacute;, as&iacute; que la respuesta nunca espera. Hoy (F1) corre en l&iacute;nea, s&iacute;ncrono, y le alcanza con quedar bien por debajo del presupuesto de 1,5 s &mdash; medido en ~340 ms. Desacoplarlo con una cola y un worker aparte es la mejora que figura en F2 si alguna vez el presupuesto deja de alcanzar; no hace falta todav&iacute;a.</p>
       <p>Hay un disparo garantizado aparte del normal: el hook <code>PreCompact</code>, que salta cuando el CLI est&aacute; por compactar su contexto por estar lleno &mdash; la se&ntilde;al nativa de &laquo;me estoy quedando sin espacio&raquo;, y exactamente el momento en que el quipu debe estar fresco. <code>SessionEnd</code> hace lo mismo al cerrar. Entre los dos, el escenario que m&aacute;s duele &mdash; se corta la cuota a mitad de algo &mdash; queda cubierto con un atraso m&aacute;ximo de un turno.</p>
     </section>
 
@@ -551,7 +551,7 @@
     <section id="adaptadores">
       <h2>Adaptadores</h2>
       <p class="sub">Un archivo por proveedor. Agregar uno nuevo no toca el n&uacute;cleo.</p>
-      <p>Todo lo espec&iacute;fico de cada CLI &mdash; d&oacute;nde vive su config, c&oacute;mo se llaman sus hooks, qu&eacute; forma tiene su transcript, c&oacute;mo se lo invoca sin interfaz, c&oacute;mo informa un l&iacute;mite de cuota &mdash; queda detr&aacute;s de una interfaz de siete m&eacute;todos:</p>
+      <p>Todo lo espec&iacute;fico de cada CLI &mdash; d&oacute;nde vive su config, c&oacute;mo se llaman sus hooks, qu&eacute; forma tiene su transcript, c&oacute;mo informa un l&iacute;mite de cuota &mdash; podr&iacute;a quedar detr&aacute;s de una interfaz formal de siete m&eacute;todos. <strong>Esto es dise&ntilde;o, no lo que hay hoy:</strong> el c&oacute;digo actual no tiene esa abstracci&oacute;n ni esos nombres; cada CLI es una entrada en el mapa <code>CLIS</code> de <code>src/cli.mjs</code> m&aacute;s funciones sueltas en <code>src/lib/*.mjs</code> (<code>gitFacts</code>, <code>transcriptFacts</code>, <code>redact</code>&hellip;), sin m&eacute;todos con estos nombres ni objeto adaptador que los agrupe. La interfaz de abajo es la forma que tendr&iacute;a si el n&uacute;mero de CLIs soportados creciera lo bastante para justificar la indirecci&oacute;n &mdash; que todav&iacute;a no ha pasado:</p>
       <pre><code><span class="k">detect</span>()              <span class="c">// &iquest;est&aacute; instalado? &iquest;qu&eacute; versi&oacute;n?</span>
 <span class="k">capabilities</span>()       <span class="c">// qu&eacute; hooks soporta de verdad esta versi&oacute;n</span>
 <span class="k">installHooks</span>(cfg)     <span class="c">// parchea su config: idempotente y reversible</span>
@@ -598,7 +598,7 @@
         <table>
           <thead><tr><th>L&iacute;mite</th><th>Valor</th><th>Consecuencia</th></tr></thead>
           <tbody>
-            <tr><td>Presupuesto del hook <code>Stop</code></td><td class="num">1,5 s compartido</td><td class="wrap">Compartido con <code>SessionEnd</code>, hasta 60 s. Un hook que trabaje se cancela y se pierde el relevo. Encolar y hacer spawn detached no es una optimizaci&oacute;n: es la &uacute;nica forma de que funcione.</td></tr>
+            <tr><td>Presupuesto del hook <code>Stop</code></td><td class="num">1,5 s compartido</td><td class="wrap">Compartido con <code>SessionEnd</code>, hasta 60 s. Un hook que se pasa del presupuesto se cancela y se pierde el relevo. Hoy el hook corre s&iacute;ncrono en l&iacute;nea y mide ~340 ms, con margen de sobra; a ~4.000-6.000 archivos modificados en un turno ese margen se agota y el relevo entero se pierde &mdash; l&iacute;mite conocido, sin encolado todav&iacute;a.</td></tr>
             <tr><td>Stdout inyectado</td><td class="num">10 000 caracteres</td><td class="wrap">Por encima de eso, Claude Code guarda la salida en un archivo y al modelo le llega una ruta y un fragmento. El presupuesto del quipu deja de ser una buena pr&aacute;ctica y pasa a ser un requisito de funcionamiento.</td></tr>
           </tbody>
         </table>
@@ -797,8 +797,8 @@ avis&aacute; de la contradicci&oacute;n en vez de confiar en este texto.</code><
             </tr>
             <tr>
               <td>Hook cancelado por timeout</td>
-              <td class="wrap">El presupuesto de <code>Stop</code> es de 1,5 s compartidos. El hook encola y hace spawn detached; nunca trabaja en l&iacute;nea.</td>
-              <td class="wrap">Test de latencia en CI: el hook debe retornar bajo 50 ms incluso con un transcript de 50 MB.</td>
+              <td class="wrap">El presupuesto de <code>Stop</code> es de 1,5 s compartidos. Hoy (F1) el hook trabaja en l&iacute;nea, s&iacute;ncrono, y se mantiene en ~340 ms con margen de sobra. Encolar y hacer spawn detached (F2) queda para cuando ese margen no alcance.</td>
+              <td class="wrap">Medici&oacute;n manual documentada en AGENTS.md antes y despu&eacute;s de tocar <code>capture.mjs</code>. No hay todav&iacute;a un test de latencia automatizado en CI &mdash; es una mejora pendiente, no algo ya verificado.</td>
             </tr>
             <tr>
               <td>Quipu que excede el canal</td>

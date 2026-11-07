@@ -12,16 +12,16 @@ son exactos. No los repitas ni los corrijas.
 ## Pasos
 
 1. Lee `.tambo/branches/<rama-actual>/estado.json`. La rama sale de `git rev-parse --abbrev-ref HEAD`.
-2. Escribe la narrativa en el campo `narrativa` de ese JSON, junto con
-   `narrativaAutor` (tu nombre de agente) y `narrativaEscrita` (ISO 8601 de ahora).
-3. No toques ningún otro campo. `facts`, `commands`, `offset` y `firma` son de chaski.
-4. Confirmá al usuario en una línea: qué quedó anotado como siguiente paso.
+2. Escribe la narrativa en el campo `narrative` de ese JSON, junto con
+   `narrativeAuthor` (tu nombre de agente) y `narrativeWrittenAt` (ISO 8601 de ahora).
+3. No toques ningún otro campo. `facts`, `commands`, `offset` y `signature` son de chaski.
+4. Confirma al usuario en una línea: qué quedó anotado como siguiente paso.
 
 El Markdown se regenera solo en el próximo turno. No edites `relevo.md` a mano.
 
 ## Qué escribir
 
-Cuatro secciones, en este orden, en prosa breve. Apuntá a 120-200 palabras en
+Cuatro secciones, en este orden, en prosa breve. Apunta a 120-200 palabras en
 total: el relevo tiene un presupuesto duro de contexto y lo que escribas compite
 con el espacio que el próximo agente necesita para trabajar.
 
@@ -61,8 +61,8 @@ anterior en Redis antes de emitir el nuevo, en `src/auth/refresh.ts:41`» sirve;
 
 ```json
 {
-  "narrativa": "Migrando la capa de auth a JWT con refresh tokens.\n\nDecidido: el refresh token va en cookie httpOnly, no en localStorage, por XSS. Se descartó passport.js: demasiado peso para dos endpoints.\n\nA medias: el endpoint de refresh existe y responde, pero no rota el token viejo. Falta invalidarlo en Redis antes de emitir el nuevo, en src/auth/refresh.ts:41. Los dos tests que fallan en test/auth.test.ts son por esto, no por otra cosa.\n\nSiguiente paso: cerrar la rotación en refresh.ts:41 y volver a correr npm test -- auth.",
-  "narrativaAutor": "claude code",
-  "narrativaEscrita": "2026-10-31T16:20:00.000Z"
+  "narrative": "Migrando la capa de auth a JWT con refresh tokens.\n\nDecidido: el refresh token va en cookie httpOnly, no en localStorage, por XSS. Se descartó passport.js: demasiado peso para dos endpoints.\n\nA medias: el endpoint de refresh existe y responde, pero no rota el token viejo. Falta invalidarlo en Redis antes de emitir el nuevo, en src/auth/refresh.ts:41. Los dos tests que fallan en test/auth.test.ts son por esto, no por otra cosa.\n\nSiguiente paso: cerrar la rotación en refresh.ts:41 y volver a correr npm test -- auth.",
+  "narrativeAuthor": "claude code",
+  "narrativeWrittenAt": "2026-10-31T16:20:00.000Z"
 }
 ```

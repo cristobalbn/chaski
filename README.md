@@ -109,7 +109,7 @@ líneas de JavaScript sin dependencias:
 git clone https://github.com/cristobalbn/chaski.git
 cd chaski
 npm run check          # verifica la sintaxis; no hay build
-npm test               # 95 tests, sin dependencias
+npm test               # node:test, sin dependencias
 cd ../tu-proyecto
 node ../chaski/src/cli.mjs init
 ```
@@ -187,9 +187,12 @@ ya no existe, y el CLI imprime un error de módulo no encontrado en cada turno.
 `chaski init` reescribe las rutas y es idempotente: correrlo de nuevo sobre una
 instalación sana no cambia nada.
 
-Si ya estás viendo ese error, es exactamente esto: corre `chaski init` y
-desaparece. `chaski doctor` muestra el comando que quedó registrado, por si
-quieres confirmarlo antes.
+Si ya estás viendo ese error, es exactamente esto: corre `chaski init`. Pero
+**la sesión que ya tiene el error abierta no lo va a ver desaparecer**: los
+CLIs leen su configuración de hooks una sola vez, al arrancar, así que `init`
+corrige la ruta para la próxima sesión, no para la que ya está corriendo.
+Cierra esa sesión y abre una nueva. `chaski doctor` muestra el comando que
+quedó registrado, por si quieres confirmarlo antes de reabrir.
 
 ### Desinstalar
 
@@ -270,6 +273,11 @@ El diseño completo, con los riesgos y la investigación de términos de uso, es
 en [`docs/diseno.html`](docs/diseno.html). Describe el diseño entero, incluidas
 piezas que todavía no existen: abre con una tabla que distingue lo construido
 de lo pendiente.
+
+La auditoría de noviembre de 2026 —qué se revisó, qué se encontró y qué se
+decidió **no** arreglar, con el motivo— está en
+[`docs/auditoria-2026-11.md`](docs/auditoria-2026-11.md). Si vas a cambiar algo
+aquí, la sección de límites conocidos te ahorra descubrirlos de nuevo.
 
 ---
 
@@ -398,17 +406,42 @@ riesgo tu cuenta no debería estar a un flag de distancia.
 | Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
 | Narrativa | puede atrasarse unos turnos | Los hechos están siempre al día; el porqué depende de cuándo corriste `/relevo` |
 | Hooks de Codex | requieren conceder confianza | La primera vez que abres Codex con hooks instalados pide confiar en ellos. Hasta que aceptes, no se ejecuta ninguno, y el permiso se aplica desde la sesión siguiente |
+| Un turno con 4.000-6.000 archivos modificados | el hook supera el presupuesto de 1,5 s | Un formateo masivo o un merge grande hacen que git tarde más de lo que queda de presupuesto. El hook se cancela y **se pierde el relevo entero de ese turno**, no solo los hechos nuevos. Tiene arreglo, pendiente para otro cambio — por ahora es un límite conocido |
+| Ruta del proyecto de más de ~240 caracteres | los subprocesos de git fallan | En Windows, una ruta así de larga hace que el subproceso de git falle. chaski lo interpreta como «esto no es un repositorio git» y lo reporta en silencio, perdiendo también la detección de la rama. No hay arreglo barato conocido: evita rutas tan largas para este proyecto |
 
 Si un administrador fijó `allowManagedHooksOnly` o `disableAllHooks` en una
 máquina corporativa, los hooks de usuario no corren. `doctor` lo detecta y lo
 informa en vez de dejarte creyendo que funciona.
+
+**`doctor` siempre termina con código de salida 0**, incluso cuando ningún CLI
+tiene los hooks registrados. Es un comando de diagnóstico para que lo lea una
+persona, no una verificación para encadenar en un script o en CI — si
+necesitas eso, revisa su salida de texto, no su código de salida. (`init` sí
+termina en 1 si algún CLI falló al configurarse.)
+
+**Relevos de antes del renombre a `branches/`.** Versiones viejas de chaski
+guardaban el relevo en `.tambo/ramas/<rama>/`. Ni `inject.mjs` ni `doctor`
+migran ni mencionan esa carpeta: si tienes relevos ahí, quedaron huérfanos.
+Para recuperarlos a mano, copia el contenido de
+`.tambo/ramas/<rama>/estado.json` al campo `narrative` (y
+`narrativeAuthor`/`narrativeWrittenAt`) del `estado.json` nuevo en
+`.tambo/branches/<rama>/` — los hechos no se recuperan porque ya están
+obsoletos, pero la narrativa escrita a mano sí vale la pena rescatarla.
+Después puedes borrar `.tambo/ramas/`.
+
+**Falsa alarma de firma con clientes de sincronización.** Si OneDrive, Dropbox
+o similar bloquean `estado.json` justo cuando `capture.mjs` está escribiendo,
+puede quedar un `relevo.md` nuevo firmado junto a un `estado.json` que todavía
+tiene la firma anterior. La sesión siguiente ve la firma desajustada y avisa
+de una posible manipulación aunque no haya pasado nada malintencionado — es un
+falso positivo del mecanismo de integridad, no una vulnerabilidad.
 
 ---
 
 ## Contribuir
 
 Las contribuciones son bienvenidas. Antes de abrir un PR, lee
-[AGENTS.md](AGENTS.md): tiene los siete invariantes del proyecto, los
+[AGENTS.md](AGENTS.md): tiene los ocho invariantes del proyecto, los
 presupuestos de latencia y tamaño, y las trampas conocidas de cada CLI.
 
 El más importante: **cero dependencias de runtime**. La herramienta se ejecuta

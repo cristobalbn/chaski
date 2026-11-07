@@ -144,7 +144,7 @@ function init() {
 
   const detectados = [];
   for (const [name, cli] of Object.entries(CLIS)) {
-    if (!isInstalled(cli.bin)) { console.log(`  ${pad(name)} no isInstalled, se omite`); continue; }
+    if (!isInstalled(cli.bin)) { console.log(`  ${pad(name)} no instalado, se omite`); continue; }
     detectados.push(name);
   }
   if (!detectados.length) {
@@ -192,7 +192,7 @@ function finalSummary(detectados) {
   const L = [
     '',
     '────────────────────────────────────────────────────────────',
-    ' chaski quedó isInstalled',
+    ' chaski quedó instalado',
     '────────────────────────────────────────────────────────────',
     '',
     ' QUÉ HACE',
@@ -225,7 +225,7 @@ function finalSummary(detectados) {
     '   No es obligatorio, pero hace el relevo bastante más útil.',
     '',
     ' COMANDOS',
-    '   chaski doctor      ver qué quedó isInstalled y si está funcionando',
+    '   chaski doctor      ver qué quedó instalado y si está funcionando',
     '   chaski uninstall   revertir todo desde el respaldo',
     '   chaski probe       capturar el payload de los hooks (diagnóstico)',
     '',
@@ -329,7 +329,7 @@ function installSkill(cwd) {
   const origen = resolve(AQUI, '..', 'skill', 'SKILL.md');
   if (existsSync(origen)) {
     copyFileSync(origen, destino);
-    console.log(`  ${pad('skill')} /relevo isInstalled en .claude/skills/relevo/`);
+    console.log(`  ${pad('skill')} /relevo instalado en .claude/skills/relevo/`);
   }
 }
 
@@ -362,7 +362,7 @@ function doctor() {
 
   console.log('CLIs y hooks');
   for (const [name, cli] of Object.entries(CLIS)) {
-    if (!isInstalled(cli.bin)) { console.log(`  ${pad(name)} no isInstalled`); continue; }
+    if (!isInstalled(cli.bin)) { console.log(`  ${pad(name)} no instalado`); continue; }
     const estado = checkHooks(cli);
     console.log(`  ${pad(name)} ${estado}`);
   }
@@ -478,7 +478,7 @@ function uninstall() {
     }
   }
   console.log(`\n.tambo/ y ~/.chaski/ quedan en disco: son tus relevos.`);
-  console.log('Borralos a mano si quieres.\n');
+  console.log('Bórralos a mano si quieres.\n');
 }
 
 // --------------------------------------------------------------- probe

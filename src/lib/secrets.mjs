@@ -37,10 +37,45 @@ const PATTERNS = [
   [/\b(Authorization\s*:\s*(?:Bearer|Basic|token)\s+)([A-Za-z0-9._~+/=-]{12,})/gi, 'cabecera-auth'],
 ];
 
+// Patrones de usuario largos no aportan nada que uno corto no haga, y sí
+// alargan el tiempo de cualquier retroceso que la heurística de abajo no
+// atrape. chaski.json se versiona: esto no es para un usuario que se
+// equivoca, es un techo contra un patrón que nadie miró con cuidado.
+const MAX_USER_PATTERN_LEN = 200;
+
+/**
+ * ¿Esta forma de patrón puede producir retroceso catastrófico?
+ *
+ * Heurística, no un verificador — no existe uno sin dependencias, y escribir
+ * uno sería el motor de regex que ya tenemos reimplementado peor. Cubre la
+ * forma confirmada en esta máquina: `redact('a'.repeat(35) + '!', { redact:
+ * ['(a+)+$'] })` se cuelga indefinidamente (8+ s antes de matarlo a mano).
+ * La familia que causa esto es siempre la misma: un grupo que ya repite algo
+ * por dentro (`+`, `*` o alternancia `|`) y que además se repite por fuera
+ * — `(a+)+`, `(a*)*`, `(a|aa)+`. Eso es lo que se rechaza aquí.
+ *
+ * Lo que esto NO atrapa, a propósito, porque cubrirlo pide un parser de
+ * regex completo y este archivo no lo tiene: cuantificadores anidados a
+ * tres niveles (`((a+)+)+`), alternancia superpuesta sin agrupar
+ * (`a*a*a*...`), y cualquier patrón que sea lento por razones que no son
+ * retroceso exponencial (p. ej. una alternancia con cientos de ramas). El
+ * tope de longitud de abajo y el techo de `chaski.json` versionado — un
+ * patrón ajeno pasa por code review antes de ejecutarse — son la segunda
+ * línea de defensa para lo que se escapa de la heurística.
+ */
+function isCatastrophicShape(source) {
+  return /\([^()]*[+*|][^()]*\)(?:[*+]|\{\d+,\})/.test(source);
+}
+
 /** Patrones extra del usuario, desde chaski.json → redact: ["..."] */
 function userPatterns(config) {
   const extra = [];
   for (const p of (config?.redact ?? [])) {
+    if (typeof p !== 'string' || !p || p.length > MAX_USER_PATTERN_LEN) continue;
+    if (isCatastrophicShape(p)) {
+      process.stderr.write(`chaski: patrón de redact ignorado, puede colgar el hook: ${p}\n`);
+      continue;
+    }
     try { extra.push([new RegExp(p, 'g'), 'patron-usuario']); } catch {}
   }
   return extra;

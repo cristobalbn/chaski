@@ -53,6 +53,15 @@ la sesión. El filtro de `src/lib/secrets.mjs` corre antes de escribir a disco,
 no solo antes de enviar algo. Si encuentras un formato de credencial que se nos
 escapa, es un reporte de seguridad válido y lo agradecemos.
 
+**ReDoS en los patrones de `chaski.json`.** `redact` y `excludePaths` son
+expresiones regulares que el filtro de secretos ejecuta en cada turno. Un
+patrón con retroceso catastrófico (por ejemplo algo con grupos anidados y
+cuantificadores superpuestos) puede colgar el hook indefinidamente en vez de
+terminar en milisegundos. **`chaski.json` se versiona**, así que sus patrones
+pueden venir de un tercero — un colaborador, un PR, una plantilla copiada de
+otro repo — y no son menos código que un script: revísalos en el PR como
+revisarías cualquier otro cambio antes de aceptarlo.
+
 **chaski como vector de cadena de suministro.** Instalarlo significa registrar
 un comando que tus CLIs van a ejecutar solos. Para que puedas verificarlo:
 `chaski doctor` imprime el comando exacto registrado en cada configuración —
