@@ -9,7 +9,7 @@
 //     (/tmp/...) no resuelve at el hook se ejecuta en Windows, y el
 //     proyecto puede vivir en una carpeta con espacios.
 //   - Cada config se respalda antes de tocarla y uninstall revierte desde ahí.
-import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, unlinkSync, statSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -650,7 +650,20 @@ function isInstalled(bin) {
     const cmdWhich = process.platform === 'win32' ? 'where' : 'which';
     execFileSync(cmdWhich, [bin], { stdio: 'ignore', timeout: 4000 });
     return true;
-  } catch { return false; }
+  } catch {
+    // En entornos restringidos where.exe puede no enumerar un directorio
+    // aunque sus ejecutables sean accesibles por su ruta completa.
+    if (process.platform !== 'win32') return false;
+    const extensions = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+    for (const dir of (process.env.PATH || '').split(';').filter(Boolean)) {
+      for (const ext of extensions) {
+        try {
+          if (statSync(join(dir.replace(/^"|"$/g, ''), bin + ext)).isFile()) return true;
+        } catch {}
+      }
+    }
+    return false;
+  }
 }
 
 function backup(ruta) {
