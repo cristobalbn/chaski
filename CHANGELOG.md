@@ -134,6 +134,14 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Los mensajes ya no nombran `/relevo` como si existiera en los tres: cada CLI
   invoca la skill a su manera.
 
+- La narrativa del relevo se pide sola. El hook `Stop` puede mantener al agent
+  un turno más con `decision: block` para que la guarde, temprano y repartida,
+  en vez de depender de que el usuario la escriba justo antes de quedarse sin
+  cuota — el momento en que ya no se puede generar, porque la escribe el agent.
+  Debounce de 12 minutos, solo con trabajo real detrás, y solo en Claude Code,
+  donde el contrato está verificado. Se apaga con `askNarrative: false`.
+  Respeta `stop_hook_active`: sin eso sería un bucle infinito de bloqueos.
+
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,
   `codex exec`, `agy -p`). chaski es para sesiones interactivas.

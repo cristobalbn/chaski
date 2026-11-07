@@ -18,6 +18,7 @@ import { statePath, relayPath, readJson, acquireLock, globalDir, git, pruneOrpha
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
+import { shouldAsk, askText } from './lib/ask.mjs';
 import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
 
 main();
@@ -118,10 +119,38 @@ function main() {
     const md = render(estado);
     estado.signature = sign(md);
 
+    // ¿Toca pedirle la narrativa al agent? Se decide ANTES de escribir, para
+    // que el instante de la petición quede en el mismo estado que se guarda:
+    // el hook no tiene memoria entre turnos y el debounce vive ahí.
+    const motivo = ev.hook_event_name === 'Stop'
+      ? shouldAsk(ev, estado, previo, config) : null;
+    if (motivo) {
+      estado.askedAt = estado.writtenAt;
+      estado.askedReason = motivo;
+    } else {
+      estado.askedAt = previo.askedAt ?? null;
+      estado.askedReason = previo.askedReason ?? null;
+    }
+    // Cuántos turnos tenía el relevo cuando se escribió la narrativa: es con
+    // esto que se mide si quedó atrás, y lo anota el código, no el modelo.
+    estado.turnsAtNarrative = estado.narrativeWrittenAt !== previo.narrativeWrittenAt
+      ? (estado.turns ?? 0)
+      : (previo.turnsAtNarrative ?? 0);
+
     writeAtomic(relayPath(cwd), md);
     writeAtomic(statePath(cwd), JSON.stringify(estado, null, 2));
     heartbeat(estado.agent);
     occasionalPrune(cwd, config);
+
+    // La petición va por stdout y solo después de que el relevo esté escrito:
+    // si algo de arriba fallara, se pierde la petición y no el relevo. Un
+    // `decision: block` mantiene al agent un turno más, con la instrucción.
+    if (motivo) {
+      process.stdout.write(JSON.stringify({
+        decision: 'block',
+        reason: askText(motivo),
+      }) + '\n');
+    }
 
     // Aviso para quien mire stderr (doctor, una terminal, logs del CLI). El
     // relevo mismo ya lo dice -- esto es la copia para quien no lo abra.

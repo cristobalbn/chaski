@@ -240,6 +240,36 @@ proyecto tiene el suyo y no se mezclan. Tampoco se mezclan las ramas — volver 
 una rama que dejaste hace una semana te devuelve su contexto.
 No necesitas trabajar dentro del código de Chaski para usarlo en otro proyecto.
 
+### La narrativa se pide sola
+
+El relevo tiene dos mitades. Los **hechos** —archivos, diff, commits, exit
+codes— los saca chaski de git y del transcript sin costo ni intervención. La
+**intención** —qué intentabas, qué quedó a medias y dónde, el siguiente paso—
+solo la puede escribir el agent que estuvo en la conversación.
+
+Pedirla a mano tiene un defecto que no es de disciplina: **la narrativa
+consume cuota, porque la escribe el agent**. Quien espera a estar al límite
+descubre que el momento en que más la necesita es el único en que ya no se
+puede generar. Y el corte por cuota es abrupto: deja la tarea a medias, que es
+exactamente cuando el siguiente agent necesita saber dónde quedó.
+
+Por eso chaski la pide por su cuenta, **temprano y repartida**, mientras sobra
+cuota. Al terminar un turno con trabajo detrás, el hook puede mantener al agent
+un turno más con una instrucción: guarda la narrativa, con énfasis en lo que
+quedó en vuelo. No se invoca ningún modelo por fuera —eso lo prohíben los
+términos de los tres proveedores— sino que se le pide al agent que ya está en
+sesión.
+
+Cada petición cuesta un turno de tu conversación, así que los límites son
+conservadores: **12 minutos** entre peticiones, y solo si hay trabajo real
+detrás (archivos sin commitear, commits nuevos o comandos ejecutados) y la
+narrativa falta o quedó **8 turnos** atrás.
+
+| | |
+|---|---|
+| Apagarlo | `"askNarrative": false` en `chaski.json` o `chaski.local.json` |
+| Dónde funciona | Claude Code. Codex y Antigravity no tienen un equivalente verificado de `decision: block`, así que ahí la narrativa sigue siendo a pedido |
+
 ### La primera vez, verifica
 
 Al abrir el segundo CLI, pregúntale *«¿qué sabes del estado de este trabajo?»*.

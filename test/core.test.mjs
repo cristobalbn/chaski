@@ -19,6 +19,7 @@ import { redact, isExcludedPath } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS } from '../src/lib/relay.mjs';
 import { branchSlug, pruneOrphanRelays, git, projectDir } from '../src/lib/paths.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
+import { shouldAsk, askText } from '../src/lib/ask.mjs';
 
 /** Presupuesto falso: `remaining()` fijo, no atado al reloj real. Para
  * probar decisiones de presupuesto sin depender de cuánto tarda la máquina. */
@@ -1193,5 +1194,86 @@ describe('resolución del directorio del proyecto (subcarpeta y carpeta contened
     } finally {
       rmSync(ws, { recursive: true, force: true });
     }
+  });
+});
+
+// ------------------------------- petición automática de la narrativa
+
+describe('cuándo se pide la narrativa', () => {
+  // El modo manual tiene un defecto estructural: la narrativa la escribe el
+  // agent, así que necesita cuota. Quien espera a estar al límite descubre que
+  // el momento en que más la necesita es el único en que no se puede generar.
+  // Por eso se pide temprano y repartida. Pero cada petición agrega un turno a
+  // la conversación del usuario, así que estos límites no son ajuste fino: son
+  // la diferencia entre útil e insufrible.
+  const base = () => ({
+    agent: 'claude code', turns: 20, head: 'aaa1111', writtenAt: new Date().toISOString(),
+    facts: { dirty: [{ ruta: 'a.js' }] }, commands: [], narrative: 'algo', 
+  });
+
+  test('pide si no hay narrativa y hubo trabajo', () => {
+    const m = shouldAsk({ hook_event_name: 'Stop' }, { ...base(), narrative: null }, {}, {});
+    assert.match(m ?? '', /todavía no tiene narrativa/);
+  });
+
+  test('no pide si el turno no tuvo trabajo detrás', () => {
+    // Un Stop sin cambios ni comandos no tiene nada que contar: el turno
+    // extra seria puro ruido.
+    const e = { ...base(), narrative: null, facts: { dirty: [] }, commands: [] };
+    assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, {}, {}), null);
+  });
+
+  test('respeta stop_hook_active: sin eso es un bucle infinito', () => {
+    // El payload trae esta bandera justo para esto. Si ya estamos dentro de un
+    // turno que provocó nuestro propio bloqueo, volver a bloquear no termina
+    // nunca y le cuelga la sesión al usuario.
+    const e = { ...base(), narrative: null };
+    assert.equal(shouldAsk({ hook_event_name: 'Stop', stop_hook_active: true }, e, {}, {}), null);
+  });
+
+  test('no pide dos veces seguidas: debounce de minutos', () => {
+    const e = { ...base(), narrative: null };
+    const haceUnMinuto = new Date(Date.now() - 60_000).toISOString();
+    assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, { askedAt: haceUnMinuto }, {}), null,
+      'pidió otra vez un minuto después');
+
+    const hace20 = new Date(Date.now() - 20 * 60_000).toISOString();
+    assert.ok(shouldAsk({ hook_event_name: 'Stop' }, e, { askedAt: hace20 }, {}),
+      'no volvió a pedir ni después de 20 minutos');
+  });
+
+  test('vuelve a pedir si la narrativa quedó atrás', () => {
+    const e = base();
+    assert.match(shouldAsk({ hook_event_name: 'Stop' }, e, { turnsAtNarrative: 1 }, {}) ?? '',
+      /turnos desde la última narrativa/);
+    // Recién escrita, no molesta.
+    assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, { turnsAtNarrative: 19 }, {}), null);
+  });
+
+  test('un commit nuevo la vuelve a pedir aunque sea reciente', () => {
+    const m = shouldAsk({ hook_event_name: 'Stop' }, base(), { head: 'bbb2222', turnsAtNarrative: 19 }, {});
+    assert.match(m ?? '', /commits nuevos/);
+  });
+
+  test('askNarrative: false la apaga del todo', () => {
+    const e = { ...base(), narrative: null };
+    assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, {}, { askNarrative: false }), null);
+  });
+
+  test('no se intenta en Codex ni en agy, donde el contrato no está verificado', () => {
+    // Imprimir un JSON de bloqueo a un CLI que no lo entiende puede romperle
+    // la sesión al usuario. Hasta verificarlo con `chaski probe`, no se hace.
+    for (const agent of ['codex', 'agy']) {
+      const e = { ...base(), agent, narrative: null };
+      assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, {}, {}), null, `bloqueó en ${agent}`);
+    }
+  });
+
+  test('el texto pide el estado en vuelo, que es lo que motiva todo', () => {
+    const t = askText('el relevo todavía no tiene narrativa');
+    assert.match(t, /a medias/i, 'no pide lo que quedó a medias');
+    assert.match(t, /ruta y la línea/i, 'no pide ser específico');
+    assert.match(t, /skill `relevo`/, 'no nombra la skill');
+    assert.ok(!/\/relevo/.test(t), 'nombra un comando que no existe en los tres CLIs');
   });
 });
