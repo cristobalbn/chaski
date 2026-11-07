@@ -845,3 +845,90 @@ describe('skill del relevo', () => {
     }
   });
 });
+
+// ------------------------- la conclusión de un subagente sobrevive
+
+describe('trabajo delegado', () => {
+  // Reportado desde fuera (issue #18): `promote()` guardaba la conclusión del
+  // subagente y la captura del final del MISMO turno construía un estado nuevo
+  // sin el campo, así que la sección "Trabajo delegado" duraba lo que duraba el
+  // turno y una sesión nueva no la veía nunca.
+  const stop = (m, payload, evento = 'Stop') => execFileSync(
+    process.execPath, [join(SRC, 'capture.mjs'), evento, 'claude-code'],
+    { cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: JSON.stringify(payload) });
+
+  const leer = (m) => {
+    const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+    const dir = join(m.proyecto, '.tambo', 'branches', rama);
+    return {
+      estado: JSON.parse(readFileSync(join(dir, 'estado.json'), 'utf8')),
+      md: readFileSync(join(dir, 'relevo.md'), 'utf8'),
+    };
+  };
+
+  test('la captura del padre no borra lo que promovió el subagente', () => {
+    const m = montar('chaski-deleg-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 2;\n');
+      stop(m, { session_id: 'd1', cwd: m.proyecto, hook_event_name: 'Stop' });
+
+      stop(m, {
+        session_id: 'd1', cwd: m.proyecto, hook_event_name: 'SubagentStop',
+        agent_type: 'revisor', stop_reason: 'end_turn',
+        last_assistant_message: 'Revisé la capa de auth: el refresh no rota el token viejo.',
+      }, 'SubagentStop');
+
+      assert.match(leer(m).md, /Trabajo delegado/, 'la promoción no llegó al relevo');
+
+      // El turno del padre termina: ANTES esto borraba la sección entera.
+      stop(m, { session_id: 'd1', cwd: m.proyecto, hook_event_name: 'Stop' });
+      const despues = leer(m);
+      assert.ok(Array.isArray(despues.estado.subagents) && despues.estado.subagents.length,
+        'la captura del padre borró subagents del estado');
+      assert.match(despues.md, /Trabajo delegado/, 'la sección desapareció del relevo');
+      assert.match(despues.md, /refresh no rota/, 'se perdió la conclusión');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('sobrevive al cambio de sesión, que es el caso de cambiar de CLI', () => {
+    // Atarlo a la sesión lo borraría en la primera captura del CLI siguiente:
+    // el agent nuevo la lee al arrancar y la perdería para el que venga
+    // después, que es justo lo que esta herramienta existe para evitar.
+    const m = montar('chaski-deleg-ses-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 3;\n');
+      stop(m, { session_id: 'vieja', cwd: m.proyecto, hook_event_name: 'Stop' });
+      stop(m, {
+        session_id: 'vieja', cwd: m.proyecto, hook_event_name: 'SubagentStop',
+        agent_type: 'explorador', last_assistant_message: 'Encontré el bug en el parser.',
+      }, 'SubagentStop');
+
+      stop(m, { session_id: 'NUEVA', cwd: m.proyecto, hook_event_name: 'Stop' });
+      assert.match(leer(m).md, /Encontré el bug en el parser/,
+        'otro CLI abriendo el proyecto perdió el trabajo delegado');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('el relevo dice cuánto hace que se promovió', () => {
+    // Si sobreviven entre sesiones, su antigüedad tiene que verse: una
+    // conclusión de hace tres días se lee distinto que una de hace diez
+    // minutos, y sin la marca el agent no tiene cómo saberlo.
+    const m = montar('chaski-deleg-edad-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 4;\n');
+      stop(m, { session_id: 'e1', cwd: m.proyecto, hook_event_name: 'Stop' });
+      stop(m, {
+        session_id: 'e1', cwd: m.proyecto, hook_event_name: 'SubagentStop',
+        agent_type: 'revisor', last_assistant_message: 'Listo el repaso.',
+      }, 'SubagentStop');
+      assert.match(leer(m).md, /\*\*revisor\*\* — hace \d+ min/,
+        'no muestra la antigüedad de la conclusión');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+});

@@ -182,7 +182,10 @@ export function render(estado) {
     L.push('## Trabajo delegado');
     L.push('');
     for (const s of estado.subagents) {
-      L.push(`**${s.kind}**${s.reason ? ` — terminó por \`${s.reason}\`, puede no haber acabado` : ''}`);
+      // La antigüedad se muestra porque estas conclusiones sobreviven entre
+      // sesiones: una de hace tres días se lee distinto que una de hace diez
+      // minutos, y sin la marca el agent no tiene cómo saberlo.
+      L.push(`**${s.kind}**${antiguedad(s.at)}${s.reason ? ` — terminó por \`${s.reason}\`, puede no haber acabado` : ''}`);
       L.push('');
       L.push(s.conclusion);
       L.push('');
@@ -282,4 +285,19 @@ function minutesSince(iso) {
   const hs = Math.round(m / 60);
   if (hs < 48) return `${hs} hora(s)`;
   return `${Math.round(hs / 24)} día(s)`;
+}
+
+/**
+ * " — hace N" para una marca ISO, o cadena vacía si no hay o no parsea.
+ *
+ * Se redondea a la unidad grande porque el relevo no necesita precisión: lo
+ * que cambia la lectura es "hace minutos" contra "hace días".
+ */
+function antiguedad(iso) {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(t)) return '';
+  const min = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (min < 60) return ` — hace ${min} min`;
+  if (min < 1440) return ` — hace ${Math.round(min / 60)} h`;
+  return ` — hace ${Math.round(min / 1440)} día(s)`;
 }
