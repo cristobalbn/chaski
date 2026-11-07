@@ -18,7 +18,7 @@ import {
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const SRC = join(AQUI, '..', 'src');
@@ -563,5 +563,97 @@ describe('puntos de entrada', () => {
     const cli = readFileSync(join(SRC, 'cli.mjs'), 'utf8');
     const registrados = [...cli.matchAll(/resolve\(AQUI, '([\w.-]+)'\)/g)].map((m) => m[1]);
     assert.deepEqual([...new Set(registrados)].sort(), ['capture.mjs', 'inject.mjs']);
+  });
+});
+
+// ------------------------------------- puentes de los nombres viejos
+
+describe('compatibilidad con los nombres de archivo viejos', () => {
+  // `init` graba la ruta absoluta del script en la configuración de cada CLI,
+  // que vive fuera del repositorio. Quien actualizó chaski desde una versión
+  // anterior a la homologación al inglés tiene los hooks apuntando a
+  // `capturar.mjs` y `leer.mjs`, y veía un volcado de Node en cada turno.
+  // Los puentes hacen que esos nombres sigan funcionando. No se borran sin un
+  // ciclo de deprecación: mientras alguien pueda tener la config vieja en
+  // disco, borrarlos le rompe cada turno.
+
+  test('capturar.mjs escribe el relevo igual que capture.mjs', () => {
+    const m = montar('chaski-compat-cap-');
+    try {
+      const payload = JSON.stringify({
+        session_id: 'compat-1', cwd: m.proyecto, hook_event_name: 'Stop',
+      });
+      const salida = execFileSync(process.execPath,
+        [join(SRC, 'capturar.mjs'), 'Stop', 'claude-code'],
+        { cwd: m.proyecto, env: m.entorno, input: payload, encoding: 'utf8' });
+
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const md = join(m.proyecto, '.tambo', 'branches', rama, 'relevo.md');
+      assert.ok(existsSync(md), `el puente no escribió el relevo. stdout: ${salida}`);
+      assert.match(readFileSync(md, 'utf8'), /# Relevo/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('leer.mjs inyecta el relevo y avisa solo por stderr', () => {
+    // El aviso NO puede ir por stdout: lo que leer.mjs imprime por stdout
+    // entra al contexto del agent, y una línea de más ahí es un dato falso.
+    const m = montar('chaski-compat-leer-');
+    try {
+      const payload = JSON.stringify({
+        session_id: 'compat-2', cwd: m.proyecto, hook_event_name: 'Stop',
+      });
+      execFileSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'],
+        { cwd: m.proyecto, env: m.entorno, input: payload, encoding: 'utf8' });
+
+      const r = spawnSync(process.execPath, [join(SRC, 'leer.mjs'), 'SessionStart', 'claude-code'],
+        { cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+          input: JSON.stringify({ cwd: m.proyecto }) });
+
+      assert.equal(r.status, 0, 'el puente no debe fallar nunca');
+      assert.match(r.stdout, /Relevo/, 'el puente no inyectó el relevo');
+      assert.match(r.stderr, /chaski init/, 'no avisó de que la config está vieja');
+      assert.ok(!r.stdout.includes('chaski init'),
+        'el aviso se filtró a stdout: eso entra al contexto del agent como dato');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('los dos puentes existen con su nombre exacto', () => {
+    for (const n of ['capturar.mjs', 'leer.mjs']) {
+      assert.ok(existsSync(join(SRC, n)),
+        `src/${n} es un puente de compatibilidad: borrarlo rompe cada turno a `
+        + `quien tenga una configuración anterior a la homologación al inglés.`);
+    }
+  });
+});
+
+describe('grafía del agent', () => {
+  // Un mismo CLI entraba con dos grafías: `cmd()` pasa `claude-code` como
+  // argumento (el shell parte por espacio) y `detectAgent()` devuelve
+  // `claude code`. El archivo de latidos acababa con dos claves para la misma
+  // herramienta, y el encabezado del relevo cambiaba según el evento.
+  test('capture normaliza el name venga con guión o con espacio', () => {
+    const m = montar('chaski-grafia-');
+    try {
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      for (const [i, grafia] of ['claude-code', 'claude code'].entries()) {
+        execFileSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', grafia], {
+          cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+          input: JSON.stringify({ session_id: 'g' + i, cwd: m.proyecto, hook_event_name: 'Stop' }),
+        });
+      }
+
+      const latidos = JSON.parse(readFileSync(join(m.casa, '.chaski', 'latidos.json'), 'utf8'));
+      assert.deepEqual(Object.keys(latidos), ['claude code'],
+        `quedó más de una clave para el mismo CLI: ${JSON.stringify(latidos)}`);
+
+      const md = readFileSync(join(m.proyecto, '.tambo', 'branches', rama, 'relevo.md'), 'utf8');
+      assert.match(md.split('\n')[0], /claude code/, 'el relevo quedó con la grafía del argumento');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
   });
 });

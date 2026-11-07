@@ -187,12 +187,20 @@ ya no existe, y el CLI imprime un error de módulo no encontrado en cada turno.
 `chaski init` reescribe las rutas y es idempotente: correrlo de nuevo sobre una
 instalación sana no cambia nada.
 
-Si ya estás viendo ese error, es exactamente esto: corre `chaski init`. Pero
-**la sesión que ya tiene el error abierta no lo va a ver desaparecer**: los
-CLIs leen su configuración de hooks una sola vez, al arrancar, así que `init`
-corrige la ruta para la próxima sesión, no para la que ya está corriendo.
-Cierra esa sesión y abre una nueva. `chaski doctor` muestra el comando que
-quedó registrado, por si quieres confirmarlo antes de reabrir.
+Si ya estás viendo ese error, corre `chaski init`. Pero **la sesión que ya lo
+tiene abierto no lo va a ver desaparecer**: los CLIs leen su configuración de
+hooks una sola vez, al arrancar, así que `init` corrige la ruta para la
+próxima sesión, no para la que está corriendo. Cierra esa sesión y abre una
+nueva. `chaski doctor` muestra el comando que quedó registrado, por si quieres
+confirmarlo antes de reabrir.
+
+Desde la versión actual los dos nombres de archivo anteriores a la
+homologación al inglés —`capturar.mjs` y `leer.mjs`— siguen funcionando como
+puentes, así que una configuración vieja ya no produce ese volcado de Node:
+captura e inyecta igual, y el hook de inicio de sesión imprime una línea
+recordando que conviene correr `init`. Los puentes existen para que
+actualizar no rompa nada, no para quedarse: `init` sigue siendo el paso
+correcto.
 
 ### Desinstalar
 

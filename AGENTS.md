@@ -122,6 +122,14 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
    Hay un test en `test/install.test.mjs` que falla si cambian. Si lo ves
    fallar, deshaz el renombre; no ajustes el test.
 
+   Los nombres anteriores a la homologación al inglés —`capturar.mjs` y
+   `leer.mjs`— existen como puentes que delegan en los actuales, porque hay
+   configuraciones en disco que todavía los invocan. No se borran sin un ciclo
+   de deprecación de verdad: mientras alguien pueda tener la config vieja,
+   borrarlos le rompe cada turno. El puente de captura no avisa por stderr a
+   propósito —corre en cada turno y sería ruido inapagable—; avisa el de inicio
+   de sesión, que corre una vez.
+
 ## Presupuestos
 
 | Qué | Límite | Consecuencia de pasarse |
