@@ -218,12 +218,35 @@ function promote(ev, cwd, config) {
     // dejaría un relevo con la conclusión de un hijo y ningún hecho.
     if (!estado) return ok();
 
+    // Sin identidad del subagente no se promueve nada.
+    //
+    // Pasó en producción y se vio en el relevo: la sección "Trabajo delegado"
+    // quedó con CUATRO MENSAJES DEL USUARIO —"dale, abre el issue", "ya,
+    // gracias, ahora vuelvo"— presentados como conclusiones de subagentes y
+    // con la etiqueta vacía. Algún CLI dispara este evento con el último
+    // mensaje de la conversación, que puede ser el del usuario, donde Claude
+    // Code pone el del subagente. Sin `agent_type` no hay forma de saber que
+    // hubo un subagente de verdad, así que no se promueve: un relevo que
+    // afirma que alguien concluyó algo que nunca pasó es peor que uno sin la
+    // sección.
+    //
+    // La distinción exacta importa: lo que llegaba NO era el campo ausente,
+    // era el campo VACÍO. Por eso `??` no lo cubría y la etiqueta se
+    // renderizaba como `****`.
+    //
+    // Ausente se sigue aceptando con un nombre genérico, porque un CLI puede
+    // no mandarlo y la promoción es legítima. Presente pero vacío se rechaza:
+    // es la huella de quien mandó el mensaje del usuario como si fuera la
+    // conclusión de un subagente.
+    if ('agent_type' in ev && !String(ev.agent_type ?? '').trim()) return ok();
+    const kind = String(ev.agent_type ?? '').trim() || 'subagente';
+
     const { texto } = redact(String(ev.last_assistant_message ?? '').trim(), config);
     const conclusion = summarizeConclusion(texto);
     if (!conclusion) return ok();
 
     const entrada = {
-      kind: ev.agent_type ?? 'subagente',
+      kind,
       conclusion,
       at: new Date().toISOString(),
       // `stop_reason` distinto de end_turn suele significar que no terminó

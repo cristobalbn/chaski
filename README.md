@@ -114,6 +114,23 @@ cd ../tu-proyecto
 node ../chaski/src/cli.mjs init
 ```
 
+### Dónde escribe `init`, y dónde no
+
+Los hooks van a **nivel de usuario** y sirven para todos tus proyectos. Los
+archivos de proyecto —la skill, el bloque de `AGENTS.md`, la línea del
+`.gitignore`— van **solo en el repositorio**, nunca en la carpeta desde la que
+invocaste `init` si esa carpeta no es el repositorio.
+
+Esto importa si tienes una carpeta contenedora con varios proyectos dentro:
+instalar ahí la skill la aplicaría a todos, y el `AGENTS.md` le hablaría de
+chaski a quien esté trabajando en otro proyecto. Todo lo de un proyecto vive en
+su proyecto.
+
+Si abres un agente en la carpeta contenedora, el relevo se inyecta igual
+—los hooks son de usuario y chaski resuelve el repositorio hijo— y la petición
+automática de la narrativa trae las instrucciones completas para escribirla sin
+la skill. Lo que no tendrás ahí es el atajo `/relevo`.
+
 ### Qué hace `init`
 
 1. Detecta cuáles de los tres CLIs tienes instalados y registra los hooks **a

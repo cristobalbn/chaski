@@ -169,13 +169,24 @@ function init() {
     }
   }
 
+  // Los archivos de proyecto van SOLO en el repositorio, nunca en la carpeta
+  // desde la que se invocó init si esa carpeta no es el repositorio.
+  //
+  // Antes se instalaban en las dos, para que un agent abierto en la carpeta
+  // contenedora tuviera la skill a mano. Pero una carpeta contenedora suele
+  // tener varios proyectos dentro: ahí la skill aplicaría a todos y el
+  // AGENTS.md le hablaría de chaski a quien esté trabajando en otro proyecto.
+  // El usuario lo vio como "se me ensució la carpeta" y tiene razón: todo lo
+  // de un proyecto vive en su proyecto.
+  //
+  // Lo que se pierde: un agent abierto en la carpeta contenedora no tiene la
+  // skill. No queda sin recursos — el relevo se inyecta igual, porque los
+  // hooks son de nivel de usuario y `projectDir()` resuelve el repositorio
+  // hijo, y el texto de la petición automática trae las instrucciones
+  // completas para escribir la narrativa sin skill (ver `askText`).
   ensureGitignore(CWD);
   installSkill(CWD);
   ensureAgentsMd(CWD);
-  if (WORKSPACE_CWD !== CWD && !WORKSPACE_CWD.startsWith(CWD)) {
-    installSkill(WORKSPACE_CWD);
-    ensureAgentsMd(WORKSPACE_CWD);
-  }
   finalSummary(detectados);
 
   // Un CLI que no se pudo configurar tiene que verse en el código de salida,

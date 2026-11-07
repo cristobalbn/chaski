@@ -129,6 +129,16 @@ export function askText(motivo) {
     '',
     'No repitas los hechos: los archivos, el diff y los commits ya están en el',
     'relevo. Escribe solo lo que no se deduce del código. 120-200 palabras.',
+    '',
+    // Autosuficiente a propósito. La skill vive en el repositorio, así que un
+    // agent abierto en una carpeta contenedora —o en un proyecto donde nadie
+    // corrió `chaski init`— recibe esta petición sin tenerla. Sin estas dos
+    // líneas, la instrucción nombraría una skill que ese agent no puede abrir.
+    'Si no tienes la skill `relevo` a mano: escribe los campos `narrative`,',
+    '`narrativeAuthor` y `narrativeWrittenAt` (ISO 8601) en',
+    '`.tambo/branches/<rama>/estado.json` del repositorio, sin tocar ningún',
+    'otro campo, y no edites `relevo.md`: lo regenera chaski solo.',
+    '',
     'Después de guardarla, termina el turno sin hacer nada más.',
   ].join('\n');
 }
