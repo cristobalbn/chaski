@@ -22,6 +22,7 @@ existen para detectar.
 | `codex-code-mode.transcript.jsonl` | formato observado el 2026-11-07: `custom_tool_call` y `CommandExecution`; contenido sintético |
 | `agy.payload.json` | hook `Stop`, Antigravity CLI 1.4.12 |
 | `agy.transcript.jsonl` | pasos con `step_index`, `type` y `content` |
+| `agy-tool-calls.transcript.jsonl` | formato observado el 2026-11-07: `tool_calls` en `PLANNER_RESPONSE` y salidas `GENERIC`; contenido sintético |
 
 Los tres formatos de transcript son distintos entre sí. Ninguno de los CLIs
 prometió mantenerlos estables entre versiones, y por eso hay un test por

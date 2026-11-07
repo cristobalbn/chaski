@@ -97,7 +97,12 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
 
   // Narrativa que quedó atrás. Se mide en turnos de trabajo y en commits, no
   // en tiempo: una sesión larga sin cambios no necesita reescribirla.
-  const turnosDesde = (estado.turns ?? 0) - (previo?.turnsAtNarrative ?? 0);
+  // Si cambió la sesión o el contador previo quedó por encima del actual tras
+  // un reinicio de sesión, la cuenta parte desde cero en la sesión nueva.
+  const mismaSesion = !previo?.session || !estado?.session || previo.session === estado.session;
+  const baseTurns = mismaSesion && (previo?.turnsAtNarrative ?? 0) <= (estado.turns ?? 0)
+    ? (previo?.turnsAtNarrative ?? 0) : 0;
+  const turnosDesde = (estado.turns ?? 0) - baseTurns;
   if (commitsNuevos) return 'hay commits nuevos desde la última narrativa';
   if (turnosDesde >= TURNOS_MIN) return `van ${turnosDesde} turnos desde la última narrativa`;
 

@@ -186,11 +186,12 @@ export function transcriptFacts(rutaTranscript, desdeOffset = 0, config = null, 
     return res;
   }
 
+  const pending = [];
   for (const linea of bruto.split('\n')) {
     if (!linea.trim()) continue;
     let ev;
     try { ev = JSON.parse(linea); } catch { continue; }
-    extract(ev, res, config);
+    extract(ev, res, config, pending);
   }
 
   // Solo los últimos, para no inflar el relevo.
@@ -204,10 +205,10 @@ export function transcriptFacts(rutaTranscript, desdeOffset = 0, config = null, 
  * su propia forma y ninguno prometió mantenerla entre versiones. Ante un
  * formato desconocido se ignora el event en lugar de fallar.
  */
-function extract(ev, res, config) {
+function extract(ev, res, config, pending) {
   // Antigravity: pasos con step_index, type y content en texto plano.
   if (ev.step_index !== undefined || ev.stepIndex !== undefined) {
-    return extractStep(ev, res, config);
+    return extractStep(ev, res, config, pending);
   }
   // Codex: wrapper {timestamp, ordinal, type, payload}.
   if (ev.payload !== undefined && ev.ordinal !== undefined) {
@@ -253,20 +254,69 @@ function extract(ev, res, config) {
 /**
  * Un paso del transcript de Antigravity.
  *
- * Formato verificado contra una sesión real: cada línea es un paso con
- * step_index, source, type, status, created_at y content. Los tipos vistos son
- * USER_INPUT, PLANNER_RESPONSE y los de herramientas (run_command y afines).
- * El contenido es texto plano, no bloques estructurados, así que los commands
- * se extraen del texto en lugar de leer campos.
+ * Formato verificado contra sesiones reales: cada línea es un paso con
+ * step_index, source, type, status, created_at y content. En el formato actual
+ * las llamadas a herramientas viajan en `tool_calls` de `PLANNER_RESPONSE` y
+ * sus salidas llegan en los pasos `GENERIC` siguientes, en el mismo orden.
+ * También se conserva el formato anterior de pasos `RUN_COMMAND` / `VIEW_FILE`.
  */
-function extractStep(ev, res, config) {
+function extractStep(ev, res, config, pending = []) {
   const kind = String(ev.type ?? '').toUpperCase();
   const contenido = typeof ev.content === 'string' ? ev.content : '';
+  const stepIndex = ev.step_index ?? ev.stepIndex ?? null;
 
-  if (kind === 'USER_INPUT' || kind === 'PLANNER_RESPONSE') res.turns++;
+  // Cada turno del usuario empieza en USER_INPUT; dentro de un mismo turno hay
+  // un PLANNER_RESPONSE por cada ronda de herramientas más la respuesta final,
+  // así que sumarlos infla el contador y adelanta la petición de narrativa.
+  if (kind === 'USER_INPUT') {
+    res.turns++;
+    pending.length = 0;
+  }
 
-  if (kind === 'PLANNER_RESPONSE' && contenido) {
-    res.lastMessage = contenido;
+  if (kind === 'PLANNER_RESPONSE') {
+    pending.length = 0;
+    if (contenido) res.lastMessage = contenido;
+    const calls = ev.tool_calls ?? ev.toolCalls;
+    if (Array.isArray(calls)) {
+      calls.forEach((call, index) => {
+        const name = String(call?.name ?? '');
+        const args = stepToolArgs(call);
+        if (/^(run_command|bash|shell|exec_command)$/i.test(name)) {
+          const rawCmd = unwrapJsonString(args.CommandLine ?? args.command ?? args.cmd ?? '');
+          const { texto } = redact(meaningfulLine(rawCmd), config);
+          if (texto) {
+            const id = call?.id ?? (stepIndex !== null ? `${stepIndex}:${index}` : null);
+            const command = { cmd: texto, id, exit: null };
+            res.commands.push(command);
+            pending.push({ kind: 'command', command });
+            return;
+          }
+        } else if (/^(read_file|view_file|read|view)$/i.test(name)) {
+          const rawPath = unwrapJsonString(
+            args.Path ?? args.AbsolutePath ?? args.file_path ?? args.path ?? args.file ?? '',
+          ).trim();
+          if (rawPath && !isExcludedPath(rawPath, config)) res.filesRead.push(rawPath);
+        }
+        pending.push({ kind: 'other' });
+      });
+    }
+    return;
+  }
+
+  if (kind === 'GENERIC') {
+    const next = pending.shift() ?? null;
+    if (next) {
+      if (next.kind !== 'command') return;
+      const exit = stepCommandExit(ev, contenido);
+      if (exit !== null) next.command.exit = exit;
+      return;
+    }
+    // Si la lectura incremental arrancó después del PLANNER_RESPONSE, solo una
+    // cabecera explícita de comando confirma el código de salida.
+    const exit = stepHeaderExit(contenido);
+    const unresolved = exit !== null ? res.commands.find((c) => c.exit === null) : null;
+    if (unresolved) unresolved.exit = exit;
+    return;
   }
 
   if (/RUN_COMMAND|COMMAND|TERMINAL/.test(kind)) {
@@ -277,7 +327,7 @@ function extractStep(ev, res, config) {
     const { texto } = redact(meaningfulLine(bruto), config);
     if (texto) {
       const fallo = /FAILED|ERROR/.test(String(ev.status ?? '')) || /exit (?:code )?[1-9]/i.test(contenido);
-      res.commands.push({ cmd: texto, id: ev.step_index ?? null, exit: fallo ? 1 : 0 });
+      res.commands.push({ cmd: texto, id: stepIndex, exit: fallo ? 1 : 0 });
     }
   }
 
@@ -285,6 +335,43 @@ function extractStep(ev, res, config) {
     const m = /"?(?:AbsolutePath|path|file)"?\s*[:=]\s*"?([^"\n]+)/i.exec(contenido);
     if (m && !isExcludedPath(m[1], config)) res.filesRead.push(m[1].trim());
   }
+}
+
+function stepToolArgs(call) {
+  let args = call?.args ?? call?.arguments ?? call?.input;
+  if (typeof args === 'string') {
+    try { args = JSON.parse(args); } catch { return {}; }
+  }
+  return (args && typeof args === 'object') ? args : {};
+}
+
+function unwrapJsonString(value) {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === 'string') return parsed;
+    } catch {}
+  }
+  return value;
+}
+
+function stepHeaderExit(contenido) {
+  // Solo la cabecera previa a "Command output:" pertenece al runner; el stdout
+  // del proceso puede contener líneas con el mismo texto.
+  const header = contenido.split(/\r?\n\r?\nCommand output:\r?\n/)[0];
+  const match = /^Command exited with code (-?\d+)\.\s*$/m.exec(header);
+  return match ? Number(match[1]) : null;
+}
+
+function stepCommandExit(ev, contenido) {
+  const exit = stepHeaderExit(contenido);
+  if (exit !== null) return exit;
+  const header = contenido.split(/\r?\n\r?\nCommand output:\r?\n/)[0];
+  if (/^(FAILED|ERROR)$/i.test(String(ev.status ?? ''))) return 1;
+  if (/^Encountered error in (?:step|tool) execution:/m.test(header)) return 1;
+  return null;
 }
 
 /**
