@@ -82,6 +82,18 @@ export function render(estado) {
     L.push('');
   }
 
+  // La señal más importante del relevo cuando existe: el agent nuevo tiene
+  // que saber que lo que sigue quedó a medias porque se acabó la cuota, no
+  // porque alguien lo decidió así. Va primero, antes incluso de la narrative,
+  // porque cambia cómo se lee todo lo demás.
+  if (estado.sealedAtLimit) {
+    L.push('## Corte por límite de cuota');
+    L.push('');
+    L.push(`La sesión anterior se cortó por límite de cuota (\`${estado.sealedAtLimit.motivo ?? 'rate limit'}\`) el ${shortDate(estado.sealedAtLimit.at)}, no por decisión del agent.`);
+    L.push('Puede que haya quedado trabajo a medias sin que nadie lo cerrara.');
+    L.push('');
+  }
+
   // --- Narrativa: lo que un script no puede deducir. Va primero porque es
   //     lo que el agent nuevo más necesita, y rotulada como interpretación.
   if (estado.narrative) {
@@ -103,7 +115,7 @@ export function render(estado) {
   L.push('## Estado del código');
   L.push('');
 
-  if (h.dirty?.length) {
+  if (Array.isArray(h.dirty) && h.dirty.length) {
     // El total puede ser mayor que lo guardado: el estado topa la lista para
     // no crecer sin límite, pero el relevo debe informar el número real.
     const total = h.dirtyTotal ?? h.dirty.length;
@@ -127,7 +139,7 @@ export function render(estado) {
     L.push('');
   }
 
-  const cmds = estado.commands ?? [];
+  const cmds = Array.isArray(estado.commands) ? estado.commands : [];
   if (cmds.length) {
     L.push('Comandos de esta sesión:');
     L.push('');
@@ -145,7 +157,7 @@ export function render(estado) {
   // Va con atribución a propósito. No es contabilidad: cambia cuánto se puede
   // confiar en la afirmación. «Los tests pasan» dicho por el agent que los
   // corrió vale distinto que por uno que leyó el archivo de tests.
-  if (estado.subagents?.length) {
+  if (Array.isArray(estado.subagents) && estado.subagents.length) {
     L.push('## Trabajo delegado');
     L.push('');
     for (const s of estado.subagents) {
@@ -160,7 +172,7 @@ export function render(estado) {
 
   // Lo que quedó corriendo al cerrar: es lo primero que el agent nuevo
   // necesita saber, porque puede estar modificando el árbol ahora mismo.
-  if (estado.backgroundTasks?.length) {
+  if (Array.isArray(estado.backgroundTasks) && estado.backgroundTasks.length) {
     L.push('## Quedó corriendo en segundo plano');
     L.push('');
     for (const t of estado.backgroundTasks) L.push(`- ${t.description}`);
@@ -173,7 +185,7 @@ export function render(estado) {
     L.push(`## Cuidado: upstream divergió`);
     L.push('');
     L.push(`\`${h.upstream.ref}\` tiene ${h.upstream.ahead} commit(s) que no tienes.`);
-    if (h.upstream.collisions?.length) {
+    if (Array.isArray(h.upstream.collisions) && h.upstream.collisions.length) {
       L.push('');
       L.push('Archivos cambiados por otra persona **y** por ti:');
       for (const r of h.upstream.collisions.slice(0, 8)) L.push(`- \`${r}\``);
@@ -183,7 +195,7 @@ export function render(estado) {
     L.push('');
   }
 
-  if (h.commits?.length) {
+  if (Array.isArray(h.commits) && h.commits.length) {
     L.push('Últimos commits:');
     L.push('');
     L.push('```');

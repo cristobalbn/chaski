@@ -32,7 +32,13 @@ function main() {
     // estado trae una narrative que el Markdown no tiene, se re-renderiza.
     if (estado.narrative && !md.includes(estado.narrative.trim().slice(0, 60))) {
       md = render(estado);
-      verificado = true; // reconstruido desde el estado, no desde el archivo
+      // No asumir "verificado" porque viene del mismo estado.json: quien
+      // puede escribirlo ya podía inyectar texto editando relevo.md, y ahí
+      // el aviso de "no verificado" sí aparece. Si no se recalcula aquí, lo
+      // único que se gana es suprimir el rótulo justo cuando dos personas
+      // comparten .tambo/ con claves distintas — el caso para el que existe
+      // la firma.
+      verificado = estado.signature ? isValidSignature(md, estado.signature) : false;
     }
 
     const partes = [preamble(estado, verificado), '', md];

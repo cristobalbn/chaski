@@ -216,6 +216,68 @@ describe('uninstall revierte lo que init tocó', () => {
   });
 });
 
+describe('probe', () => {
+  // `probe` no tenía NINGÚN test. Un identificador renombrado a medias en
+  // probePath(), probeLogPath(), backupForProbe(), probeCmd(), probeShow() o
+  // probeClean() revienta con ReferenceError en los tres CLIs y nadie lo
+  // notaba hasta que alguien lo corría a mano. Este test ejercita cada
+  // subcomando -- la rama poco transitada del instalador -- de punta a punta.
+  test('instala la sonda, la muestra y la limpia sin reventar en ningún subcomando', () => {
+    const m = montar('chaski-probe-');
+    try {
+      const salidaInstalar = m.correr('probe');
+      assert.match(salidaInstalar, /sonda instalada/, 'probe no instaló la sonda en ningún CLI');
+
+      // Antes de que algo la invoque, --show debe avisar, no reventar.
+      const salidaVacio = m.correr('probe', '--show');
+      assert.match(salidaVacio, /No se capturó nada/);
+
+      // Simula exactamente lo que haría un hook real: invoca la sonda que
+      // probe() acaba de escribir, con los mismos argumentos que pondría un
+      // CLI (event y agent).
+      const sondaPath = join(m.casa, '.chaski', 'sonda.mjs');
+      assert.ok(existsSync(sondaPath), 'probe no dejó escrita la sonda en ~/.chaski/');
+      execFileSync(process.execPath, [sondaPath, 'SessionStart', 'claude-code'],
+        { env: m.entorno, encoding: 'utf8', input: '{"cwd":"x"}' });
+
+      const salidaShow = m.correr('probe', '--show');
+      assert.match(salidaShow, /SessionStart/, 'show no mostró el event capturado');
+      assert.match(salidaShow, /claude-code/, 'show no mostró el agent capturado');
+
+      // --clean recorre los tres formatos de config (json-claude, toml-codex,
+      // json-agy): es la rama que más identificadores renombrados a medias
+      // puede esconder, porque nadie la mira en el uso normal.
+      const salidaLimpiar = m.correr('probe', '--clean');
+      assert.match(salidaLimpiar, /sonda removida|restaurado/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('probe --show sin sonda instalada no revienta', () => {
+    const m = montar('chaski-probe-show-');
+    try {
+      const salida = m.correr('probe', '--show');
+      assert.match(salida, /No se capturó nada/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('subcomando desconocido', () => {
+  test('no revienta: imprime el uso y marca error de salida', () => {
+    const m = montar('chaski-sub-raro-');
+    try {
+      let fallo = false;
+      try { m.correr('lo-que-sea'); } catch { fallo = true; }
+      assert.ok(fallo, 'un subcomando inválido no marcó error de salida');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('la documentación no promete lo que no existe', () => {
   // Automatiza una revisión que hasta ahora era manual y por eso se escapaba:
   // tras renombrar `--ver` a `--show` quedaron cuatro referencias viejas en el

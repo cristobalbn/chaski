@@ -49,8 +49,31 @@ describe('contrato de transcript: Claude Code', () => {
   });
 
   test('redacta los secretos que aparecen en un comando', () => {
-    const todo = JSON.stringify(r.commands);
-    assert.ok(!todo.includes('sk-abcdefghijklmnopqrstuvwxyz0123'), 'se filtró un token');
+    // Este test no podía fallar nunca, por dos razones acumuladas:
+    //   (a) buscaba la cadena 'sk-abcdefghijklmnopqrstuvwxyz0123', que no
+    //       aparece en ningún fixture -- el fixture trae 'sk-TOKEN_...'.
+    //   (b) aunque buscara la cadena correcta, el secreto del fixture vive en
+    //       la línea `export TOKEN=sk-...`, y meaningfulLine() la descarta
+    //       como ruido (coincide con `export\s`) antes de que redact() llegue
+    //       a correr sobre ella.
+    // Este test pone el secreto en la línea que SÍ se informa (no hay ruido
+    // que la tape) y comprueba contra el secreto real, no contra uno inventado.
+    const token = ['sk', '-', 'a'.repeat(32)].join('');
+    const linea = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: 'x1', name: 'Bash',
+        input: { command: `npm run deploy --token=${token}` } }] },
+    }) + '\n';
+    const tmp = join(tmpdir(), `chaski-secreto-cmd-${process.pid}.jsonl`);
+    writeFileSync(tmp, linea);
+    try {
+      const r2 = transcriptFacts(tmp, 0, {});
+      const todo = JSON.stringify(r2.commands);
+      assert.ok(!todo.includes(token), 'se filtró un token real');
+      assert.match(todo, /redactado/, 'no dejó marca de redacción');
+    } finally {
+      rmSync(tmp, { force: true });
+    }
   });
 
   test('registra el último mensaje del agent', () => {
@@ -151,10 +174,16 @@ describe('la marca de agua pertenece a una sesión', () => {
   // se saltea todo el trabajo del día siguiente — y es justo at el relevo
   // importa. El estado guarda sesión y transcript para poder invalidarla.
   const dir = mkdtempSync(join(tmpdir(), 'chaski-ses-'));
+  // HOME/USERPROFILE propios: sin esto, capture.mjs escribe el heartbeat y
+  // -de no existir todavía- la clave HMAC en el ~/.chaski REAL de quien
+  // corre la suite. En Windows fijar solo HOME no aísla nada: node usa
+  // USERPROFILE para homedir(), hay que fijar las dos.
+  const casa = mkdtempSync(join(tmpdir(), 'chaski-ses-home-'));
+  const entorno = { ...process.env, HOME: casa, USERPROFILE: casa };
   const correr = (payload) => {
     const r = execFileSync(process.execPath,
       [join(AQUI, '..', 'src', 'capture.mjs'), 'Stop', 'test'],
-      { input: JSON.stringify(payload), encoding: 'utf8' });
+      { input: JSON.stringify(payload), encoding: 'utf8', env: entorno });
     return JSON.parse(readFileSync(
       join(dir, '.tambo', 'branches', 'sin-rama', 'estado.json'), 'utf8'));
   };
@@ -189,6 +218,7 @@ describe('la marca de agua pertenece a una sesión', () => {
         `leyó ${manana.turns} de 40 turns: arrastró la marca de agua de la sesión anterior`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+      rmSync(casa, { recursive: true, force: true });
     }
   });
 });
@@ -199,11 +229,14 @@ describe('volver después de que otra persona trabajó', () => {
   // "el repositorio cambió" no alcanza: hay que decir quién tocó qué, y sobre
   // todo si toca los archivos que la narrative declara pendientes.
   const dir = mkdtempSync(join(tmpdir(), 'chaski-vac-'));
+  // HOME/USERPROFILE propios: ver el comentario equivalente más arriba.
+  const casa = mkdtempSync(join(tmpdir(), 'chaski-vac-home-'));
+  const entorno = { ...process.env, HOME: casa, USERPROFILE: casa };
   const g = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 
   const inyectado = () => execFileSync(process.execPath,
     [join(AQUI, '..', 'src', 'inject.mjs'), 'SessionStart', 'claude-code'],
-    { input: JSON.stringify({ cwd: dir }), encoding: 'utf8' });
+    { input: JSON.stringify({ cwd: dir }), encoding: 'utf8', env: entorno });
 
   test('avisa quién cambió qué, y que lo pendiente puede estar resuelto', () => {
     try {
@@ -247,6 +280,7 @@ describe('volver después de que otra persona trabajó', () => {
       assert.match(salida, /ya esté resuelto/, 'no avisó que lo pendiente puede estar hecho');
     } finally {
       rmSync(dir, { recursive: true, force: true });
+      rmSync(casa, { recursive: true, force: true });
     }
   });
 
@@ -257,6 +291,8 @@ describe('volver después de que otra persona trabajó', () => {
     // sesión. Los tests existentes no lo vieron porque verificaban que
     // hubiera aviso, no cuál. Un aviso que sale siempre deja de informar.
     const d2 = mkdtempSync(join(tmpdir(), 'chaski-misma-'));
+    const casa2 = mkdtempSync(join(tmpdir(), 'chaski-misma-home-'));
+    const entorno2 = { ...process.env, HOME: casa2, USERPROFILE: casa2 };
     const g = (...a) => execFileSync('git', a, { cwd: d2, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     try {
       g('init', '-q');
@@ -278,12 +314,13 @@ describe('volver después de que otra persona trabajó', () => {
 
       const salida = execFileSync(process.execPath,
         [join(AQUI, '..', 'src', 'inject.mjs'), 'SessionStart', 'claude-code'],
-        { input: JSON.stringify({ cwd: d2 }), encoding: 'utf8' });
+        { input: JSON.stringify({ cwd: d2 }), encoding: 'utf8', env: entorno2 });
 
       assert.ok(!/ahora estás en/.test(salida),
         'avisó de un cambio de rama estando en la misma rama');
     } finally {
       rmSync(d2, { recursive: true, force: true });
+      rmSync(casa2, { recursive: true, force: true });
     }
   });
 
@@ -292,6 +329,8 @@ describe('volver después de que otra persona trabajó', () => {
     // una narrative posterior no aparecería hasta la captura siguiente. Si la
     // sesión se corta ahí, se perdería lo más valioso del relevo.
     const d2 = mkdtempSync(join(tmpdir(), 'chaski-narr-'));
+    const casa2 = mkdtempSync(join(tmpdir(), 'chaski-narr-home-'));
+    const entorno2 = { ...process.env, HOME: casa2, USERPROFILE: casa2 };
     try {
       const ed = join(d2, '.tambo', 'branches', 'sin-rama');
       execFileSync(process.execPath, ['-e',
@@ -306,11 +345,12 @@ describe('volver después de que otra persona trabajó', () => {
 
       const salida = execFileSync(process.execPath,
         [join(AQUI, '..', 'src', 'inject.mjs'), 'SessionStart', 'claude-code'],
-        { input: JSON.stringify({ cwd: d2 }), encoding: 'utf8' });
+        { input: JSON.stringify({ cwd: d2 }), encoding: 'utf8', env: entorno2 });
 
       assert.match(salida, /cookie httpOnly/, 'perdió la narrative recién escrita');
     } finally {
       rmSync(d2, { recursive: true, force: true });
+      rmSync(casa2, { recursive: true, force: true });
     }
   });
 });
@@ -340,30 +380,48 @@ describe('filtro de secretos', () => {
   //
   // Si simplificas esto a literales, el push se bloquea. No lo hagas.
   const p = (...partes) => partes.join('');
+  // Tercer elemento de cada entrada: el fragmento que de verdad es el
+  // secreto y que tiene que desaparecer de la salida. No siempre es el texto
+  // completo -- en una asignación, una URL o una cabecera se conserva
+  // deliberadamente la parte no secreta (el name de la variable, el usuario,
+  // el esquema) para que el texto redactado siga siendo legible.
   const CORPUS = [
-    ['clave OpenAI', 'OPENAI=' + p('sk-', 'abcdefghijklmnopqrstuvwxyz0123456789')],
-    ['clave Anthropic', p('sk-', 'ant-', 'api03-', 'a'.repeat(32))],
-    ['clave Google', p('AIza', 'SyAbCdEfGhIjKlMnOpQrStUvWxYz0123456')],
-    ['token GitHub', p('ghp', '_', 'a'.repeat(36))],
-    ['PAT GitHub', p('github', '_pat_', '11ABCDEFG0', 'a'.repeat(22))],
-    ['token Slack', p('xox', 'b-', '1234567890-', 'abcdefghijklmnop')],
-    ['clave AWS', p('AKIA', 'IOSFODNN7EXAMPLE')],
-    ['token GitLab', p('glpat', '-', 'a'.repeat(20))],
-    ['token npm', p('npm', '_', 'a'.repeat(36))],
-    ['clave Stripe', p('sk', '_live_', 'a'.repeat(24))],
+    ['clave OpenAI', 'OPENAI=' + p('sk-', 'abcdefghijklmnopqrstuvwxyz0123456789'),
+      p('sk-', 'abcdefghijklmnopqrstuvwxyz0123456789')],
+    ['clave Anthropic', p('sk-', 'ant-', 'api03-', 'a'.repeat(32)),
+      p('sk-', 'ant-', 'api03-', 'a'.repeat(32))],
+    ['clave Google', p('AIza', 'SyAbCdEfGhIjKlMnOpQrStUvWxYz0123456'),
+      p('AIza', 'SyAbCdEfGhIjKlMnOpQrStUvWxYz0123456')],
+    ['token GitHub', p('ghp', '_', 'a'.repeat(36)), p('ghp', '_', 'a'.repeat(36))],
+    ['PAT GitHub', p('github', '_pat_', '11ABCDEFG0', 'a'.repeat(22)),
+      p('github', '_pat_', '11ABCDEFG0', 'a'.repeat(22))],
+    ['token Slack', p('xox', 'b-', '1234567890-', 'abcdefghijklmnop'),
+      p('xox', 'b-', '1234567890-', 'abcdefghijklmnop')],
+    ['clave AWS', p('AKIA', 'IOSFODNN7EXAMPLE'), p('AKIA', 'IOSFODNN7EXAMPLE')],
+    ['token GitLab', p('glpat', '-', 'a'.repeat(20)), p('glpat', '-', 'a'.repeat(20))],
+    ['token npm', p('npm', '_', 'a'.repeat(36)), p('npm', '_', 'a'.repeat(36))],
+    ['clave Stripe', p('sk', '_live_', 'a'.repeat(24)), p('sk', '_live_', 'a'.repeat(24))],
     ['JWT', p('eyJhbGciOiJIUzI1NiJ9', '.eyJzdWIiOiIxMjM0NTY3ODkwIn0',
+      '.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk'),
+      p('eyJhbGciOiJIUzI1NiJ9', '.eyJzdWIiOiIxMjM0NTY3ODkwIn0',
       '.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk')],
-    ['clave privada', p('-----BEGIN RSA ', 'PRIVATE KEY-----\nMIIEoggg\n-----END RSA ', 'PRIVATE KEY-----')],
-    ['asignación de secreto', p('DATABASE_PASS', 'WORD=sup3rs3cr3t0_largo')],
-    ['URL con credencial', p('postgres://usuario:', 'clave123456', '@host:5432/db')],
-    ['cabecera Authorization', p('Authorization: Bearer ', 'abcdefghijklmnopqrstuvwxyz123456')],
+    ['clave privada', p('-----BEGIN RSA ', 'PRIVATE KEY-----\nMIIEoggg\n-----END RSA ', 'PRIVATE KEY-----'),
+      'MIIEoggg'],
+    ['asignación de secreto', p('DATABASE_PASS', 'WORD=sup3rs3cr3t0_largo'), 'sup3rs3cr3t0_largo'],
+    ['URL con credencial', p('postgres://usuario:', 'clave123456', '@host:5432/db'), 'clave123456'],
+    ['cabecera Authorization', p('Authorization: Bearer ', 'abcdefghijklmnopqrstuvwxyz123456'),
+      'abcdefghijklmnopqrstuvwxyz123456'],
   ];
 
-  for (const [name, texto] of CORPUS) {
+  for (const [name, texto, secreto] of CORPUS) {
     test(`redacta: ${name}`, () => {
+      // No basta con que aparezca la marca de redacción: una mutación que
+      // deja el secreto intacto y le pega la etiqueta al lado pasaba esto
+      // mismo. Hay que comprobar las dos mitades.
       const { texto: salida, redactions } = redact(texto);
       assert.ok(redactions > 0, 'no redactó nada');
       assert.ok(salida.includes('redactado'), 'no dejó marca de redacción');
+      assert.ok(!salida.includes(secreto), 'el secreto original sigue en la salida');
     });
   }
 
@@ -732,4 +790,152 @@ test('gitFacts no lanza fuera de un repo', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ------------------------------------------------- aislamiento del entorno
+
+test('ningún proceso hijo de capture.mjs/inject.mjs en este archivo corre con el HOME real', () => {
+  // Guarda el invariante, no solo el arreglo puntual: cada llamada a
+  // execFileSync que invoque capture.mjs o inject.mjs en ESTE archivo tiene
+  // que pasar un `env` que fije HOME y USERPROFILE a un directorio propio.
+  // Sin eso, `npm test` escribe una entrada `test` en el ~/.chaski/latidos.json
+  // real de quien corre la suite, y puede llegar a crear una clave HMAC real
+  // en ~/.chaski/clave si todavía no existía.
+  //
+  // Es un chequeo estático sobre el propio código de este archivo: lo que no
+  // puede probarse en caliente (que la corrida de HOY no tocó el HOME real)
+  // se vigila asegurando que el próximo test que alguien agregue no se olvide
+  // de aislarlo.
+  const propio = readFileSync(fileURLToPath(import.meta.url), 'utf8');
+  const bloques = propio.split('execFileSync(process.execPath,').slice(1);
+  let revisados = 0;
+  for (const b of bloques) {
+    const cierre = b.indexOf(');');
+    const trozo = b.slice(0, cierre === -1 ? 500 : cierre);
+    if (!/(capture|inject)\.mjs/.test(trozo)) continue;
+    revisados++;
+    assert.match(trozo, /env:\s*entorno\d*\b/,
+      `una llamada a capture.mjs/inject.mjs no aisló HOME/USERPROFILE: ${trozo.slice(0, 160)}`);
+  }
+  assert.ok(revisados >= 5, `se esperaban varias llamadas a capture/inject.mjs, se revisaron ${revisados}`);
+});
+
+// --------------------------------------- ida y vuelta real: capture → inject
+
+describe('el head que escribe capture.mjs es el que lee inject.mjs', () => {
+  // Los tests de detectDrift (en install.test.mjs) fabrican estado.json a
+  // mano, con `head` puesto a mano. Eso nunca ejercita el camino real: si
+  // capture.mjs empezara a escribir la clave con otro name (o inject.mjs
+  // empezara a leer otra), la detección de "el repositorio cambió desde el
+  // relevo" quedaría muerta para siempre, sin que ningún test se enterara.
+  // Este test hace el viaje completo: captura real, commit real, inyección real.
+  test('un commit nuevo tras una captura real dispara el aviso de deriva', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-roundtrip-'));
+    const casa = mkdtempSync(join(tmpdir(), 'chaski-roundtrip-home-'));
+    const entorno = { ...process.env, HOME: casa, USERPROFILE: casa };
+    const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    try {
+      g('init', '-q');
+      g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+      writeFileSync(join(dir, '.gitignore'), '.tambo/\n');
+      writeFileSync(join(dir, 'a.txt'), 'x');
+      g('add', '-A'); g('commit', '-qm', 'inicial');
+
+      const t1 = join(dir, 's.jsonl');
+      writeFileSync(t1, JSON.stringify({
+        type: 'assistant', message: { content: [{ type: 'text', text: 'listo' }] },
+      }) + '\n');
+
+      // Captura REAL: es capture.mjs, no un estado.json fabricado a mano, el
+      // que escribe la clave `head` que después lee inject.mjs.
+      execFileSync(process.execPath, [join(AQUI, '..', 'src', 'capture.mjs'), 'Stop', 'test'],
+        { cwd: dir, env: entorno, encoding: 'utf8',
+          input: JSON.stringify({ cwd: dir, session_id: 's1', transcript_path: t1, hook_event_name: 'Stop' }) });
+
+      // Otro commit después de la captura: así es como se produce la deriva.
+      writeFileSync(join(dir, 'a.txt'), 'y');
+      g('add', '-A'); g('commit', '-qm', 'cambio posterior');
+
+      const salida = execFileSync(process.execPath,
+        [join(AQUI, '..', 'src', 'inject.mjs'), 'SessionStart', 'claude-code'],
+        { cwd: dir, env: entorno, encoding: 'utf8', input: JSON.stringify({ cwd: dir }) });
+
+      assert.match(salida, /ATENCIÓN/,
+        'inject.mjs no detectó la deriva: revisa si la clave que escribe capture.mjs ' +
+        '(`head`) sigue siendo la que lee inject.mjs (`estado.head`)');
+      assert.match(salida, /1 commit\(s\) nuevo/, 'no contó el commit posterior a la captura');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(casa, { recursive: true, force: true });
+    }
+  });
+});
+
+// ------------------------------------------------- tope de tamaño de inject
+
+describe('tope de tamaño que aplica inject.mjs al armar la salida', () => {
+  // render() tiene su propio tope (probado en "invariantes del relevo"), pero
+  // inject.mjs vuelve a acotar DESPUÉS de sumarle el preámbulo y el aviso de
+  // deriva, y ese segundo tope nunca tuvo test. Se escribe el relevo.md a
+  // mano, más grande que el presupuesto y sin pasar por render(), para que el
+  // único recorte que pueda actuar sea el de inject.mjs.
+  test('recorta la salida final aunque el relevo.md en disco ya supere el presupuesto', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-topeiny-'));
+    const casa = mkdtempSync(join(tmpdir(), 'chaski-topeiny-home-'));
+    const entorno = { ...process.env, HOME: casa, USERPROFILE: casa };
+    try {
+      const ed = join(dir, '.tambo', 'branches', 'sin-rama');
+      execFileSync(process.execPath, ['-e',
+        `require('fs').mkdirSync(${JSON.stringify(ed)},{recursive:true})`]);
+      writeFileSync(join(ed, 'estado.json'), JSON.stringify({ agent: 'test' }));
+      writeFileSync(join(ed, 'relevo.md'), '# Relevo\n' + 'x'.repeat(8000));
+
+      const salida = execFileSync(process.execPath,
+        [join(AQUI, '..', 'src', 'inject.mjs'), 'SessionStart', 'claude-code'],
+        { input: JSON.stringify({ cwd: dir }), encoding: 'utf8', env: entorno });
+
+      assert.ok(salida.length <= MAX_CHARS + 1200,
+        `${salida.length} caracteres: inject.mjs no aplicó su propio tope`);
+      assert.match(salida, /Recortado/i, 'no avisó del recorte');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(casa, { recursive: true, force: true });
+    }
+  });
+});
+
+// --------------------------------------------------- salida específica agy
+
+describe('inject.mjs con el agent agy', () => {
+  // Ningún test invocaba inject.mjs pidiendo el agent `agy`. Antigravity
+  // exige un JSON con `injectSteps`: si recibe texto plano no inyecta nada y
+  // no avisa -- falla en silencio, el peor modo de fallo según el propio
+  // comentario de emitir() en inject.mjs. Romper ese formato no ponía roja la
+  // build.
+  test('a agy se le entrega JSON con injectSteps, no texto plano', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-agy-'));
+    const casa = mkdtempSync(join(tmpdir(), 'chaski-agy-home-'));
+    const entorno = { ...process.env, HOME: casa, USERPROFILE: casa };
+    try {
+      const ed = join(dir, '.tambo', 'branches', 'sin-rama');
+      execFileSync(process.execPath, ['-e',
+        `require('fs').mkdirSync(${JSON.stringify(ed)},{recursive:true})`]);
+      writeFileSync(join(ed, 'estado.json'), JSON.stringify({ agent: 'test' }));
+      writeFileSync(join(ed, 'relevo.md'), '# Relevo\ncontenido de prueba\n');
+
+      // Antigravity manda workspacePaths (array), no cwd: ver el contrato de
+      // payload probado más arriba.
+      const salida = execFileSync(process.execPath,
+        [join(AQUI, '..', 'src', 'inject.mjs'), 'SessionStart', 'agy'],
+        { input: JSON.stringify({ workspacePaths: [dir] }), encoding: 'utf8', env: entorno });
+
+      const parsed = JSON.parse(salida);
+      assert.ok(Array.isArray(parsed.injectSteps), 'no devolvió injectSteps');
+      assert.match(parsed.injectSteps[0].systemMessage.systemMessage, /contenido de prueba/,
+        'el relevo no llegó dentro de injectSteps');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(casa, { recursive: true, force: true });
+    }
+  });
 });

@@ -4,7 +4,7 @@ Gracias por el interés. Esto es lo que hace falta saber antes de abrir un PR.
 
 ## Antes de escribir código
 
-Lee [AGENTS.md](AGENTS.md). Tiene los siete invariantes del proyecto, los
+Lee [AGENTS.md](AGENTS.md). Tiene los ocho invariantes del proyecto, los
 presupuestos de latencia y tamaño, y las trampas conocidas de cada CLI. No son
 preferencias de estilo: romper cualquiera rompe el producto.
 
@@ -49,7 +49,7 @@ hook se ejecuta de verdad.
   `src/lib/secrets.mjs` con un caso de prueba.
 - **Adaptadores para otros CLIs.** Un archivo en `src/lib/` más una entrada en
   el mapa `CLIS` de `src/cli.mjs`.
-- **Más casos en los tests.** Hay 92. Falta cubrir el adaptador de Codex y de
+- **Más casos en los tests.** Falta cubrir el adaptador de Codex y de
   `agy` con fixtures de más de una versión de cada CLI.
 
 ## Qué no se va a aceptar
@@ -82,7 +82,7 @@ Antes de abrir el PR:
 
 ```bash
 npm run check                       # sintaxis; no hay build
-npm test                            # 95 tests
+npm test                            # node:test, sin dependencias
 ```
 
 Y prueba el cambio a mano según la sección de abajo.
@@ -99,7 +99,7 @@ queda escrito **por qué** se hizo un cambio, y eso vale más que el commit.
 ## Pull requests
 
 - Una cosa por PR.
-- Describí qué problema resuelve, no solo qué cambia.
+- Describe qué problema resuelve, no solo qué cambia.
 - Si tocaste `capture.mjs`, mide la latencia antes y después y ponlo en la
   descripción.
 - Si agregaste un comentario que explica el límite de una herramienta, que sea
