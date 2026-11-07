@@ -1009,6 +1009,53 @@ describe('contrato del bloqueo por CLI', () => {
   });
 });
 
+describe('el aviso corto requiere una skill accesible para el CLI', () => {
+  for (const agent of ['claude-code', 'codex', 'agy']) {
+    const propia = agent === 'claude-code' ? '.claude' : '.agents';
+    const ajena = propia === '.claude' ? '.agents' : '.claude';
+    for (const [caso, base, ubicacion, corto] of [
+      ['skill propia en la raíz', propia, 'raiz', true],
+      ['solo la skill de otro CLI', ajena, 'raiz', false],
+      ['sesión abierta en la carpeta contenedora', propia, 'contenedor', false],
+      ['sesión abierta en una subcarpeta', propia, 'subcarpeta', true],
+    ]) {
+      test(`${agent}: ${caso}`, () => {
+        const m = montar('chaski-aviso-');
+        try {
+          const skillDir = join(m.proyecto, base, 'skills', 'relevo');
+          mkdirSync(skillDir, { recursive: true });
+          writeFileSync(join(skillDir, 'SKILL.md'),
+            readFileSync(join(SRC, '..', 'skill', 'SKILL.md')));
+          writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 42;\n');
+          const cwd = ubicacion === 'contenedor' ? m.raiz
+            : ubicacion === 'subcarpeta' ? join(m.proyecto, 'src') : m.proyecto;
+          mkdirSync(cwd, { recursive: true });
+          const r = spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', agent], {
+            cwd, env: m.entorno, encoding: 'utf8',
+            input: JSON.stringify({ cwd, session_id: 'aviso', hook_event_name: 'Stop' }),
+          });
+          assert.equal(r.status, 0);
+          assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+          const salida = JSON.parse(r.stdout);
+          const texto = salida.hookSpecificOutput?.additionalContext ?? salida.reason;
+          if (corto) {
+            assert.equal(texto.split('\n').length, 1);
+            assert.ok(texto.length <= 200, 'el aviso volvió a crecer');
+            assert.match(texto, /skill `relevo`/);
+            assert.doesNotMatch(texto, /narrativeWrittenAt|estado\.json|\.tambo/);
+          } else {
+            assert.match(texto, /narrative`, `narrativeAuthor` y `narrativeWrittenAt/);
+            assert.match(texto, /estado\.json/);
+            assert.doesNotMatch(texto, /Usa la skill/);
+          }
+        } finally {
+          rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+        }
+      });
+    }
+  }
+});
+
 describe('el hook no se traga errores propios', () => {
   // Este test existe por un bug que acabó de pasar: una función se usó sin
   // importarla, y el fallo fue invisible por tres vías a la vez. `node --check`

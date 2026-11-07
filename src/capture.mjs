@@ -13,7 +13,7 @@
 //     relevo entero.
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { statePath, relayPath, readJson, acquireLock, globalDir, git, pruneOrphanRelays, existsSync, projectDir } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
@@ -35,7 +35,8 @@ function main() {
   let liberar = null;
   try {
     const ev = readPayload();
-    const cwd = projectDir(ev.cwd || process.cwd());
+    const sessionDir = resolve(ev.cwd || process.cwd());
+    const cwd = projectDir(sessionDir);
 
     const config = loadConfig(cwd);
 
@@ -167,10 +168,19 @@ function main() {
     // si algo de arriba fallara, se pierde la petición y no el relevo.
     //
     // El contrato lo arma `askPayload`, porque NO es el mismo en los tres:
-    // Claude Code y Codex usan `decision: "block"`, Antigravity usa
-    // `"continue"` y trata cualquier otro valor como permiso para parar.
+    // Claude Code usa `additionalContext`, Codex usa `decision: "block"` y
+    // Antigravity usa `"continue"`; otro valor le da permiso para parar.
     if (motivo) {
-      const salida = askPayload(estado.agent, askText(motivo));
+      // Resolver el repo hijo no carga su skill en una sesión abierta en la
+      // carpeta contenedora. Tampoco sirve la copia instalada para otro CLI:
+      // en ambos casos la petición debe incluir cómo escribir la narrativa.
+      const relativeSession = relative(cwd, sessionDir);
+      const inProject = relativeSession !== '..'
+        && !relativeSession.startsWith('..' + sep) && !isAbsolute(relativeSession);
+      const skillBase = estado.agent === 'claude code' ? '.claude' : '.agents';
+      const hasSkill = inProject
+        && existsSync(join(cwd, skillBase, 'skills', 'relevo', 'SKILL.md'));
+      const salida = askPayload(estado.agent, askText(motivo, hasSkill));
       if (salida) process.stdout.write(JSON.stringify(salida) + '\n');
     }
 

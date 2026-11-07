@@ -105,32 +105,34 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
 }
 
 /**
- * El texto que lee el agent cuando se le pide la narrativa.
+ * El texto de la petición.
  *
- * **Corto a propósito.** Esto no lo lee solo el agent: el CLI lo muestra en
- * pantalla al usuario, debajo de sus propias líneas (`Ran 1 stop hook`,
- * `Stop hook feedback`), que no controlamos. Una versión anterior ocupaba
- * veinte renglones explicando las cuatro secciones, el presupuesto de
- * palabras y el camino alternativo sin skill, y el usuario lo dijo claro:
- * «es muy largo, muy extenso, tapa mucha parte de la pantalla».
+ * Tiene DOS lectores con necesidades opuestas, y ahí estaba el problema: el
+ * agent necesita saber cómo escribir la narrativa, y el usuario —que lo ve en
+ * pantalla, porque el CLI lo muestra— solo necesita saber qué está pasando.
+ * Mezclarlo le dejaba al usuario nombres de campo y rutas de archivo que no le
+ * sirven de nada. Sus palabras: «queda como raro, muy técnico para el
+ * usuario».
  *
- * El detalle vive donde corresponde: en la skill `relevo`, que el agent abre
- * cuando la necesita. Repetirlo aquí no agregaba nada y restaba pantalla.
+ * Así que el cómo se delega a la skill, que es del agent y no se ve en
+ * pantalla. El mensaje visible queda en una línea legible.
  *
- * Queda una línea para el caso sin skill —un agent en una carpeta donde nadie
- * corrió `chaski init`— porque sin ella la instrucción nombraría algo que ese
- * agent no puede abrir. Es el mínimo que la hace autosuficiente.
+ * La parte técnica solo aparece cuando el agent no tiene la skill disponible
+ * en su sesión, porque ahí es la única forma de que la petición sea accionable.
+ * Es el caso raro pagando su propio costo, en vez de que lo pague el normal.
  *
- * Es una instrucción, no datos: a diferencia del relevo, esto sí le dice al
- * agent qué hacer. Y pide el trabajo EN VUELO, que es el caso que motiva todo:
- * una tarea cortada a mitad que el agent siguiente debe poder retomar.
+ * Nada de marcos tipo «orden del sistema»: la documentación de los hooks avisa
+ * que un texto así puede activar las defensas contra inyección de prompts del
+ * propio modelo.
  */
-export function askText(motivo) {
+export function askText(motivo, haySkill = true) {
+  const linea = `chaski: antes de cerrar, guarda el relevo de este trabajo — ${motivo}.`;
+  if (haySkill) return `${linea} Usa la skill \`relevo\`.`;
   return [
-    `chaski: guarda el relevo antes de cerrar — ${motivo}.`,
-    'Usa la skill `relevo`: qué quedó a medias y dónde, qué descartaste, y el',
-    'siguiente paso. Sin la skill, escribe `narrative`, `narrativeAuthor` y',
-    '`narrativeWrittenAt` en `.tambo/branches/<rama>/estado.json`.',
+    linea,
+    'Anota qué quedó a medias y dónde, qué descartaste y el siguiente paso, en',
+    'los campos `narrative`, `narrativeAuthor` y `narrativeWrittenAt` de',
+    '`.tambo/branches/<rama>/estado.json` en la raíz del repositorio. No edites `relevo.md`.',
   ].join('\n');
 }
 
