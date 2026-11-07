@@ -123,15 +123,28 @@ El criterio fue el riesgo para el usuario, no la completitud. Un proyecto de
 
 ## Lo que esta auditoría cambió en cómo se trabaja aquí
 
-Dos convenciones nuevas en `AGENTS.md`, las dos nacidas de un defecto concreto:
+Tres convenciones nuevas en `AGENTS.md`, las tres nacidas de un defecto
+concreto:
 
 1. **Ningún test toca el `HOME` real.** Hay un test que lo vigila.
 2. **Una aserción negativa necesita la prueba del caso positivo.** Afirmar que
    algo no aparece es inútil si nunca estuvo: es exactamente por lo que catorce
    tests del filtro de secretos daban cobertura falsa.
+3. **Cómo delegar en subagentes** (sección «Si delegas en subagentes»): qué
+   modelo para qué tarea, cuántos en paralelo, y por qué un validador recibe el
+   hallazgo pero no el razonamiento. Las reglas salen de lo que falló en esta
+   misma ronda: la cuota agotada dos veces, un `staging` mezclado por tres
+   agentes sobre un solo árbol de trabajo, y los hooks reales del usuario
+   sobrescritos por un aislamiento de entorno que no aislaba nada.
 
 Y una lección sobre el método, que vale para la próxima: **una suite verde no
 es evidencia**. De doce mutaciones introducidas a mano sobre el código, seis no
 pusieron roja la suite. Las pruebas de mutación encontraron en una tarde más
 huecos que los tests en meses, y son el único modo honesto de saber si una red
 de seguridad existe o solo lo parece.
+
+Y un matiz que costó caro aprender, al terminar las correcciones: **la ausencia
+de fallo no prueba que un test sea débil**, igual que su presencia no prueba que
+sea bueno. Una mutación que no pone rojo el test puede ser una reversión
+parcial que deja vivo otro mecanismo tapando el defecto. Hay que verificar que
+la mutación reproduce el defecto antes de juzgar el test.
