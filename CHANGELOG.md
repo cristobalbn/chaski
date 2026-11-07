@@ -110,6 +110,20 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   limpio»: dice que no se pudo comprobar. Confundir «no lo sé» con «no hay
   nada» era la mentira más cara que podía contar.
 
+- La skill del relevo se instala también en `.agents/skills/relevo/`, que es
+  donde Codex y Antigravity buscan las suyas, con el mismo formato que Claude
+  Code. Hasta ahora vivía solo en `.claude/skills/`: los otros dos CLIs leían
+  el relevo pero no tenían cómo escribir la narrativa de vuelta, así que el
+  traspaso era simétrico para los hechos y asimétrico para la intención.
+- El bloque que `init` escribe en `AGENTS.md` —la vía que Codex y Antigravity
+  leen siempre— mandaba editar `relevo.md` a mano. Ese archivo lo regenera
+  `capture.mjs` desde `estado.json`, y la firma lo cubre: la edición se perdía
+  y además disparaba un aviso de manipulación por un cambio legítimo. Ahora
+  nombra los campos exactos de `estado.json` y advierte de no tocar el
+  Markdown.
+- Los mensajes ya no nombran `/relevo` como si existiera en los tres: cada CLI
+  invoca la skill a su manera.
+
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,
   `codex exec`, `agy -p`). chaski es para sesiones interactivas.

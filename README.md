@@ -120,7 +120,11 @@ node ../chaski/src/cli.mjs init
    nivel de usuario**, con rutas nativas del sistema operativo. Respalda cada
    archivo de configuración antes de tocarlo.
 2. Agrega `.tambo/` y `chaski.local.json` a tu `.gitignore`.
-3. Instala el skill `/relevo` en `.claude/skills/relevo/`.
+3. Instala la skill `relevo` dos veces: en `.claude/skills/relevo/`, que lee
+   Claude Code, y en `.agents/skills/relevo/`, que leen Codex y Antigravity.
+   Es el mismo archivo —los tres usan el mismo formato— y cambia solo cómo se
+   invoca: `/relevo`, `$relevo` y el menú `/` respectivamente. Los tres pueden
+   además activarla solos a partir de su `description`.
 4. Agrega una sección de relevo a tu `AGENTS.md`.
 
 ### Dos pasos después de instalar
