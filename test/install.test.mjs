@@ -203,6 +203,24 @@ describe('uninstall revierte lo que init tocó', () => {
     }
   });
 
+  test('doctor detecta CLIs de Windows aunque where no esté disponible', { skip: process.platform !== 'win32' }, () => {
+    const m = montar('chaski-path-');
+    try {
+      const env = { ...m.entorno, PATH: m.bin, Path: m.bin };
+      const run = () => execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'doctor'], {
+        cwd: m.proyecto, env, encoding: 'utf8',
+      });
+      const installed = run();
+      for (const name of ['claude code', 'codex', 'agy']) {
+        assert.doesNotMatch(installed, new RegExp(name + '\\s+no instalado'));
+      }
+      rmSync(join(m.bin, 'agy.cmd'));
+      assert.match(run(), /agy\s+no instalado/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
   test('doctor no falla en un proyecto recién inicializado', () => {
     const m = montar('chaski-doc-');
     try {
