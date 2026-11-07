@@ -19,7 +19,7 @@ import { redact, isExcludedPath } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS } from '../src/lib/relay.mjs';
 import { branchSlug, pruneOrphanRelays, git, projectDir } from '../src/lib/paths.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
-import { shouldAsk, askText, blockPayload } from '../src/lib/ask.mjs';
+import { shouldAsk, askText, askPayload } from '../src/lib/ask.mjs';
 
 /** Presupuesto falso: `remaining()` fijo, no atado al reloj real. Para
  * probar decisiones de presupuesto sin depender de cuánto tarda la máquina. */
@@ -1273,7 +1273,7 @@ describe('cuándo se pide la narrativa', () => {
   test('un CLI desconocido no se toca', () => {
     const e = { ...base(), agent: 'otro-cli', narrative: null };
     assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, {}, {}), null);
-    assert.equal(blockPayload('otro-cli', 'x'), null);
+    assert.equal(askPayload('otro-cli', 'x'), null);
   });
 
   test('el formato del bloqueo NO es el mismo en los tres', () => {
@@ -1281,9 +1281,17 @@ describe('cuándo se pide la narrativa', () => {
     // su documentación dice que cualquier otro valor PERMITE parar. Mandarle
     // el "block" de Claude Code no daría error: no haría nada, en silencio,
     // que es el peor modo de fallo para esta herramienta.
-    assert.deepEqual(blockPayload('claude code', 'r'), { decision: 'block', reason: 'r' });
-    assert.deepEqual(blockPayload('codex', 'r'), { decision: 'block', reason: 'r' });
-    assert.deepEqual(blockPayload('agy', 'r'), { decision: 'continue', reason: 'r' });
+    // Claude Code usa additionalContext y NO decision: block. Los dos
+    // mantienen al agent un turno más y respetan stop_hook_active, pero
+    // "block" hace que la interfaz rotule la respuesta como "Stop hook
+    // error" —la misma palabra que para un hook que de verdad falló— y el
+    // usuario ve un error en cada petición.
+    assert.deepEqual(askPayload('claude code', 'r'),
+      { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: 'r' } });
+    assert.ok(!('decision' in askPayload('claude code', 'r')),
+      'mezclar decision con additionalContext deja el rótulo indefinido');
+    assert.deepEqual(askPayload('codex', 'r'), { decision: 'block', reason: 'r' });
+    assert.deepEqual(askPayload('agy', 'r'), { decision: 'continue', reason: 'r' });
   });
 
   test('en agy el bucle se corta con executionNum, que es lo único que hay', () => {
@@ -1297,11 +1305,25 @@ describe('cuándo se pide la narrativa', () => {
       'pidió otra vez dentro del mismo bucle: eso no termina nunca');
   });
 
-  test('el texto pide el estado en vuelo, que es lo que motiva todo', () => {
-    const t = askText('el relevo todavía no tiene narrativa');
+  test('el texto es corto: lo ve el usuario en pantalla', () => {
+    // El CLI muestra esto en pantalla, debajo de sus propias líneas. Una
+    // versión anterior ocupaba veinte renglones explicando las cuatro
+    // secciones, el presupuesto de palabras y el camino sin skill, y el
+    // usuario lo dijo claro: "es muy largo, muy extenso, tapa mucha parte de
+    // la pantalla". El detalle vive en la skill, que es donde se lee cuando
+    // hace falta. Este test existe para que no vuelva a crecer.
+    const t = askText('hay commits nuevos');
+    const lineas = t.split('\n').length;
+    assert.ok(lineas <= 5, `ocupa ${lineas} líneas en la pantalla del usuario`);
+    assert.ok(t.length <= 400, `${t.length} caracteres: de nuevo tapa la pantalla`);
+  });
+
+  test('el texto sigue siendo accionable aunque sea corto', () => {
+    const t = askText('hay commits nuevos');
     assert.match(t, /a medias/i, 'no pide lo que quedó a medias');
-    assert.match(t, /ruta y la línea/i, 'no pide ser específico');
     assert.match(t, /skill `relevo`/, 'no nombra la skill');
+    assert.match(t, /narrativeWrittenAt/, 'no deja el camino sin skill');
+    assert.match(t, /estado\.json/, 'no dice dónde se escribe');
     assert.ok(!/\/relevo/.test(t), 'nombra un comando que no existe en los tres CLIs');
   });
 });
@@ -1357,6 +1379,6 @@ describe('no pedir la narrativa de más', () => {
   test('la primera línea se lee como una petición, no como un error', () => {
     // El CLI la muestra con "Stop hook error:" delante, y es la única línea
     // que aparece en su resumen.
-    assert.match(askText('hay commits nuevos').split('\n')[0], /^chaski pide guardar el relevo/);
+    assert.match(askText('hay commits nuevos').split('\n')[0], /^chaski: guarda el relevo/);
   });
 });

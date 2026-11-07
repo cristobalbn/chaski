@@ -18,7 +18,7 @@ import { statePath, relayPath, readJson, acquireLock, globalDir, git, pruneOrpha
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
-import { shouldAsk, askText, blockPayload } from './lib/ask.mjs';
+import { shouldAsk, askText, askPayload } from './lib/ask.mjs';
 import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
 
 main();
@@ -166,11 +166,11 @@ function main() {
     // La petición va por stdout y solo después de que el relevo esté escrito:
     // si algo de arriba fallara, se pierde la petición y no el relevo.
     //
-    // El contrato lo arma `blockPayload`, porque NO es el mismo en los tres:
+    // El contrato lo arma `askPayload`, porque NO es el mismo en los tres:
     // Claude Code y Codex usan `decision: "block"`, Antigravity usa
     // `"continue"` y trata cualquier otro valor como permiso para parar.
     if (motivo) {
-      const salida = blockPayload(estado.agent, askText(motivo));
+      const salida = askPayload(estado.agent, askText(motivo));
       if (salida) process.stdout.write(JSON.stringify(salida) + '\n');
     }
 

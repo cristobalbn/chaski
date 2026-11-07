@@ -205,6 +205,25 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   no ausente, así que el `??` no lo cubría. Ausente se sigue aceptando con un
   nombre genérico; presente y vacío se rechaza.
 
+- La petición de la narrativa ya no se muestra como error en Claude Code. Se
+  emite con `hookSpecificOutput.additionalContext` en vez de
+  `decision: "block"`: los dos mantienen al agent un turno más y respetan
+  `stop_hook_active` y el tope de continuaciones, pero `block` hace que la
+  interfaz use la palabra «error» —la misma que para un hook que de verdad
+  falló— y el usuario veía un error en cada petición. La documentación llama a
+  `additionalContext` «non-error feedback for Claude» y el rótulo pasa a ser
+  «Stop hook feedback». En Codex y Antigravity el formato no cambia: su
+  documentación no describe un equivalente.
+
+- El texto de la petición pasa de veinte líneas a cuatro. Lo muestra el CLI en
+  pantalla, y explicaba ahí las cuatro secciones, el presupuesto de palabras y
+  el camino sin skill — detalle que ya vive en la skill `relevo`, que es donde
+  se lee cuando hace falta. Queda una línea para el caso sin skill, que es lo
+  mínimo que lo hace autosuficiente. Hay un test que falla si vuelve a crecer.
+- Lo que chaski **no** puede quitar: las líneas `Ran 1 stop hook` y
+  `Stop hook feedback` las pinta Claude Code al ejecutar cualquier hook, y
+  `suppressOutput` no tiene efecto sobre ellas.
+
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,
   `codex exec`, `agy -p`). chaski es para sesiones interactivas.

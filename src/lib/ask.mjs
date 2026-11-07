@@ -58,8 +58,8 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
   if (config?.askNarrative === false) return null;
 
   // Los tres soportan mantener al agent un turno más, pero NO con el mismo
-  // contrato (ver `blockPayload`). Un CLI desconocido no se intenta.
-  if (!blockPayload(estado.agent, '')) return null;
+  // contrato (ver `askPayload`). Un CLI desconocido no se intenta.
+  if (!askPayload(estado.agent, '')) return null;
 
   // Protección contra bucles. Sin esto, un hook que bloquea vuelve a
   // bloquear en el turno que él mismo provocó, y no termina nunca.
@@ -107,39 +107,30 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
 /**
  * El texto que lee el agent cuando se le pide la narrativa.
  *
+ * **Corto a propósito.** Esto no lo lee solo el agent: el CLI lo muestra en
+ * pantalla al usuario, debajo de sus propias líneas (`Ran 1 stop hook`,
+ * `Stop hook feedback`), que no controlamos. Una versión anterior ocupaba
+ * veinte renglones explicando las cuatro secciones, el presupuesto de
+ * palabras y el camino alternativo sin skill, y el usuario lo dijo claro:
+ * «es muy largo, muy extenso, tapa mucha parte de la pantalla».
+ *
+ * El detalle vive donde corresponde: en la skill `relevo`, que el agent abre
+ * cuando la necesita. Repetirlo aquí no agregaba nada y restaba pantalla.
+ *
+ * Queda una línea para el caso sin skill —un agent en una carpeta donde nadie
+ * corrió `chaski init`— porque sin ella la instrucción nombraría algo que ese
+ * agent no puede abrir. Es el mínimo que la hace autosuficiente.
+ *
  * Es una instrucción, no datos: a diferencia del relevo, esto sí le dice al
- * agent qué hacer. Pide explícitamente el estado del trabajo EN VUELO, porque
- * ese es el caso que motiva todo: una tarea cortada a mitad, con código sin
- * terminar, que el agent siguiente tiene que poder retomar sin rehacerla.
+ * agent qué hacer. Y pide el trabajo EN VUELO, que es el caso que motiva todo:
+ * una tarea cortada a mitad que el agent siguiente debe poder retomar.
  */
 export function askText(motivo) {
   return [
-    `chaski pide guardar el relevo antes de cerrar: ${motivo}.`,
-    '',
-    'Antes de terminar, guarda la narrativa del relevo con la skill `relevo`.',
-    'Es para el agent que retome este trabajo si se corta la sesión o se agota',
-    'la cuota, así que lo que más importa es el estado EN VUELO:',
-    '',
-    '- qué estabas haciendo y para qué;',
-    '- qué quedó a medias, con la ruta y la línea: un archivo editado sin',
-    '  terminar, una función a medio escribir, un test que falla por eso y no',
-    '  por otra cosa;',
-    '- qué decidiste y qué descartaste, para que nadie reabra lo ya cerrado;',
-    '- el siguiente paso concreto, uno solo.',
-    '',
-    'No repitas los hechos: los archivos, el diff y los commits ya están en el',
-    'relevo. Escribe solo lo que no se deduce del código. 120-200 palabras.',
-    '',
-    // Autosuficiente a propósito. La skill vive en el repositorio, así que un
-    // agent abierto en una carpeta contenedora —o en un proyecto donde nadie
-    // corrió `chaski init`— recibe esta petición sin tenerla. Sin estas dos
-    // líneas, la instrucción nombraría una skill que ese agent no puede abrir.
-    'Si no tienes la skill `relevo` a mano: escribe los campos `narrative`,',
-    '`narrativeAuthor` y `narrativeWrittenAt` (ISO 8601) en',
-    '`.tambo/branches/<rama>/estado.json` del repositorio, sin tocar ningún',
-    'otro campo, y no edites `relevo.md`: lo regenera chaski solo.',
-    '',
-    'Después de guardarla, termina el turno sin hacer nada más.',
+    `chaski: guarda el relevo antes de cerrar — ${motivo}.`,
+    'Usa la skill `relevo`: qué quedó a medias y dónde, qué descartaste, y el',
+    'siguiente paso. Sin la skill, escribe `narrative`, `narrativeAuthor` y',
+    '`narrativeWrittenAt` en `.tambo/branches/<rama>/estado.json`.',
   ].join('\n');
 }
 
@@ -159,13 +150,38 @@ export function askText(motivo) {
  * equivocarse es bajo y asimétrico: si el contrato estuviera mal, el agent
  * termina el turno como siempre y se pierde la petición, no el relevo.
  */
-export function blockPayload(agent, reason) {
+export function askPayload(agent, reason) {
   const a = String(agent ?? '').toLowerCase();
-  // Claude Code y Codex comparten formato: `decision: "block"`, y el `reason`
-  // se convierte en el prompt de continuación.
-  if (/^claude/.test(a) || a === 'codex') return { decision: 'block', reason };
+
+  // Claude Code: `additionalContext` y NO `decision: "block"`.
+  //
+  // Los dos mantienen al agent un turno más y los dos respetan
+  // `stop_hook_active` y el tope de continuaciones. La diferencia es cómo se
+  // presenta: con `block`, la interfaz rotula la respuesta como **«Stop hook
+  // error»** —la misma palabra que usa para un hook que de verdad falló— y el
+  // usuario ve un error en cada petición. Con `additionalContext` el rótulo es
+  // «Stop hook feedback». La documentación lo llama literalmente «non-error
+  // feedback for Claude».
+  //
+  // El usuario lo reportó dos veces: «la palabra error no es bonita verla en
+  // ninguno caso y menos para un usuario». Y tenía razón más allá de la
+  // estética: en una herramienta publicada, un error aparente en cada turno
+  // dice que está rota.
+  //
+  // No se combinan los dos campos: la documentación no dice qué rótulo saldría.
+  if (/^claude/.test(a)) {
+    return { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: reason } };
+  }
+
+  // Codex: `decision: "block"`, y el `reason` se convierte en el prompt de
+  // continuación. Su documentación no describe un equivalente de
+  // `additionalContext` para `Stop`, así que aquí el formato se queda.
+  if (a === 'codex') return { decision: 'block', reason };
+
   // Antigravity: `continue` bloquea el stop y reentra al bucle; el `reason` se
-  // inyecta como mensaje de sistema.
+  // inyecta como mensaje de sistema. Su documentación dice que **cualquier otro
+  // valor permite parar**, así que mandarle el `"block"` de Claude Code no
+  // daría error: no haría nada, en silencio, el peor modo de fallo posible.
   if (a === 'agy' || a === 'antigravity') return { decision: 'continue', reason };
   return null;
 }

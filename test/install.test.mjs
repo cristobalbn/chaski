@@ -990,7 +990,7 @@ describe('contrato del bloqueo por CLI', () => {
     }
   });
 
-  test('a claude code se le manda "block"', () => {
+  test('a claude code se le manda additionalContext, no "block"', () => {
     const m = montar('chaski-cc-block-');
     try {
       writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 10;\n');
@@ -998,7 +998,11 @@ describe('contrato del bloqueo por CLI', () => {
         cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
         input: JSON.stringify({ session_id: 'c1', cwd: m.proyecto, hook_event_name: 'Stop' }),
       });
-      assert.equal(JSON.parse(salida.trim()).decision, 'block');
+      const o = JSON.parse(salida.trim());
+      assert.equal(o.hookSpecificOutput?.hookEventName, 'Stop');
+      assert.match(o.hookSpecificOutput?.additionalContext ?? '', /a medias/i);
+      assert.ok(!('decision' in o),
+        'con decision la interfaz rotula la petición como "Stop hook error"');
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
