@@ -203,8 +203,24 @@ function readPayload() {
   ev.cwd = ev.cwd ?? ws ?? ev.workspace ?? ev.project_dir ?? process.cwd();
   // agy manda el último prompt del usuario; sirve como pista de la tarea.
   ev.__ultimoPrompt = ev.lastUserInput ?? ev.user_prompt ?? null;
-  ev.__agente = process.argv[3] ?? detectAgent(ev);
+  // Normalizado aquí y no al estampar el latido: `estado.agent` es lo que
+  // encabeza el relevo que lee el agent siguiente, y la grafía cambiaba según
+  // el evento que lo hubiera escrito.
+  ev.__agente = canonicalAgent(process.argv[3] ?? detectAgent(ev));
   return ev;
+}
+
+/**
+ * Grafía única para un CLI, venga del argumento del hook o de la detección.
+ *
+ * Los nombres con espacio viajan con guión en la línea de comando (ver `cmd()`
+ * en cli.mjs); aquí vuelven a su forma legible, que es la que lee un agent en
+ * el relevo. `doctor` ya comparaba normalizando, así que esto solo cierra el
+ * lado de la escritura.
+ */
+function canonicalAgent(agent) {
+  const n = String(agent ?? '').trim().toLowerCase().replace(/-/g, ' ');
+  return n === 'claude' ? 'claude code' : (n || 'desconocido');
 }
 
 function detectAgent(ev) {
@@ -288,12 +304,31 @@ function occasionalPrune(cwd, config) {
   } catch {}
 }
 
-/** Latido por CLI: doctor avisa si alguno dejó de ejecutar su hook. */
+/**
+ * Latido por CLI: doctor avisa si alguno dejó de ejecutar su hook.
+ *
+ * El name llega normalizado porque un mismo CLI entraba por dos vías con dos
+ * grafías: `cmd()` de cli.mjs pasa `claude-code` como argumento —con guión,
+ * porque el shell parte los argumentos por espacio— y `detectAgent()`, que es
+ * el camino de respaldo cuando no hay argumento, devuelve `claude code`. El
+ * archivo acababa con las dos claves para la misma herramienta, y la
+ * atribución del relevo cambiaba de grafía según qué evento la hubiera
+ * escrito. Al escribir se funden las variantes y se conserva la más reciente,
+ * para que los archivos que ya quedaron con las dos converjan solos.
+ */
 function heartbeat(agent) {
   try {
     const ruta = join(globalDir(), 'latidos.json');
     const l = readJson(ruta, {}) ?? {};
-    l[agent] = new Date().toISOString();
+    const name = canonicalAgent(agent);
+    const ahora = new Date().toISOString();
+    for (const k of Object.keys(l)) {
+      if (k !== name && canonicalAgent(k) === name) {
+        if (l[k] > ahora) l[name] = l[k];
+        delete l[k];
+      }
+    }
+    l[name] = l[name] > ahora ? l[name] : ahora;
     writeAtomic(ruta, JSON.stringify(l, null, 2));
   } catch {}
 }

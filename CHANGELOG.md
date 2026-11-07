@@ -87,6 +87,15 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   Hay un test que falla si cambian. El README explica que actualizar chaski
   exige volver a correr `chaski init`.
 
+- `capturar.mjs` y `leer.mjs` vuelven como puentes de compatibilidad: una
+  configuración anterior a la homologación al inglés ya no produce un volcado
+  de Node en cada turno. El puente de inicio de sesión recuerda correr `init`;
+  el de captura calla, porque corre en cada turno.
+- Un mismo CLI dejaba dos latidos con dos grafías —`claude-code` desde el
+  argumento del hook y `claude code` desde la detección— y el encabezado del
+  relevo cambiaba según el evento. Se normaliza al escribir, y los archivos
+  que ya tienen las dos claves convergen solos.
+
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,
   `codex exec`, `agy -p`). chaski es para sesiones interactivas.
