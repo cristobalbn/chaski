@@ -50,6 +50,37 @@ público. Lo que se prueba es la forma, no el contenido.
   secretos que afirmaba la ausencia de una cadena que no aparecía en ningún
   fixture.
 
+## Si delegas en subagentes
+
+La auditoría de noviembre de 2026 usó once agentes y encontró defectos que dos
+revisiones a mano no vieron (ver `docs/auditoria-2026-11.md`). Estas reglas
+salen de lo que falló durante esa ronda, no de la teoría.
+
+- **Sonnet para verificar, Opus para juzgar.** Buscar, ejecutar, medir, mutar y
+  aplicar correcciones acotadas se verifica contra el repositorio, así que
+  Sonnet alcanza. Opus solo donde hay que juzgar razonamiento ajeno —validar un
+  veredicto, decidir si un arreglo es peor que el defecto— porque ahí no hay
+  salida de comando contra la que comparar. Importa de verdad: la cuota del
+  usuario se agotó dos veces con auditores en Opus y ninguna con el mismo
+  trabajo en Sonnet.
+- **Dos en paralelo como máximo, y nunca sobre el mismo árbol de trabajo.** Las
+  ramas de git no separan los archivos en disco: tres agentes editando a la vez
+  dejaron un `git add -A` con trabajo ajeno a medias, y uno de ellos tomó por
+  inyección de instrucciones los avisos de archivo modificado que generaba
+  otro. Si hacen falta varios a la vez, dales un árbol de trabajo propio.
+- **Pásales el hallazgo, no tu razonamiento.** Un validador que recibe la
+  evidencia valida el razonamiento ajeno en lugar de volver a derivar el hecho.
+  Y varios agentes que confirman la misma pista que venía en su encargo no son
+  varias pruebas: son una.
+- **Refutar vale tanto como confirmar.** Pídelo explícitamente. Una afirmación
+  plausible y falsa es peor que un bug, porque alguien arregla lo que no estaba
+  roto.
+- **Verifica tú lo que toque la máquina del usuario.** Un auditor sobrescribió
+  los hooks reales por creer que exportar `HOME` antes aislaba algo: en Windows
+  Node usa `USERPROFILE` para `homedir()`, y el intérprete reinicia su estado
+  entre llamadas. El aislamiento va en la misma línea de comando, con las dos
+  variables.
+
 ## Nunca commitees a main
 
 `main` está protegida y exige pull request. Es lo que la gente instala con
