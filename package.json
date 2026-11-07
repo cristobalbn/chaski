@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "bin": {
-    "chaski": "./src/cli.mjs"
+    "chaski": "src/cli.mjs"
   },
   "scripts": {
     "check": "node --check src/capture.mjs && node --check src/inject.mjs && node --check src/cli.mjs && node --check src/capturar.mjs && node --check src/leer.mjs && node --check src/lib/paths.mjs && node --check src/lib/facts.mjs && node --check src/lib/secrets.mjs && node --check src/lib/relay.mjs && node --check src/lib/ask.mjs && node --check src/lib/budget.mjs",

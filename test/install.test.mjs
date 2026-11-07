@@ -1469,6 +1469,7 @@ describe('contrato de empaquetado npm y sincronización con GitHub', () => {
   });
 
   test('package.json, CHANGELOG.md y workflows protegen la publicación en GitHub y npm', () => {
+    assert.equal(pkg.bin?.chaski, 'src/cli.mjs');
     assert.equal(pkg.scripts?.prepublishOnly, 'npm run check && npm test');
     assert.equal(pkg.publishConfig?.access, 'public');
     assert.ok(Array.isArray(pkg.files) && pkg.files.includes('src') && pkg.files.includes('skill'));
