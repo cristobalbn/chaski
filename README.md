@@ -69,7 +69,7 @@ Después:
    - no tiene que hacer nada más, chaski corre solo;
    - cuando se le agote la cuota de un CLI, que abra otro **en la misma
      carpeta**;
-   - `/relevo` es opcional y agrega el «por qué» al relevo.
+   - escribir **«relevo»** en el chat agrega el «por qué», en cualquiera de los tres.
 
 **Si algo falla**, no improvises una solución: pégale al usuario la salida de
 `chaski doctor` y dile qué paso falló. Los modos de fallo conocidos están en
@@ -122,10 +122,10 @@ node ../chaski/src/cli.mjs init
 2. Agrega `.tambo/` y `chaski.local.json` a tu `.gitignore`.
 3. Instala la skill `relevo` dos veces: en `.claude/skills/relevo/`, que lee
    Claude Code, y en `.agents/skills/relevo/`, que leen Codex y Antigravity.
-   Es el mismo archivo —los tres usan el mismo formato— y cambia solo cómo se
-   invoca: `/relevo`, `$relevo` y el menú `/` respectivamente. Los tres pueden
-   además activarla solos a partir de su `description`.
-4. Agrega una sección de relevo a tu `AGENTS.md`.
+   Es el mismo archivo y reconoce las mismas peticiones: **«relevo»**,
+   **«guarda el relevo»** y **«actualiza el relevo»**.
+4. Agrega una sección de relevo a tu `AGENTS.md`. Si ya existe, añade o actualiza
+   un bloque delimitado con las peticiones comunes y conserva el resto del texto.
 
 ### Dos pasos después de instalar
 
@@ -181,15 +181,20 @@ modo headless.
 
 ```bash
 npm install -g chaski          # o: npm install -g github:cristobalbn/chaski
-chaski init                    # vuelve a correr init, siempre
+cd tu-proyecto
+chaski init                    # repítelo en cada proyecto que uses con Chaski
 ```
 
-**El segundo paso no es opcional.** Los hooks se registran con la ruta absoluta
+**Ejecutar `chaski init` no es opcional.** Los hooks se registran con la ruta absoluta
 de los scripts, así que una actualización que mueva la carpeta de instalación
 —o que cambie un nombre de archivo— deja la configuración apuntando a algo que
 ya no existe, y el CLI imprime un error de módulo no encontrado en cada turno.
 `chaski init` reescribe las rutas y es idempotente: correrlo de nuevo sobre una
 instalación sana no cambia nada.
+
+También actualiza las copias de la skill y el bloque de peticiones de `AGENTS.md`
+en ese proyecto. Las secciones antiguas sin delimitadores se conservan, porque
+pueden contener instrucciones escritas por ti.
 
 Si ya estás viendo ese error, corre `chaski init`. Pero **la sesión que ya lo
 tiene abierto no lo va a ver desaparecer**: los CLIs leen su configuración de
@@ -219,18 +224,21 @@ en disco porque son tuyos; bórralos a mano si quieres.
 
 ## Uso
 
-No se usa. Eso es el punto.
+1. Abre Claude Code, Codex o agy **en la raíz del proyecto** y trabaja normalmente.
+2. Antes de cambiar de agente, escribe **«relevo»** en su chat y espera a que
+   confirme el guardado. Así queda anotada también la intención del trabajo.
+3. Abre otra terminal, **`cd` a esa misma carpeta**, e inicia el siguiente CLI.
+4. Escribe **«continúa desde el relevo»** para retomar el siguiente paso pendiente.
 
-1. Trabajas normal en Claude Code. No ejecutas nada, no vigilas nada.
-2. Se agota la cuota.
-3. Abres otra terminal, **`cd` al mismo proyecto**, y abres `agy` o `codex`.
-4. El agente arranca sabiendo dónde quedaste.
-
-No hace falta cerrar el primer CLI ni pedirle al segundo que lea nada.
+La captura de hechos y la lectura al arrancar son automáticas. Si se agota la
+cuota antes de pedir el relevo, siguen disponibles los hechos guardados, aunque
+puede faltar la narrativa reciente. No ejecutes `chaski init` en cada cambio:
+basta al configurar el proyecto y al actualizar Chaski.
 
 **El `cd` no es opcional:** el relevo vive dentro del proyecto, así que cada
 proyecto tiene el suyo y no se mezclan. Tampoco se mezclan las ramas — volver a
 una rama que dejaste hace una semana te devuelve su contexto.
+No necesitas trabajar dentro del código de Chaski para usarlo en otro proyecto.
 
 ### La primera vez, verifica
 
@@ -238,11 +246,34 @@ Al abrir el segundo CLI, pregúntale *«¿qué sabes del estado de este trabajo?
 Si responde con los archivos tocados y qué quedó a medias, funcionó. Si no,
 `chaski doctor` te dice qué hook no quedó registrado y dónde.
 
-### El comando `/relevo`
+### La misma petición en los tres agentes
+
+Escribe en el **chat del agente**:
+
+```text
+relevo
+```
+
+También reconoce **«guarda el relevo»** y **«actualiza el relevo»**. Es una petición
+en lenguaje natural que activa la skill instalada por `chaski init`; depende de
+que el agente haya cargado las instrucciones del proyecto. Espera su confirmación.
+Para retomar, escribe **«continúa desde el relevo»**: pide leer y continuar el
+trabajo, sin sobrescribir la narrativa al llegar.
+
+Los atajos nativos siguen disponibles si prefieres seleccionar la skill:
+
+| Agente | Atajo para guardar |
+|---|---|
+| [Claude Code](https://code.claude.com/docs/en/skills) | `/relevo` |
+| [Codex CLI](https://learn.chatgpt.com/docs/build-skills) | `$relevo` o `/skills` → `relevo` |
+| [agy](https://antigravity.google/docs/skills/#slash-command-conversion) | `/relevo` |
+
+Si la skill aún no aparece tras actualizar, abre una sesión nueva en ese proyecto
+(en agy también puedes ejecutar `/skills reload`).
 
 Los **hechos** —archivos, diff, exit codes, commits— se escriben solos en cada
 turno, sin costo. La **narrativa** —qué estás intentando, qué decidiste, qué
-descartaste y por qué— la escribe el agente cuando se la pides con `/relevo`.
+descartaste y por qué— la escribe el agente cuando pides **«relevo»**.
 
 No es obligatorio. Sin narrativa el relevo sigue siendo útil, porque los hechos
 son lo que evita que el siguiente agente rompa algo. La narrativa es lo que
@@ -267,7 +298,7 @@ eso el modelo es el último recurso y no el primero.
 | `src/capture.mjs` | hooks `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | Lee el transcript desde una marca de agua y git; escribe `relevo.md` y `estado.json` |
 | `src/inject.mjs` | hook `SessionStart` | Imprime el relevo; lo que imprime entra al contexto del agente |
 | `src/cli.mjs` | a mano | `init`, `doctor`, `uninstall` |
-| `skill/SKILL.md` | con `/relevo` | Instrucciones para que el agente escriba la narrativa |
+| `skill/SKILL.md` | al pedir «relevo» | Instrucciones para que el agente escriba la narrativa |
 
 Archivos que genera en tu proyecto:
 
@@ -416,7 +447,7 @@ riesgo tu cuenta no debería estar a un flag de distancia.
 |---|---|---|
 | Latencia del hook | ~340 ms, de los cuales unos 250 son subprocesos de git | El presupuesto de `Stop` en Claude Code es de 1,5 s **compartido** entre todos los hooks del evento. Hay margen de 5x, pero si tienes muchos hooks ahí, mide |
 | Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
-| Narrativa | puede atrasarse unos turnos | Los hechos están siempre al día; el porqué depende de cuándo corriste `/relevo` |
+| Narrativa | puede atrasarse unos turnos | Los hechos están siempre al día; el porqué depende de cuándo pediste «relevo» |
 | Hooks de Codex | requieren conceder confianza | La primera vez que abres Codex con hooks instalados pide confiar en ellos. Hasta que aceptes, no se ejecuta ninguno, y el permiso se aplica desde la sesión siguiente |
 | Un turno con miles de archivos modificados | el relevo sale **incompleto, y lo dice** | El hook tiene un presupuesto de tiempo propio y sacrifica lo caro y poco informativo antes de agotarlo: primero el detalle de líneas `+/-` por archivo, después el log de commits. La rama, el `HEAD`, la lista de archivos y su total siempre sobreviven. Lo que se omitió aparece declarado en el relevo, porque un relevo incompleto que se presenta como completo es peor que uno recortado. Medido: 5.000 archivos modificados pasaban de 2.000 ms —y perdían el relevo entero— y ahora el hook completo tarda ~340 ms |
 | Ruta del proyecto de más de ~240 caracteres | los subprocesos de git fallan | En Windows, una ruta así de larga hace que el subproceso de git falle. chaski lo interpreta como «esto no es un repositorio git» y lo reporta en silencio, perdiendo también la detección de la rama. No hay arreglo barato conocido: evita rutas tan largas para este proyecto |

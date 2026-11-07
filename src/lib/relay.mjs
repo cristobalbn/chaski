@@ -123,11 +123,7 @@ export function render(estado) {
     L.push('## Qué se está haciendo');
     L.push('');
     L.push('_Sin narrative todavía. Los facts de abajo son exactos; el porqué no se ha registrado._');
-    // Cómo se invoca la skill cambia por CLI —`/relevo` en Claude Code,
-    // `$relevo` en Codex, el menú `/` en Antigravity—, así que se nombra la
-    // skill y no un comando: nombrar uno solo deja a dos de los tres leyendo
-    // una instrucción que no pueden ejecutar.
-    L.push('_Para agregarlo, pide la skill `relevo` en la sesión._');
+    L.push('_Para agregarlo, escribe «relevo» en el chat del agente._');
     L.push('');
   }
 

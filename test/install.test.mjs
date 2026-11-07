@@ -703,6 +703,99 @@ describe('skill del relevo', () => {
     }
   });
 
+  test('init actualiza las copias de una skill ya instalada', () => {
+    const m = montar('chaski-skill-update-');
+    try {
+      m.correr('init');
+      const rutas = [
+        join(m.proyecto, '.claude', 'skills', 'relevo', 'SKILL.md'),
+        join(m.proyecto, '.agents', 'skills', 'relevo', 'SKILL.md'),
+      ];
+      for (const ruta of rutas) writeFileSync(ruta, 'skill anterior\n');
+      m.correr('init');
+      const origen = readFileSync(join(SRC, '..', 'skill', 'SKILL.md'), 'utf8');
+      for (const ruta of rutas) assert.equal(readFileSync(ruta, 'utf8'), origen);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  for (const eol of ['\n', '\r\n']) {
+    test(`init actualiza las peticiones sin perder notas del proyecto (${JSON.stringify(eol)})`, () => {
+      const m = montar('chaski-requests-');
+      try {
+        const ruta = join(m.proyecto, 'AGENTS.md');
+        // Una sección de una instalación anterior podía contener texto propio.
+        const original = [
+          '# Mi proyecto', '', 'Conservar los fixtures originales.', '',
+          '## Relevo de contexto', '',
+          'Este proyecto usa chaski para pasar contexto entre sesiones y entre CLIs.',
+          'La narrativa debe explicar las decisiones del equipo.', '',
+          '## Despliegue', '', 'El equipo publica los viernes.', '',
+        ].join(eol);
+        writeFileSync(ruta, original);
+        m.correr('init');
+        const actualizado = readFileSync(ruta, 'utf8');
+        const bloque = /<!-- chaski:requests:start -->[\s\S]*?<!-- chaski:requests:end -->/;
+        assert.match(actualizado, bloque, 'una sección antigua no recibió las nuevas peticiones');
+        assert.equal(actualizado.replace(eol + eol + bloque.exec(actualizado)[0], ''), original,
+          'init cambió texto ajeno al bloque de peticiones');
+
+        // Una nueva versión solo puede sustituir su bloque, no toda la sección.
+        writeFileSync(ruta, actualizado.replace(bloque,
+          ['<!-- chaski:requests:start -->', 'Instrucciones de una versión anterior.',
+            '<!-- chaski:requests:end -->'].join(eol)));
+        m.correr('init');
+        assert.equal(readFileSync(ruta, 'utf8'), actualizado);
+        m.correr('init');
+        assert.equal(readFileSync(ruta, 'utf8'), actualizado, 'repetir init duplica instrucciones');
+      } finally {
+        rmSync(m.raiz, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test('init conserva un AGENTS.md previo sin sección de relevo', () => {
+    const m = montar('chaski-agents-append-');
+    try {
+      const ruta = join(m.proyecto, 'AGENTS.md');
+      const original = '# Proyecto\n\nNo publicar sin revisar.\n';
+      writeFileSync(ruta, original);
+      m.correr('init');
+      const actualizado = readFileSync(ruta, 'utf8');
+      assert.ok(actualizado.startsWith(original), 'se alteraron las instrucciones previas');
+      assert.equal(actualizado.split('## Relevo de contexto').length, 2);
+      assert.ok(actualizado.includes('<!-- chaski:requests:start -->'));
+      m.correr('init');
+      assert.equal(readFileSync(ruta, 'utf8'), actualizado);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
+  test('init rechaza marcadores dañados sin sobrescribir AGENTS.md', () => {
+    const m = montar('chaski-requests-invalid-');
+    try {
+      const ruta = join(m.proyecto, 'AGENTS.md');
+      for (const contenido of [
+        '<!-- chaski:requests:start -->\nFalta el cierre.',
+        '<!-- chaski:requests:end -->\nFalta el inicio.',
+        '<!-- chaski:requests:end -->\n<!-- chaski:requests:start -->',
+        '<!-- chaski:requests:start -->\n<!-- chaski:requests:start -->\n<!-- chaski:requests:end -->',
+      ]) {
+        writeFileSync(ruta, contenido);
+        const r = spawnSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], {
+          cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        });
+        assert.notEqual(r.status, 0);
+        assert.match(r.stderr, /marcadores/);
+        assert.equal(readFileSync(ruta, 'utf8'), contenido);
+      }
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true });
+    }
+  });
+
   test('el frontmatter trae name y description, que los tres exigen', () => {
     // Sin `name` o sin `description` la skill se ignora en silencio: no hay
     // error, simplemente no aparece en el menú de ningún CLI.
