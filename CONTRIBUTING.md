@@ -108,20 +108,16 @@ queda escrito **por qué** se hizo un cambio, y eso vale más que el commit.
 ## Publicar una versión (GitHub Releases + npm)
 
 Actualizar `main` actualiza `github:cristobalbn/chaski`, pero **no** actualiza
-el registro de npm hasta que se publica una versión. Para mantener ambos en
-sincronía:
+el registro de npm hasta que se incrementa `version` en `package.json`.
 
-1. En tu PR, mueve las notas de `## [No publicado]` a `## [X.Y.Z] - YYYY-MM-DD`
-   en `CHANGELOG.md` y actualiza `"version": "X.Y.Z"` en `package.json`.
-2. Una vez mergeado el PR en `main`, etiqueta el commit y empuja el tag:
-   ```bash
-   git checkout main && git pull --ff-only origin main
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
-   ```
-3. `.github/workflows/release.yml` valida que el tag, `package.json` y
-   `CHANGELOG.md` coincidan, corre `npm run check` y `npm test`, crea el GitHub
-   Release con las notas de esa versión y ejecuta `npm publish --provenance`
-   (requiere `NPM_TOKEN` en GitHub Secrets o Trusted Publishing en npmjs.com;
-   si aún no está configurado, corre `npm publish` desde tu terminal tras
-   `npm login`).
+- Si abres un PR que toca `src/` o `skill/` sin subir `version`, el workflow
+  `test.yml` deja un recordatorio en el resumen del PR y un `::warning::` en
+  `main` indicando cuántos commits de producción están sin publicar en npm.
+- Para publicar en GitHub Releases y npm automáticamente al mergear:
+  1. En tu PR, mueve las notas de `## [No publicado]` a `## [X.Y.Z] - YYYY-MM-DD`
+     en `CHANGELOG.md` y actualiza `"version": "X.Y.Z"` en `package.json`.
+  2. Al mergear a `main`, `.github/workflows/release.yml` se dispara solo:
+     verifica `package.json` + `CHANGELOG.md`, corre `npm run check` y `npm test`,
+     crea el tag `vX.Y.Z`, publica el GitHub Release y ejecuta
+     `npm publish --provenance --access public` (requiere `NPM_TOKEN` en GitHub
+     Secrets o `npm publish` local tras `npm login`).

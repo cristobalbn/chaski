@@ -114,22 +114,23 @@ pidan explícitamente.
 
 Quien instala con `npm install -g github:cristobalbn/chaski` recibe `main`;
 quien instala con `npm install -g chaski` recibe la última versión publicada en
-el registro de npm. **Si actualizas `main` con cambios para usuarios, recuerda
-que npm no se entera hasta que se corta una versión.**
+el registro de npm. **Si actualizas `main` con cambios en `src/` o `skill/`,
+recuerda que npm no se entera hasta que se sube `version` en `package.json`.**
 
-- En cada merge a `main`, el job `Estado de sincronización con npm y tags` de
-  [`.github/workflows/test.yml`](.github/workflows/test.yml) compara la versión
-  de `package.json`, el último tag `vX.Y.Z` y la versión publicada en npm, y
-  deja un aviso visible en el resumen de GitHub Actions si están desfasados.
-- Para publicar una versión nueva en ambos lados:
-  1. Pasa los cambios de `## [No publicado]` a `## [X.Y.Z] - YYYY-MM-DD` en
-     `CHANGELOG.md` y sube `version` en `package.json` mediante un PR a `main`.
-  2. En `main` actualizado, crea y empuja el tag:
-     `git tag vX.Y.Z && git push origin vX.Y.Z`.
-  3. El workflow [`.github/workflows/release.yml`](.github/workflows/release.yml)
-     verifica que tag, `package.json` y `CHANGELOG.md` coincidan, corre toda la
-     suite, crea el GitHub Release y publica en npm (si `NPM_TOKEN` o Trusted
-     Publishing está configurado en el repo; si no, ejecuta `npm publish` local).
+- En cada PR y en cada merge a `main`, el paso `Estado de sincronización con npm y tags`
+  de [`.github/workflows/test.yml`](.github/workflows/test.yml) revisa si se
+  modificaron archivos en `src/` o `skill/`, compara `package.json`, el último
+  tag `vX.Y.Z` y la versión publicada en npm, y emite un aviso (`::notice::` en
+  PR, `::warning::` en `main`) si quedaron desfasados.
+- Para publicar una versión nueva en GitHub Releases y en npm al mismo tiempo:
+  1. En tu PR, pasa los cambios de `## [No publicado]` a `## [X.Y.Z] - YYYY-MM-DD`
+     en `CHANGELOG.md` y sube `version` en `package.json`.
+  2. Al mergear ese PR a `main`, el workflow
+     [`.github/workflows/release.yml`](.github/workflows/release.yml) se dispara
+     solo: verifica que `package.json` y `CHANGELOG.md` coincidan, corre toda la
+     suite, crea y empuja el tag `vX.Y.Z` si no existe, crea el GitHub Release y
+     publica `chaski@X.Y.Z` en npm (con `NPM_TOKEN` en GitHub Secrets, o
+     ejecutando `npm publish` local).
 
 ## Invariantes
 

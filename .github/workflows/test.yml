@@ -12,6 +12,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -23,6 +26,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -49,33 +54,64 @@ jobs:
       - name: Comprobar que git está disponible
         run: git --version
 
-      # Cuando entra un PR a main, recuerda en el resumen de GitHub Actions si
-      # la versión en npm o el último tag quedaron atrás respecto a main.
+      # En cada PR y en cada push a main, verifica si se tocó código distribuido
+      # en npm (src/, skill/, package.json) y avisa si falta subir versión o
+      # publicar en npm para que GitHub y npm no queden desfasados.
       - name: Estado de sincronización con npm y tags
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest' && matrix.node == '22'
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '22'
         shell: bash
         run: |
           pkg_ver=$(node -e "console.log(require('./package.json').version)")
           npm_ver=$(npm view chaski version 2>/dev/null || echo "no-publicado")
           last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "sin-tags")
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_ref="origin/${{ github.base_ref }}"
+            base_ver=$(git show "$base_ref:package.json" 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d).version)}catch{console.log('')}})")
+            code_changed=$(git diff --name-only "$base_ref"...HEAD -- src/ skill/ | wc -l | tr -d ' ')
+            {
+              echo "### Sincronización GitHub ↔ npm (PR)"
+              echo ""
+              echo "| Chequeo | Estado |"
+              echo "|---|---|"
+              echo "| Versión en \`main\` | \`${base_ver:-?}\` |"
+              echo "| Versión en este PR (\`package.json\`) | \`$pkg_ver\` |"
+              echo "| Versión actual en npm (\`chaski\`) | \`$npm_ver\` |"
+              echo "| Archivos de producción modificados (\`src/\`, \`skill/\`) | \`$code_changed\` |"
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            if [ "$code_changed" -gt 0 ] && [ "$pkg_ver" = "$base_ver" ]; then
+              echo "::notice title=Recordatorio de versión para npm::Este PR modifica archivos en src/ o skill/ pero mantiene package.json en v$pkg_ver. Si quieres que este cambio se publique también en npm al mergear, sube 'version' en package.json y agrega la sección ## [X.Y.Z] en CHANGELOG.md."
+              {
+                echo "> **Aviso:** Este PR modifica \`src/\` o \`skill/\` sin incrementar \`version\` en \`package.json\`."
+                echo "> Si al mergear a \`main\` también debe actualizarse **npm**, incrementa \`version\` en \`package.json\` y documenta la versión en \`CHANGELOG.md\`: el workflow \`release.yml\` creará el tag, el GitHub Release y publicará en npm automáticamente."
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+            exit 0
+          fi
+
+          commits_since_tag=0
+          if [ "$last_tag" != "sin-tags" ]; then
+            commits_since_tag=$(git rev-list "${last_tag}..HEAD" -- src/ skill/ | wc -l | tr -d ' ')
+          fi
+
           {
             echo "### Sincronización GitHub ↔ npm"
             echo ""
-            echo "| Fuente | Versión |"
+            echo "| Fuente | Versión / Estado |"
             echo "|---|---|"
             echo "| \`package.json\` en \`main\` | \`$pkg_ver\` |"
             echo "| Último tag en GitHub | \`$last_tag\` |"
+            echo "| Commits en \`src/\` o \`skill/\` desde \`$last_tag\` | \`$commits_since_tag\` |"
             echo "| Registro público de npm (\`chaski\`) | \`$npm_ver\` |"
             echo ""
-            if [ "$npm_ver" != "$pkg_ver" ] || [ "$last_tag" != "v$pkg_ver" ]; then
-              echo "> **Recordatorio:** \`main\` avanzó o aún no está publicada la versión \`$pkg_ver\` en npm/tags."
-              echo "> Para publicar en GitHub Releases y npm:"
-              echo "> \`\`\`bash"
-              echo "> npm version patch   # o minor / major, tras actualizar CHANGELOG.md"
-              echo "> git push origin main --follow-tags"
-              echo "> \`\`\`"
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
+
           if [ "$npm_ver" != "$pkg_ver" ]; then
-            echo "::notice title=Sincronizar npm::main tiene package.json v$pkg_ver y npm tiene '$npm_ver'. Sube un tag vX.Y.Z o ejecuta npm publish para actualizar npm."
+            echo "::warning title=npm desactualizado respecto a GitHub::main está en v$pkg_ver pero npm tiene '$npm_ver'. Configura NPM_TOKEN / Trusted Publishing o ejecuta 'npm publish' para actualizar npm."
+            echo "> **Atención:** \`main\` declara \`v$pkg_ver\` pero en npm figura \`$npm_ver\`. Revisa el workflow \`release\` o ejecuta \`npm publish\`." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$commits_since_tag" -gt 0 ]; then
+            echo "::warning title=Cambios en main sin publicar en npm::Hay $commits_since_tag commit(s) en src/ o skill/ desde $last_tag que aún no se han publicado en npm (v$pkg_ver). Sube 'version' en package.json y actualiza CHANGELOG.md."
+            echo "> **Atención:** Hay \`$commits_since_tag\` commit(s) de código en \`main\` desde \`$last_tag\` que no están en npm (\`v$pkg_ver\`). Sube \`version\` en \`package.json\` y actualiza \`CHANGELOG.md\` para disparar el release." >> "$GITHUB_STEP_SUMMARY"
           fi

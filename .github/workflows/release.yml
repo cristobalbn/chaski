@@ -1,19 +1,29 @@
 name: release
 
-# Publica en GitHub Releases y en npm cada vez que se pushea un tag vX.Y.Z.
+# Publica en GitHub Releases y en npm cuando:
+#   - Se mergea a main un cambio en package.json con una versión nueva.
+#   - Se pushea directamente un tag vX.Y.Z.
+#   - Se dispara manualmente desde GitHub Actions (workflow_dispatch).
 #
 # Garantiza que GitHub y npm no se desfasen:
-#   1. Verifica que el tag vX.Y.Z coincida con "version" en package.json.
-#   2. Verifica que CHANGELOG.md tenga la sección ## [X.Y.Z].
-#   3. Ejecuta las mismas validaciones que test.yml (cero dependencias, check, tests).
-#   4. Crea el GitHub Release con las notas de esa versión.
-#   5. Publica en npm con provenance si NPM_TOKEN (o Trusted Publisher) está configurado.
+#   1. Verifica que CHANGELOG.md tenga la sección ## [X.Y.Z] de package.json.
+#   2. Ejecuta las mismas validaciones que test.yml (cero dependencias, check, tests).
+#   3. Si el tag vX.Y.Z aún no existe, lo crea y lo empuja a origin.
+#   4. Crea el GitHub Release con las notas de esa versión (si no existe).
+#   5. Si chaski@X.Y.Z aún no está en npm, lo publica con provenance.
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - 'package.json'
     tags:
       - 'v*.*.*'
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: write
@@ -45,10 +55,9 @@ jobs:
         shell: bash
         run: |
           pkg_ver=$(node -e "console.log(require('./package.json').version)")
-          ref_name="${GITHUB_REF_NAME:-v$pkg_ver}"
           expected_tag="v$pkg_ver"
-          if [ "$ref_name" != "$expected_tag" ]; then
-            echo "::error::El tag ($ref_name) no coincide con package.json ($expected_tag)."
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]] && [ "${GITHUB_REF_NAME}" != "$expected_tag" ]; then
+            echo "::error::El tag (${GITHUB_REF_NAME}) no coincide con package.json ($expected_tag)."
             exit 1
           fi
           if ! grep -qE "^## \\[$pkg_ver\\]" CHANGELOG.md; then
@@ -64,13 +73,19 @@ jobs:
       - name: Verificar contenido del paquete npm (dry-run)
         run: npm pack --dry-run
 
-      - name: Crear GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Asegurar tag y GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           pkg_ver=$(node -e "console.log(require('./package.json').version)")
+          tag="v$pkg_ver"
+          if ! git rev-parse "$tag" >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag "$tag"
+            git push origin "$tag"
+          fi
           node -e '
             const fs = require("node:fs");
             const ver = process.argv[1];
@@ -80,21 +95,27 @@ jobs:
             const m = txt.match(re);
             fs.writeFileSync("/tmp/release-notes.md", (m ? m[1].trim() : `Release v${ver}`) + "\n");
           ' "$pkg_ver"
-          gh release view "v$pkg_ver" >/dev/null 2>&1 || \
-            gh release create "v$pkg_ver" --title "v$pkg_ver" --notes-file /tmp/release-notes.md
+          gh release view "$tag" >/dev/null 2>&1 || \
+            gh release create "$tag" --title "$tag" --notes-file /tmp/release-notes.md
 
       - name: Publicar en npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
+          pkg_ver=$(node -e "console.log(require('./package.json').version)")
+          published_ver=$(npm view "chaski@$pkg_ver" version 2>/dev/null || echo "")
+          if [ "$published_ver" = "$pkg_ver" ]; then
+            echo "chaski@$pkg_ver ya está publicado en npm."
+            exit 0
+          fi
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::warning title=NPM_TOKEN no configurado::Se creó el GitHub Release, pero falta el secret NPM_TOKEN (o Trusted Publisher en npmjs.com) para publicar automáticamente en npm. Ejecuta 'npm publish' localmente o configura NPM_TOKEN en Settings → Secrets and variables → Actions."
+            echo "::warning title=Publicación en npm pendiente (v$pkg_ver)::Se creó el tag y el GitHub Release v$pkg_ver, pero chaski@$pkg_ver aún no está en npm porque falta NPM_TOKEN en GitHub Secrets (o Trusted Publisher en npmjs.com). Ejecuta 'npm publish' localmente o configura NPM_TOKEN."
             {
-              echo "### Publicación en npm pendiente"
-              echo "El GitHub Release se creó correctamente, pero el secret \`NPM_TOKEN\` no está configurado en el repositorio."
+              echo "### Publicación en npm pendiente (\`chaski@$pkg_ver\`)"
+              echo "El tag \`v$pkg_ver\` y el GitHub Release están al día, pero \`chaski@$pkg_ver\` aún no figura en npm porque falta el secret \`NPM_TOKEN\`."
               echo "1. Genera un Granular Access Token en [npmjs.com](https://www.npmjs.com/) (o configura **Trusted Publishing** para \`cristobalbn/chaski\` y \`release.yml\`)."
-              echo "2. Guárdalo como secret \`NPM_TOKEN\` en GitHub (\`Settings → Secrets and variables → Actions\`), o ejecuta \`npm publish\` desde tu máquina."
+              echo "2. Guárdalo como secret \`NPM_TOKEN\` en GitHub (\`Settings → Secrets and variables → Actions\`) y re-ejecuta este workflow, o corre \`npm publish\` desde tu terminal."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
