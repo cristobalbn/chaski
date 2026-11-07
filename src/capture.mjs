@@ -101,6 +101,18 @@ function main() {
       narrative: previo.narrative ?? null,
       narrativeAuthor: previo.narrativeAuthor ?? null,
       narrativeWrittenAt: previo.narrativeWrittenAt ?? null,
+      // Las conclusiones de los subagents se preservan, como la narrative: las
+      // escribió un modelo y no se pueden recalcular. Sin esto, `promote()`
+      // las guardaba y la captura del final del MISMO turno las borraba, así
+      // que la sección "Trabajo delegado" duraba lo que duraba el turno.
+      //
+      // Se preservan entre sesiones a propósito, no solo dentro de una. Atarlas
+      // a la sesión las borraría en la primera captura del CLI siguiente, que
+      // es justo el escenario que esta herramienta existe para cubrir: el
+      // agent nuevo las lee al arrancar y las perdería para el que venga
+      // después. Su antigüedad se muestra en el relevo, que es la forma honesta
+      // de que algo viejo se note sin desaparecer.
+      subagents: previo.subagents ?? null,
       // Tareas en segundo plano que quedan corriendo. Si cambias de CLI con
       // algo a medio ejecutar, el agent nuevo tiene que saberlo.
       backgroundTasks: liveTasks(ev),

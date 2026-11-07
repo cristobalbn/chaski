@@ -142,6 +142,17 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   donde el contrato está verificado. Se apaga con `askNarrative: false`.
   Respeta `stop_hook_active`: sin eso sería un bucle infinito de bloqueos.
 
+- La conclusión de un subagente ya no la borra la captura del final del mismo
+  turno. `promote()` la guardaba y el `Stop` del padre construía un estado
+  nuevo sin el campo, así que la sección «Trabajo delegado» duraba lo que
+  duraba el turno y una sesión nueva no la veía nunca (reportado en el #18). Se
+  preserva como la narrativa, **también entre sesiones**: atarla a la sesión la
+  borraría en la primera captura del CLI siguiente, que es justo el escenario
+  que la herramienta existe para cubrir.
+- El relevo muestra cuánto hace que se promovió cada conclusión. Si sobreviven
+  entre sesiones, su antigüedad tiene que verse: una de hace tres días se lee
+  distinto que una de hace diez minutos.
+
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,
   `codex exec`, `agy -p`). chaski es para sesiones interactivas.
