@@ -161,6 +161,23 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
    propósito —corre en cada turno y sería ruido inapagable—; avisa el de inicio
    de sesión, que corre una vez.
 
+## Mirar stderr de los hooks
+
+Los hooks nunca fallan: todo va en `try/catch` y siempre salen con código 0
+(invariante 4). Eso es correcto y no se toca — un hook que revienta le arruina
+la sesión al usuario. Pero tiene un costo que ya mordió dos veces: **un error
+propio queda invisible**.
+
+Pasó con una función usada sin importar. `node --check` pasaba, porque es un
+error de ejecución y no de sintaxis; los tests pasaban, porque la excepción
+ocurría después de escribir el relevo; y el hook la atrapaba, escribía
+`captura omitida` en stderr y salía con 0.
+
+Por eso hay un test que corre una captura normal en los tres CLIs y **falla si
+stderr trae algo**. En el camino feliz, `captura omitida` significa que algo se
+rompió por dentro. Si agregas una rama al hook, asegúrate de que quede cubierta
+por ese test o por uno de punta a punta: la suite verde no te va a avisar.
+
 ## Presupuestos
 
 | Qué | Límite | Consecuencia de pasarse |

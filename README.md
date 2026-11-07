@@ -268,7 +268,8 @@ narrativa falta o quedó **8 turnos** atrás.
 | | |
 |---|---|
 | Apagarlo | `"askNarrative": false` en `chaski.json` o `chaski.local.json` |
-| Dónde funciona | Claude Code. Codex y Antigravity no tienen un equivalente verificado de `decision: block`, así que ahí la narrativa sigue siendo a pedido |
+| Dónde funciona | Los tres, con el contrato de cada uno: `decision: "block"` en Claude Code y Codex, `decision: "continue"` en Antigravity, que trata cualquier otro valor como permiso para parar |
+| En Codex | su hook `Stop` se registra **síncrono**, porque un hook en segundo plano no puede bloquear. Esperas la captura (~340 ms) al cerrar cada turno |
 
 ### La primera vez, verifica
 

@@ -18,7 +18,7 @@ import { statePath, relayPath, readJson, acquireLock, globalDir, git, pruneOrpha
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
-import { shouldAsk, askText } from './lib/ask.mjs';
+import { shouldAsk, askText, blockPayload } from './lib/ask.mjs';
 import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
 
 main();
@@ -155,13 +155,14 @@ function main() {
     occasionalPrune(cwd, config);
 
     // La petición va por stdout y solo después de que el relevo esté escrito:
-    // si algo de arriba fallara, se pierde la petición y no el relevo. Un
-    // `decision: block` mantiene al agent un turno más, con la instrucción.
+    // si algo de arriba fallara, se pierde la petición y no el relevo.
+    //
+    // El contrato lo arma `blockPayload`, porque NO es el mismo en los tres:
+    // Claude Code y Codex usan `decision: "block"`, Antigravity usa
+    // `"continue"` y trata cualquier otro valor como permiso para parar.
     if (motivo) {
-      process.stdout.write(JSON.stringify({
-        decision: 'block',
-        reason: askText(motivo),
-      }) + '\n');
+      const salida = blockPayload(estado.agent, askText(motivo));
+      if (salida) process.stdout.write(JSON.stringify(salida) + '\n');
     }
 
     // Aviso para quien mire stderr (doctor, una terminal, logs del CLI). El

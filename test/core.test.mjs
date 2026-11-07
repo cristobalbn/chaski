@@ -19,7 +19,7 @@ import { redact, isExcludedPath } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS } from '../src/lib/relay.mjs';
 import { branchSlug, pruneOrphanRelays, git, projectDir } from '../src/lib/paths.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
-import { shouldAsk, askText } from '../src/lib/ask.mjs';
+import { shouldAsk, askText, blockPayload } from '../src/lib/ask.mjs';
 
 /** Presupuesto falso: `remaining()` fijo, no atado al reloj real. Para
  * probar decisiones de presupuesto sin depender de cuánto tarda la máquina. */
@@ -1260,13 +1260,41 @@ describe('cuándo se pide la narrativa', () => {
     assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, {}, { askNarrative: false }), null);
   });
 
-  test('no se intenta en Codex ni en agy, donde el contrato no está verificado', () => {
-    // Imprimir un JSON de bloqueo a un CLI que no lo entiende puede romperle
-    // la sesión al usuario. Hasta verificarlo con `chaski probe`, no se hace.
-    for (const agent of ['codex', 'agy']) {
+  test('se pide en los tres CLIs, cada uno con su contrato', () => {
+    // Este test reemplaza a uno que exigía lo contrario. Codex y Antigravity
+    // documentan los dos una forma de mantener al agent un turno más, así que
+    // la restricción se levantó; lo que NO se comparte es el formato.
+    for (const agent of ['claude code', 'codex', 'agy']) {
       const e = { ...base(), agent, narrative: null };
-      assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, {}, {}), null, `bloqueó en ${agent}`);
+      assert.ok(shouldAsk({ hook_event_name: 'Stop' }, e, {}, {}), `no pidió en ${agent}`);
     }
+  });
+
+  test('un CLI desconocido no se toca', () => {
+    const e = { ...base(), agent: 'otro-cli', narrative: null };
+    assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, {}, {}), null);
+    assert.equal(blockPayload('otro-cli', 'x'), null);
+  });
+
+  test('el formato del bloqueo NO es el mismo en los tres', () => {
+    // La diferencia que más importa: en Antigravity la clave es "continue", y
+    // su documentación dice que cualquier otro valor PERMITE parar. Mandarle
+    // el "block" de Claude Code no daría error: no haría nada, en silencio,
+    // que es el peor modo de fallo para esta herramienta.
+    assert.deepEqual(blockPayload('claude code', 'r'), { decision: 'block', reason: 'r' });
+    assert.deepEqual(blockPayload('codex', 'r'), { decision: 'block', reason: 'r' });
+    assert.deepEqual(blockPayload('agy', 'r'), { decision: 'continue', reason: 'r' });
+  });
+
+  test('en agy el bucle se corta con executionNum, que es lo único que hay', () => {
+    // Antigravity no documenta nada equivalente a stop_hook_active. Trae
+    // executionNum —las vueltas del bucle del agent— y un tope propio de
+    // continuaciones forzadas cuyo valor no está documentado. Sin esta
+    // comprobación, chaski pediría la narrativa en cada vuelta.
+    const e = { ...base(), agent: 'agy', narrative: null };
+    assert.ok(shouldAsk({ hook_event_name: 'Stop', executionNum: 1 }, e, {}, {}));
+    assert.equal(shouldAsk({ hook_event_name: 'Stop', executionNum: 2 }, e, {}, {}), null,
+      'pidió otra vez dentro del mismo bucle: eso no termina nunca');
   });
 
   test('el texto pide el estado en vuelo, que es lo que motiva todo', () => {
