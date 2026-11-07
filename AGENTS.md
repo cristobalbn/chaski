@@ -113,9 +113,11 @@ pidan explícitamente.
 ## Sincronización entre GitHub y npm
 
 Quien instala con `npm install -g github:cristobalbn/chaski` recibe `main`;
-quien instala con `npm install -g chaski` recibe la última versión publicada en
-el registro de npm. **Si actualizas `main` con cambios en `src/` o `skill/`,
-recuerda que npm no se entera hasta que se sube `version` en `package.json`.**
+quien instala con `npm install -g @cristobalbn/chaski` recibe la última versión
+publicada en el registro de npm (el nombre plano `chaski` lo bloquea el filtro
+de similitud de npm frente a `chai`/`chalk`, pero el binario sigue siendo
+`chaski`). **Si actualizas `main` con cambios en `src/` o `skill/`, recuerda que
+npm no se entera hasta que se sube `version` en `package.json`.**
 
 - En cada PR y en cada merge a `main`, el paso `Estado de sincronización con npm y tags`
   de [`.github/workflows/test.yml`](.github/workflows/test.yml) revisa si se
@@ -129,8 +131,8 @@ recuerda que npm no se entera hasta que se sube `version` en `package.json`.**
      [`.github/workflows/release.yml`](.github/workflows/release.yml) se dispara
      solo: verifica que `package.json` y `CHANGELOG.md` coincidan, corre toda la
      suite, crea y empuja el tag `vX.Y.Z` si no existe, crea el GitHub Release y
-     publica `chaski@X.Y.Z` en npm (con `NPM_TOKEN` en GitHub Secrets, o
-     ejecutando `npm publish` local).
+     publica `@cristobalbn/chaski@X.Y.Z` en npm (mediante Trusted Publishing
+     OIDC en npmjs.com o `NPM_TOKEN`).
 
 ## Invariantes
 

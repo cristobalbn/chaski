@@ -1484,7 +1484,7 @@ describe('contrato de empaquetado npm y sincronización con GitHub', () => {
     assert.match(releaseYml, /gh release create/);
 
     const testYml = readFileSync(join(raiz, '.github', 'workflows', 'test.yml'), 'utf8');
-    assert.match(testYml, /npm view chaski version/);
+    assert.match(testYml, /npm view @cristobalbn\/chaski version/);
   });
 
   test('chaski version y --version devuelven la versión exacta de package.json', () => {

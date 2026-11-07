@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           pkg_ver=$(node -e "console.log(require('./package.json').version)")
-          npm_ver=$(npm view chaski version 2>/dev/null || echo "no-publicado")
+          npm_ver=$(npm view @cristobalbn/chaski version 2>/dev/null || echo "no-publicado")
           last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "sin-tags")
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
