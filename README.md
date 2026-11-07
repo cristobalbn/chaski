@@ -293,7 +293,7 @@ conservadores, y en este orden:
 | | |
 |---|---|
 | Apagarlo | `"askNarrative": false` en `chaski.json` o `chaski.local.json` |
-| Cómo se ve | Claude Code rotula toda respuesta de bloqueo de un hook como **«Stop hook error»**, aunque no haya ningún error: es una petición. La palabra la pone el CLI y chaski no puede cambiarla; lo único nuestro es el texto que sigue, que empieza con «chaski pide guardar el relevo» para que se lea como lo que es |
+| Cómo se ve | **«Stop hook feedback»**. En Claude Code la petición se emite con `hookSpecificOutput.additionalContext`, que la documentación llama «non-error feedback»: mantiene el turno extra y las protecciones contra bucles, pero no se rotula como error. Si usas una versión de Claude Code anterior a ese campo, la petición simplemente no llega — no rompe nada |
 | Dónde funciona | Los tres, con el contrato de cada uno: `decision: "block"` en Claude Code y Codex, `decision: "continue"` en Antigravity, que trata cualquier otro valor como permiso para parar |
 | En Codex | su hook `Stop` se registra **síncrono**, porque un hook en segundo plano no puede bloquear. Esperas la captura (~340 ms) al cerrar cada turno |
 
@@ -505,7 +505,6 @@ riesgo tu cuenta no debería estar a un flag de distancia.
 | Latencia del hook | ~340 ms, de los cuales unos 250 son subprocesos de git | El presupuesto de `Stop` en Claude Code es de 1,5 s **compartido** entre todos los hooks del evento. Hay margen de 5x, pero si tienes muchos hooks ahí, mide |
 | Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
 | Narrativa | puede atrasarse unos turnos | Los hechos están siempre al día; el porqué depende de cuándo pediste «relevo» |
-| La petición de la narrativa aparece como «error» | es la etiqueta del CLI, no un fallo | Claude Code muestra toda respuesta de bloqueo de un hook con el prefijo «Stop hook error», incluso cuando el hook terminó bien y lo que devolvió es una petición. No hay forma de cambiarlo desde el hook: la palabra la elige el CLI. Reportado a Claude Code; mientras tanto, el texto propio empieza diciendo que es una petición |
 | Hooks de Codex | requieren conceder confianza | La primera vez que abres Codex con hooks instalados pide confiar en ellos. Hasta que aceptes, no se ejecuta ninguno, y el permiso se aplica desde la sesión siguiente |
 | Un turno con miles de archivos modificados | el relevo sale **incompleto, y lo dice** | El hook tiene un presupuesto de tiempo propio y sacrifica lo caro y poco informativo antes de agotarlo: primero el detalle de líneas `+/-` por archivo, después el log de commits. La rama, el `HEAD`, la lista de archivos y su total siempre sobreviven. Lo que se omitió aparece declarado en el relevo, porque un relevo incompleto que se presenta como completo es peor que uno recortado. Medido: 5.000 archivos modificados pasaban de 2.000 ms —y perdían el relevo entero— y ahora el hook completo tarda ~340 ms |
 | Ruta del proyecto de más de ~240 caracteres | los subprocesos de git fallan | En Windows, una ruta así de larga hace que el subproceso de git falle. chaski lo interpreta como «esto no es un repositorio git» y lo reporta en silencio, perdiendo también la detección de la rama. No hay arreglo barato conocido: evita rutas tan largas para este proyecto |

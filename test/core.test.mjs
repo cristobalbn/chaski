@@ -19,7 +19,7 @@ import { redact, isExcludedPath } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS } from '../src/lib/relay.mjs';
 import { branchSlug, pruneOrphanRelays, git, projectDir } from '../src/lib/paths.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
-import { shouldAsk, askText, blockPayload } from '../src/lib/ask.mjs';
+import { shouldAsk, askText, askPayload } from '../src/lib/ask.mjs';
 
 /** Presupuesto falso: `remaining()` fijo, no atado al reloj real. Para
  * probar decisiones de presupuesto sin depender de cuánto tarda la máquina. */
@@ -1273,7 +1273,7 @@ describe('cuándo se pide la narrativa', () => {
   test('un CLI desconocido no se toca', () => {
     const e = { ...base(), agent: 'otro-cli', narrative: null };
     assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, {}, {}), null);
-    assert.equal(blockPayload('otro-cli', 'x'), null);
+    assert.equal(askPayload('otro-cli', 'x'), null);
   });
 
   test('el formato del bloqueo NO es el mismo en los tres', () => {
@@ -1281,9 +1281,17 @@ describe('cuándo se pide la narrativa', () => {
     // su documentación dice que cualquier otro valor PERMITE parar. Mandarle
     // el "block" de Claude Code no daría error: no haría nada, en silencio,
     // que es el peor modo de fallo para esta herramienta.
-    assert.deepEqual(blockPayload('claude code', 'r'), { decision: 'block', reason: 'r' });
-    assert.deepEqual(blockPayload('codex', 'r'), { decision: 'block', reason: 'r' });
-    assert.deepEqual(blockPayload('agy', 'r'), { decision: 'continue', reason: 'r' });
+    // Claude Code usa additionalContext y NO decision: block. Los dos
+    // mantienen al agent un turno más y respetan stop_hook_active, pero
+    // "block" hace que la interfaz rotule la respuesta como "Stop hook
+    // error" —la misma palabra que para un hook que de verdad falló— y el
+    // usuario ve un error en cada petición.
+    assert.deepEqual(askPayload('claude code', 'r'),
+      { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: 'r' } });
+    assert.ok(!('decision' in askPayload('claude code', 'r')),
+      'mezclar decision con additionalContext deja el rótulo indefinido');
+    assert.deepEqual(askPayload('codex', 'r'), { decision: 'block', reason: 'r' });
+    assert.deepEqual(askPayload('agy', 'r'), { decision: 'continue', reason: 'r' });
   });
 
   test('en agy el bucle se corta con executionNum, que es lo único que hay', () => {

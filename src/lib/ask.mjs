@@ -58,8 +58,8 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
   if (config?.askNarrative === false) return null;
 
   // Los tres soportan mantener al agent un turno más, pero NO con el mismo
-  // contrato (ver `blockPayload`). Un CLI desconocido no se intenta.
-  if (!blockPayload(estado.agent, '')) return null;
+  // contrato (ver `askPayload`). Un CLI desconocido no se intenta.
+  if (!askPayload(estado.agent, '')) return null;
 
   // Protección contra bucles. Sin esto, un hook que bloquea vuelve a
   // bloquear en el turno que él mismo provocó, y no termina nunca.
@@ -159,13 +159,38 @@ export function askText(motivo) {
  * equivocarse es bajo y asimétrico: si el contrato estuviera mal, el agent
  * termina el turno como siempre y se pierde la petición, no el relevo.
  */
-export function blockPayload(agent, reason) {
+export function askPayload(agent, reason) {
   const a = String(agent ?? '').toLowerCase();
-  // Claude Code y Codex comparten formato: `decision: "block"`, y el `reason`
-  // se convierte en el prompt de continuación.
-  if (/^claude/.test(a) || a === 'codex') return { decision: 'block', reason };
+
+  // Claude Code: `additionalContext` y NO `decision: "block"`.
+  //
+  // Los dos mantienen al agent un turno más y los dos respetan
+  // `stop_hook_active` y el tope de continuaciones. La diferencia es cómo se
+  // presenta: con `block`, la interfaz rotula la respuesta como **«Stop hook
+  // error»** —la misma palabra que usa para un hook que de verdad falló— y el
+  // usuario ve un error en cada petición. Con `additionalContext` el rótulo es
+  // «Stop hook feedback». La documentación lo llama literalmente «non-error
+  // feedback for Claude».
+  //
+  // El usuario lo reportó dos veces: «la palabra error no es bonita verla en
+  // ninguno caso y menos para un usuario». Y tenía razón más allá de la
+  // estética: en una herramienta publicada, un error aparente en cada turno
+  // dice que está rota.
+  //
+  // No se combinan los dos campos: la documentación no dice qué rótulo saldría.
+  if (/^claude/.test(a)) {
+    return { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: reason } };
+  }
+
+  // Codex: `decision: "block"`, y el `reason` se convierte en el prompt de
+  // continuación. Su documentación no describe un equivalente de
+  // `additionalContext` para `Stop`, así que aquí el formato se queda.
+  if (a === 'codex') return { decision: 'block', reason };
+
   // Antigravity: `continue` bloquea el stop y reentra al bucle; el `reason` se
-  // inyecta como mensaje de sistema.
+  // inyecta como mensaje de sistema. Su documentación dice que **cualquier otro
+  // valor permite parar**, así que mandarle el `"block"` de Claude Code no
+  // daría error: no haría nada, en silencio, el peor modo de fallo posible.
   if (a === 'agy' || a === 'antigravity') return { decision: 'continue', reason };
   return null;
 }
