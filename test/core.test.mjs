@@ -1305,3 +1305,58 @@ describe('cuándo se pide la narrativa', () => {
     assert.ok(!/\/relevo/.test(t), 'nombra un comando que no existe en los tres CLIs');
   });
 });
+
+describe('no pedir la narrativa de más', () => {
+  // Los dos bugs que hacían aparecer el mensaje después de cada prompt. El
+  // usuario los reportó así: "despues de cada prompt aparece un mensaje de
+  // hooks, es un poco molesto".
+  const base = () => ({
+    agent: 'claude code', turns: 2049, head: 'aaa1111',
+    facts: { dirty: [{ ruta: 'a.js' }] }, commands: [],
+    narrative: 'algo', narrativeWrittenAt: new Date().toISOString(),
+  });
+
+  test('una narrativa recién escrita no se vuelve a pedir, ni con commits nuevos', () => {
+    // Una sesión que mergea tres PR recibía una petición por merge: cada uno
+    // mueve el HEAD y "hay commits nuevos" disparaba aunque la narrativa fuera
+    // de hace un minuto y siguiera siendo exacta.
+    const previo = { head: 'bbb2222', turnsAtNarrative: 0, askedAt: null };
+    assert.equal(shouldAsk({ hook_event_name: 'Stop' }, base(), previo, {}), null,
+      'pidió la narrativa recién escrita');
+  });
+
+  test('pasada la frescura, los commits nuevos sí la piden', () => {
+    const e = { ...base(), narrativeWrittenAt: new Date(Date.now() - 60 * 60_000).toISOString() };
+    const previo = { head: 'bbb2222', turnsAtNarrative: 0, askedAt: null };
+    assert.match(shouldAsk({ hook_event_name: 'Stop' }, e, previo, {}) ?? '', /commits nuevos/);
+  });
+
+  test('el contador de turnos se reinicia con una narrativa escrita fuera de banda', () => {
+    // El bug: la narrativa se escribe directo en estado.json, así que en la
+    // captura siguiente `previo.narrativeWrittenAt` ya traía la marca nueva y
+    // coincidía con la del estado. Comparándolos, el contador nunca se movía
+    // de cero: con turns en 2.049 la política creía que habían pasado 2.049
+    // turnos desde la última narrativa y la pedía cada vez que expiraba el
+    // debounce, para siempre. Se compara contra `narrativeStamp`, que es la
+    // marca que el propio código ya contabilizó.
+    const e = { ...base(), narrativeWrittenAt: new Date(Date.now() - 60 * 60_000).toISOString() };
+
+    // Con la marca ya contabilizada y el contador al día: no pide.
+    const alDia = { narrativeStamp: e.narrativeWrittenAt, turnsAtNarrative: 2045, head: e.head };
+    assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, alDia, {}), null,
+      'pidió con solo 4 turnos desde la narrativa');
+
+    // Con la marca vieja, el contador se reinicia en la captura siguiente, así
+    // que `turnsAtNarrative` queda en `turns` y no quedan turnos de deuda.
+    const sinContabilizar = { narrativeStamp: null, turnsAtNarrative: 0, head: e.head };
+    assert.match(shouldAsk({ hook_event_name: 'Stop' }, e, sinContabilizar, {}) ?? '',
+      /turnos desde la última narrativa/,
+      'esta es la primera captura tras escribirla: aquí sí corresponde avisar una vez');
+  });
+
+  test('la primera línea se lee como una petición, no como un error', () => {
+    // El CLI la muestra con "Stop hook error:" delante, y es la única línea
+    // que aparece en su resumen.
+    assert.match(askText('hay commits nuevos').split('\n')[0], /^chaski pide guardar el relevo/);
+  });
+});

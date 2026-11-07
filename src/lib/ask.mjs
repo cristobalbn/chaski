@@ -30,6 +30,18 @@ export const DEBOUNCE_MIN = 12;
 export const TURNOS_MIN = 8;
 
 /**
+ * Minutos que una narrativa se considera fresca. Mientras lo sea, no se vuelve
+ * a pedir ni aunque haya commits nuevos.
+ *
+ * Sin esto, una sesión que mergea tres PR seguidos recibía una petición por
+ * merge: cada uno mueve el HEAD, y "hay commits nuevos" disparaba aunque la
+ * narrativa fuera de hace un minuto y siguiera siendo exacta. El usuario lo
+ * vio como un mensaje después de cada prompt, que es justo el modo de fallo
+ * que el debounce existe para evitar.
+ */
+export const NARRATIVA_FRESCA_MIN = 20;
+
+/**
  * ¿Hay que pedir la narrativa en este `Stop`?
  *
  * Devuelve `null` si no, o el motivo (string corto) si sí. El motivo entra en
@@ -76,6 +88,13 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
   // relevo con hechos y sin intención.
   if (!estado.narrative) return 'el relevo todavía no tiene narrativa';
 
+  // Una narrativa recién escrita no se vuelve a pedir, pase lo que pase. Es
+  // el corte más fuerte y va primero: lo que hace insufrible a esta función no
+  // es pedirla de más en una sesión larga, es pedirla dos veces seguidas.
+  const edadNarrativa = estado.narrativeWrittenAt
+    ? (ahora - Date.parse(estado.narrativeWrittenAt)) / 60000 : Infinity;
+  if (edadNarrativa < NARRATIVA_FRESCA_MIN) return null;
+
   // Narrativa que quedó atrás. Se mide en turnos de trabajo y en commits, no
   // en tiempo: una sesión larga sin cambios no necesita reescribirla.
   const turnosDesde = (estado.turns ?? 0) - (previo?.turnsAtNarrative ?? 0);
@@ -95,7 +114,7 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
  */
 export function askText(motivo) {
   return [
-    `chaski: ${motivo}.`,
+    `chaski pide guardar el relevo antes de cerrar: ${motivo}.`,
     '',
     'Antes de terminar, guarda la narrativa del relevo con la skill `relevo`.',
     'Es para el agent que retome este trabajo si se corta la sesión o se agota',

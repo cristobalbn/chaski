@@ -289,6 +289,16 @@ function installCodex(ruta) {
   mkdirSync(dirname(ruta), { recursive: true });
   const previo = existsSync(ruta) ? readFileSync(ruta, 'utf8') : '';
   const limpio = removeBlock(previo);
+  // Codex guarda la confianza concedida a cada hook en un `[hooks.state]` con
+  // un `trusted_hash`, y lo escribe a continuación del hook al que pertenece
+  // — es decir, DENTRO de este bloque delimitado. Al reescribirlo, `init` se
+  // lo llevaba, y el usuario tenía que volver a aceptar los hooks y abrir
+  // Codex dos veces (el permiso recién se aplica en la sesión siguiente).
+  // Verificado comparando el archivo antes y después de un `init`.
+  //
+  // Así que se rescata y se vuelve a escribir. Los hashes que ya no
+  // correspondan los descartará Codex por su cuenta: son suyos, no nuestros.
+  const confianza = rescueHookState(previo);
   // Bloque delimitado: evita implementar un parser TOML completo y hace que
   // uninstall sea una resta exacta.
   const bloque = [
@@ -322,7 +332,32 @@ function installCodex(ruta) {
     // puede hacer que Codex rechace el bloque entero. Pendiente de confirmar.
     MARCA_FIN,
   ].join('\n');
-  writeAtomic(ruta, `${limpio.trimEnd()}\n\n${bloque}\n`);
+  // La confianza rescatada va DENTRO del bloque, antes de la marca final, que
+  // es donde Codex la escribió: así `uninstall` la sigue restando entera y no
+  // deja basura suya en el archivo del usuario.
+  const conEstado = confianza
+    ? bloque.replace(MARCA_FIN, `${confianza}\n${MARCA_FIN}`)
+    : bloque;
+  writeAtomic(ruta, `${limpio.trimEnd()}\n\n${conEstado}\n`);
+}
+
+/**
+ * Rescata el `[hooks.state]` de Codex de dentro del bloque de chaski.
+ *
+ * No es un parser de TOML: toma desde la cabecera `[hooks.state]` hasta el
+ * final del bloque, que es exactamente donde Codex lo escribe. Si la forma
+ * cambiara, devuelve null y se pierde la confianza: el mismo comportamiento
+ * que antes, nunca algo peor.
+ */
+function rescueHookState(texto) {
+  const i = texto.indexOf(MARCA_INI);
+  const j = texto.indexOf(MARCA_FIN);
+  if (i === -1 || j === -1 || j < i) return null;
+  const dentro = texto.slice(i, j);
+  const k = dentro.indexOf('[hooks.state]');
+  if (k === -1) return null;
+  const estado = dentro.slice(k).trimEnd();
+  return estado.includes('trusted_hash') ? estado : null;
 }
 
 function removeBlock(texto) {
