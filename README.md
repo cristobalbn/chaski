@@ -105,7 +105,7 @@ npm install -g github:cristobalbn/chaski
 ### Opción 2 — desde el código fuente
 
 Si prefieres leer lo que vas a ejecutar antes de instalarlo —algo razonable en
-una herramienta que corre sola en cada turno— clona el repositorio. Son ~2.000
+una herramienta que corre sola en cada turno— clona el repositorio. Son ~3.100
 líneas de JavaScript sin dependencias:
 
 ```bash
@@ -347,7 +347,7 @@ chaski cost                 # muestra el gasto externo ($0) y los turnos extra d
 chaski why [tema]           # busca decisiones anteriores en .tambo/historia/ y decisiones/
 chaski share [tema]         # publica la decisión de la rama actual en decisiones/ (pide confirmación)
 chaski share [tema] --yes   # publica sin pedir confirmación interactiva
-chaski version              # muestra la versión instalada (también chaski --version)
+chaski version              # muestra la versión instalada (también chaski --version o -v)
 ```
 
 - **`chaski next`** lee `~/.chaski/quota.json` (alimentado cuando un hook detecta
@@ -382,7 +382,7 @@ eso el modelo es el último recurso y no el primero.
 |---|---|---|
 | `src/capture.mjs` | hooks `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | Lee el transcript desde una marca de agua y git; escribe `relevo.md`, `estado.json` y `.tambo/historia/` |
 | `src/inject.mjs` | hook `SessionStart` | Imprime el relevo; lo que imprime entra al contexto del agente |
-| `src/cli.mjs` | a mano | `init`, `doctor`, `next`, `cost`, `why`, `share`, `uninstall`, `probe` |
+| `src/cli.mjs` | a mano | `init`, `doctor`, `next`, `cost`, `why`, `share`, `version`, `uninstall`, `probe` |
 | `skill/SKILL.md` | al pedir «relevo» | Instrucciones para que el agente escriba la narrativa |
 
 Archivos que genera en tu proyecto:
@@ -533,11 +533,11 @@ riesgo tu cuenta no debería estar a un flag de distancia.
 
 | Límite | Valor | Por qué |
 |---|---|---|
-| Latencia del hook | ~340 ms, de los cuales unos 250 son subprocesos de git | El presupuesto de `Stop` en Claude Code es de 1,5 s **compartido** entre todos los hooks del evento. Hay margen de 5x, pero si tienes muchos hooks ahí, mide |
+| Latencia del hook | ~220 ms (antes ~340 ms; se redujeron los subprocesos de git de 9 a 3) | El presupuesto de `Stop` en Claude Code es de 1,5 s **compartido** entre todos los hooks del evento. Hay margen de casi 7x, pero si tienes muchos hooks ahí, mide |
 | Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
 | Narrativa | puede atrasarse unos turnos | Los hechos están siempre al día; el porqué depende de cuándo pediste «relevo» |
 | Hooks de Codex | requieren conceder confianza | La primera vez que abres Codex con hooks instalados pide confiar en ellos. Hasta que aceptes, no se ejecuta ninguno, y el permiso se aplica desde la sesión siguiente |
-| Un turno con miles de archivos modificados | el relevo sale **incompleto, y lo dice** | El hook tiene un presupuesto de tiempo propio y sacrifica lo caro y poco informativo antes de agotarlo: primero el detalle de líneas `+/-` por archivo, después el log de commits. La rama, el `HEAD`, la lista de archivos y su total siempre sobreviven. Lo que se omitió aparece declarado en el relevo, porque un relevo incompleto que se presenta como completo es peor que uno recortado. Medido: 5.000 archivos modificados pasaban de 2.000 ms —y perdían el relevo entero— y ahora el hook completo tarda ~340 ms |
+| Un turno con miles de archivos modificados | el relevo sale **incompleto, y lo dice** | El hook tiene un presupuesto de tiempo propio y sacrifica lo caro y poco informativo antes de agotarlo: primero el detalle de líneas `+/-` por archivo, después el log de commits. La rama, el `HEAD`, la lista de archivos y su total siempre sobreviven. Lo que se omitió aparece declarado en el relevo, porque un relevo incompleto que se presenta como completo es peor que uno recortado. Medido: 5.000 archivos modificados pasaban de 2.000 ms —y perdían el relevo entero— y ahora el hook completo tarda ~220-340 ms |
 | Ruta del proyecto de más de ~240 caracteres | los subprocesos de git fallan | En Windows, una ruta así de larga hace que el subproceso de git falle. chaski lo interpreta como «esto no es un repositorio git» y lo reporta en silencio, perdiendo también la detección de la rama. No hay arreglo barato conocido: evita rutas tan largas para este proyecto |
 
 Si un administrador fijó `allowManagedHooksOnly` o `disableAllHooks` en una

@@ -239,7 +239,7 @@
             <tr><td class="wrap">Filtro de secretos antes de escribir</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Aviso de lo que cambi&oacute; y qui&eacute;n lo cambi&oacute;</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Limpieza escalonada de relevos hu&eacute;rfanos</td><td><span class="tag t-ok">funcionando</span></td></tr>
-            <tr><td class="wrap"><code>init</code>, <code>doctor</code>, <code>uninstall</code>, <code>probe</code></td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap"><code>init</code>, <code>doctor</code>, <code>uninstall</code>, <code>probe</code>, <code>version</code></td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Narrativa con <code>/relevo</code>, a mano</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Disparo autom&aacute;tico de la narrativa</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Promoci&oacute;n de resultados de subagentes</td><td><span class="tag t-ok">funcionando</span></td></tr>
@@ -277,7 +277,7 @@
       <div class="lex">
         <div><dt>chaski</dt><dd><b>La herramienta</b>El comando y el corredor. Lo que tipeas.</dd></div>
         <div><dt>.tambo/</dt><dd><b>La estaci&oacute;n</b>El directorio del proyecto donde se deja y se recoge el relevo.</dd></div>
-        <div><dt>quipu.md</dt><dd><b>El registro</b>El estado del trabajo, que es lo que se entrega al siguiente.</dd></div>
+        <div><dt>relevo.md / estado.json</dt><dd><b>El registro</b>El estado del trabajo (quipu), que es lo que se entrega al siguiente.</dd></div>
       </div>
       <p><em>No es decoraci&oacute;n: hace que el vocabulario se explique solo. Un nombre que hay que justificar cada vez es un impuesto permanente sobre la documentaci&oacute;n.</em></p>
     </section>
@@ -345,12 +345,12 @@
           <div class="n">01</div>
           <div><h4>Captura</h4>
             <p><strong>As&iacute; funciona hoy (F1):</strong> el hook <code>Stop</code> recibe por stdin la ruta del transcript y el <code>session_id</code>, y hace el trabajo &eacute;l mismo, en l&iacute;nea &mdash; s&iacute;ncrono, sin cola ni worker aparte. No encola nada ni hace spawn de nada: el CLI espera a que termine antes de seguir. Lo que mantiene esto dentro del presupuesto no es desacoplarlo, sino que cada paso es barato.</p></div>
-          <div class="cost"><span class="free">0 tokens</span><span class="lat">~340 ms medidos (ver AGENTS.md)</span></div>
+          <div class="cost"><span class="free">0 tokens</span><span class="lat">~220 ms medidos (ver AGENTS.md)</span></div>
         </div>
         <div class="stage">
           <div class="n">02</div>
           <div><h4>Extracci&oacute;n de hechos</h4>
-            <p>El mismo proceso del hook lee el transcript desde la marca de agua anterior, no desde el principio. Cruza con <code>git status</code>, <code>diff --stat</code> y <code>log</code>. Escribe <code>quipu.json</code>. Esto es la mayor parte de los ~340 ms de la etapa anterior, no una etapa aparte con su propio presupuesto.</p></div>
+            <p>El mismo proceso del hook lee el transcript desde la marca de agua anterior, no desde el principio. Cruza con <code>git status</code>, <code>diff --stat</code> y <code>log</code>. Escribe <code>estado.json</code> y <code>relevo.md</code>. Esto es la mayor parte de los ~220 ms de la etapa anterior, no una etapa aparte con su propio presupuesto.</p></div>
           <div class="cost"><span class="free">0 tokens</span><span class="lat">incluido arriba</span></div>
         </div>
         <div class="stage">
@@ -373,7 +373,7 @@
         </div>
       </div>
       <p>Las etapas 1 a 3 son el caso com&uacute;n: corren en cada turno, no cuestan nada y no se notan. La etapa 4 corre pocas veces por sesi&oacute;n. La etapa 5 corre una vez al abrir.</p>
-      <p>La raz&oacute;n por la que nada de esto a&ntilde;ade latencia percibida es estructural, no un truco de optimizaci&oacute;n: el hook <code>Stop</code> se dispara <em>despu&eacute;s</em> de que el agente ya te contest&oacute;, as&iacute; que la respuesta nunca espera. Hoy (F1) corre en l&iacute;nea, s&iacute;ncrono, y le alcanza con quedar bien por debajo del presupuesto de 1,5 s &mdash; medido en ~340 ms. Desacoplarlo con una cola y un worker aparte es la mejora que figura en F2 si alguna vez el presupuesto deja de alcanzar; no hace falta todav&iacute;a.</p>
+      <p>La raz&oacute;n por la que nada de esto a&ntilde;ade latencia percibida es estructural, no un truco de optimizaci&oacute;n: el hook <code>Stop</code> se dispara <em>despu&eacute;s</em> de que el agente ya te contest&oacute;, as&iacute; que la respuesta nunca espera. Hoy (F1) corre en l&iacute;nea, s&iacute;ncrono, y le alcanza con quedar bien por debajo del presupuesto de 1,5 s &mdash; medido en ~220 ms (PR #37 redujo los subprocesos de git de 9 a 3). Desacoplarlo con una cola y un worker aparte es la mejora que figura en F2 si alguna vez el presupuesto deja de alcanzar; no hace falta todav&iacute;a.</p>
       <p>Hay un disparo garantizado aparte del normal: el hook <code>PreCompact</code>, que salta cuando el CLI est&aacute; por compactar su contexto por estar lleno &mdash; la se&ntilde;al nativa de &laquo;me estoy quedando sin espacio&raquo;, y exactamente el momento en que el quipu debe estar fresco. <code>SessionEnd</code> hace lo mismo al cerrar. Entre los dos, el escenario que m&aacute;s duele &mdash; se corta la cuota a mitad de algo &mdash; queda cubierto con un atraso m&aacute;ximo de un turno.</p>
     </section>
 
@@ -452,11 +452,12 @@
       <h3>El quipu sigue a la rama, no al directorio</h3>
       <p>En un equipo cada persona vive en su rama, y una sola persona salta entre tres. Un &uacute;nico quipu por carpeta mezclar&iacute;a tareas sin relaci&oacute;n: haces <code>checkout</code> a <code>feat/pagos</code> y el agente arranca leyendo lo que dejaste en <code>feat/auth</code>, que es peor que no leer nada.</p>
       <pre><code>.tambo/
-  ramas/
-    feat-jwt-refresh/quipu.md    <span class="c">&larr; activo</span>
-    feat-pagos/quipu.md          <span class="c">&larr; dormido, intacto</span>
-    main/quipu.md
-  sub/                           <span class="c">quipus hijos ef&iacute;meros</span></code></pre>
+  branches/
+    feat-jwt-refresh/relevo.md   <span class="c">&larr; activo</span>
+    feat-jwt-refresh/estado.json
+    feat-pagos/relevo.md         <span class="c">&larr; dormido, intacto</span>
+    main/relevo.md
+  historia/                      <span class="c">entries.jsonl (append-only)</span></code></pre>
       <p>Chaski resuelve la rama antes de leer o escribir. Volver a una rama que dejaste hace una semana te devuelve su contexto tal como estaba &mdash; que es, de hecho, el caso de relevo m&aacute;s com&uacute;n de todos y no ten&iacute;a nada que ver con las cuotas.</p>
 
       <h3>Lo que el equipo cambi&oacute; mientras no mirabas</h3>
@@ -507,7 +508,7 @@
 
       <h3>La soluci&oacute;n result&oacute; mejor que el plan original</h3>
       <p>Si Chaski no puede llamar a un modelo, queda una opci&oacute;n que no se me hab&iacute;a ocurrido: <strong>no llamar a ninguno, y pedirle el resumen al agente que ya est&aacute; en la sesi&oacute;n.</strong></p>
-      <p>El hook <code>Stop</code> de Claude Code acepta <code>decision: "block"</code> con un <code>reason</code>, que mantiene al agente trabajando con una instrucci&oacute;n m&aacute;s. En vez de que Chaski invoque un modelo por fuera, le dice al agente que ten&eacute;s abierto: <em>antes de terminar, actualiz&aacute; <code>.tambo/quipu.md</code> con el estado</em>. Eso es uso interactivo &mdash; una sesi&oacute;n que tú iniciaste, haciendo una tarea m&aacute;s &mdash; y no toca ninguna cl&aacute;usula de automatizaci&oacute;n.</p>
+      <p>El hook <code>Stop</code> de Claude Code acepta <code>decision: "block"</code> con un <code>reason</code> (o <code>additionalContext</code>), que mantiene al agente trabajando con una instrucci&oacute;n m&aacute;s. En vez de que Chaski invoque un modelo por fuera, le dice al agente que ten&eacute;s abierto: <em>antes de terminar, actualiz&aacute; el relevo con el estado</em>. Eso es uso interactivo &mdash; una sesi&oacute;n que tú iniciaste, haciendo una tarea m&aacute;s &mdash; y no toca ninguna cl&aacute;usula de automatizaci&oacute;n.</p>
       <p>Y es t&eacute;cnicamente superior, no un premio de consuelo. El agente en sesi&oacute;n <strong>ya tiene toda la conversaci&oacute;n en contexto y en cach&eacute;</strong>: no hay que reenviarle un delta, no hay que reconstruirle nada, y su resumen es m&aacute;s preciso que el de un modelo externo leyendo un transcript desde afuera. Pedirle 150 palabras cuesta una fracci&oacute;n de un turno normal.</p>
       <div class="grid2">
         <div class="cell">
@@ -564,8 +565,8 @@
           <thead><tr><th>Proveedor</th><th>Eventos que importan</th><th>Config</th><th>Estado</th></tr></thead>
           <tbody>
             <tr><td>Claude Code</td><td class="wrap"><code>SessionStart</code> &middot; <code>Stop</code> &middot; <code>PreCompact</code> &middot; <code>SessionEnd</code> &middot; <code>SubagentStop</code> &middot; <code>StopFailure</code></td><td class="num">~/.claude/settings.json</td><td><span class="tag t-ok">doc. oficial</span></td></tr>
-            <tr><td>Antigravity (<code>agy</code>)</td><td class="wrap"><code>SessionStart</code> &middot; <code>PreInvocation</code> &middot; <code>PostToolUse</code> &middot; <code>PostInvocation</code> &middot; <code>Stop</code></td><td class="num">~/.gemini/config/hooks.json</td><td><span class="tag t-warn">a validar</span></td></tr>
-            <tr><td>Codex CLI</td><td class="wrap"><code>SessionStart</code> &middot; <code>Stop</code> &middot; <code>PreCompact</code> &middot; <code>SubagentStop</code>, con modelo de confianza propio</td><td class="num">~/.codex/config.toml</td><td><span class="tag t-warn">a validar</span></td></tr>
+            <tr><td>Antigravity (<code>agy</code>)</td><td class="wrap"><code>SessionStart</code> &middot; <code>PreInvocation</code> &middot; <code>PostToolUse</code> &middot; <code>PostInvocation</code> &middot; <code>Stop</code></td><td class="num">~/.gemini/config/hooks.json</td><td><span class="tag t-ok">validado</span></td></tr>
+            <tr><td>Codex CLI</td><td class="wrap"><code>SessionStart</code> &middot; <code>Stop</code> &middot; <code>PreCompact</code> &middot; <code>SubagentStop</code>, con modelo de confianza propio</td><td class="num">~/.codex/config.toml</td><td><span class="tag t-ok">validado</span></td></tr>
             <tr><td>Gemini CLI</td><td class="wrap">hooks nativos, con <code>hooks migrate</code> desde Claude Code</td><td class="num">~/.gemini/settings.json</td><td><span class="tag t-flat">solo Code Assist</span></td></tr>
             <tr><td>Copilot &middot; Cursor &middot; opencode &middot; Amp</td><td class="wrap">por determinar</td><td class="num">&mdash;</td><td><span class="tag t-flat">futuro</span></td></tr>
           </tbody>
@@ -586,7 +587,7 @@
             <tr><td class="wrap">Hooks pasados por <code>--settings</code> inline</td><td class="wrap"><span class="tag t-crit">no disparan</span> La bandera carga settings, pero <code>SessionStart</code> y <code>Stop</code> no se emiten en modo <code>-p</code>.</td></tr>
             <tr><td class="wrap">Hooks a nivel de usuario en <code>~/.claude/settings.json</code>, con <code>claude -p</code></td><td class="wrap"><span class="tag t-crit">no disparan</span> Confirmado con la config real: el modo headless no emite estos eventos.</td></tr>
             <tr><td class="wrap">Rutas POSIX de Git Bash (<code>/tmp/...</code>) en el comando del hook</td><td class="wrap"><span class="tag t-warn">no resuelven</span> En Windows hay que registrar rutas nativas. Un instalador escrito en Git Bash producir&iacute;a hooks que no corren.</td></tr>
-            <tr><td class="wrap">Payload real de <code>Stop</code> en sesi&oacute;n interactiva</td><td class="wrap"><span class="tag t-flat">sin validar</span> Requiere una sesi&oacute;n interactiva; queda como primer paso de la implementaci&oacute;n. Los campos est&aacute;n documentados en detalle.</td></tr>
+            <tr><td class="wrap">Payload real de <code>Stop</code> en sesi&oacute;n interactiva</td><td class="wrap"><span class="tag t-ok">validado</span> Verificado en sesi&oacute;n interactiva y cubierto con fixtures en <code>test/fixtures/</code>.</td></tr>
           </tbody>
         </table>
       </div>
@@ -598,7 +599,7 @@
         <table>
           <thead><tr><th>L&iacute;mite</th><th>Valor</th><th>Consecuencia</th></tr></thead>
           <tbody>
-            <tr><td>Presupuesto del hook <code>Stop</code></td><td class="num">1,5 s compartido</td><td class="wrap">Compartido con <code>SessionEnd</code>, hasta 60 s. Un hook que se pasa del presupuesto se cancela y se pierde el relevo. Hoy el hook corre s&iacute;ncrono en l&iacute;nea y mide ~340 ms, con margen de sobra; a ~4.000-6.000 archivos modificados en un turno ese margen se agota y el relevo entero se pierde &mdash; l&iacute;mite conocido, sin encolado todav&iacute;a.</td></tr>
+            <tr><td>Presupuesto del hook <code>Stop</code></td><td class="num">1,5 s compartido</td><td class="wrap">Compartido con <code>SessionEnd</code>, hasta 60 s. Un hook que se pasa del presupuesto se cancela y se pierde el relevo. Hoy el hook corre s&iacute;ncrono en l&iacute;nea y mide ~220 ms, con margen de sobra; ante miles de archivos modificados, <code>src/lib/budget.mjs</code> aplica recorte controlado de hechos declar&aacute;ndolo en el relevo, manteniendo la ejecuci&oacute;n en ~220-340 ms sin perder el relevo.</td></tr>
             <tr><td>Stdout inyectado</td><td class="num">10 000 caracteres</td><td class="wrap">Por encima de eso, Claude Code guarda la salida en un archivo y al modelo le llega una ruta y un fragmento. El presupuesto del quipu deja de ser una buena pr&aacute;ctica y pasa a ser un requisito de funcionamiento.</td></tr>
           </tbody>
         </table>
@@ -612,9 +613,9 @@
         <table>
           <thead><tr><th>Ruta</th><th>Lector</th><th>Presupuesto</th><th>Contenido</th></tr></thead>
           <tbody>
-            <tr><td><code>.tambo/quipu.md</code></td><td class="wrap">el agente, al arrancar</td><td class="num">&le;1200 tok</td><td class="wrap">Tarea, decisiones vivas, qu&eacute; qued&oacute; a medias, siguiente paso.</td></tr>
-            <tr><td><code>.tambo/quipu.json</code></td><td class="wrap">Chaski</td><td class="num">sin l&iacute;mite</td><td class="wrap">Hechos, marca de agua, atribuci&oacute;n, firma.</td></tr>
-            <tr><td><code>.tambo/historia/</code></td><td class="wrap">bajo demanda</td><td class="num">append-only</td><td class="wrap">Decisiones hist&oacute;ricas con fecha. No se inyecta nunca entera.</td></tr>
+            <tr><td><code>.tambo/branches/&lt;rama&gt;/relevo.md</code></td><td class="wrap">el agente, al arrancar</td><td class="num">&le;1200 tok</td><td class="wrap">Tarea, decisiones vivas, qu&eacute; qued&oacute; a medias, siguiente paso.</td></tr>
+            <tr><td><code>.tambo/branches/&lt;rama&gt;/estado.json</code></td><td class="wrap">Chaski</td><td class="num">sin l&iacute;mite</td><td class="wrap">Hechos, marca de agua, atribuci&oacute;n, firma.</td></tr>
+            <tr><td><code>.tambo/historia/entries.jsonl</code></td><td class="wrap">bajo demanda</td><td class="num">append-only</td><td class="wrap">Decisiones hist&oacute;ricas con fecha. No se inyecta nunca entera.</td></tr>
           </tbody>
         </table>
       </div>
@@ -634,12 +635,12 @@ avis&aacute; de la contradicci&oacute;n en vez de confiar en este texto.</code><
       <div class="threat">
         <h4>El quipu es texto no confiable que se inyecta en el contexto de otro agente <span class="tag t-crit">cr&iacute;tico</span></h4>
         <p>Chaski construye, por dise&ntilde;o, un canal por el que un archivo del repositorio entra autom&aacute;ticamente al contexto de un agente con permisos de escritura. Cualquiera que pueda escribir en <code>.tambo/</code> &mdash; un repo compartido, un worktree, el <code>postinstall</code> de una dependencia, un pull request &mdash; puede dejar ah&iacute; instrucciones que el siguiente agente leer&aacute; como parte de su tarea.</p>
-        <p class="mit">Contenci&oacute;n: el pre&aacute;mbulo declara el bloque como datos y no como instrucciones; el quipu se firma con HMAC contra una clave local en <code>~/.chaski/key</code> que nunca se versiona, y si la firma no valida se inyecta igual pero rotulado <code>quipu no verificado &mdash; tratar con sospecha</code> en lugar de fallar en silencio; <code>.tambo/</code> entra en <code>.gitignore</code> por defecto, as&iacute; que no viaja entre m&aacute;quinas salvo que alguien lo decida expl&iacute;citamente; y la inyecci&oacute;n tiene techo de tama&ntilde;o, de modo que un quipu inflado no puede desplazar al resto del contexto.</p>
+        <p class="mit">Contenci&oacute;n: el pre&aacute;mbulo declara el bloque como datos y no como instrucciones; el quipu se firma con HMAC contra una clave local en <code>~/.chaski/clave</code> que nunca se versiona, y si la firma no valida se inyecta igual pero rotulado <code>relevo no verificado &mdash; tratar con sospecha</code> en lugar de fallar en silencio; <code>.tambo/</code> entra en <code>.gitignore</code> por defecto, as&iacute; que no viaja entre m&aacute;quinas salvo que alguien lo decida expl&iacute;citamente; y la inyecci&oacute;n tiene techo de tama&ntilde;o, de modo que un quipu inflado no puede desplazar al resto del contexto.</p>
       </div>
       <div class="threat">
         <h4>Captura accidental de secretos <span class="tag t-crit">cr&iacute;tico</span></h4>
         <p>El transcript contiene todo lo que pas&oacute; por la sesi&oacute;n: lo que pegaste, lo que un comando imprimi&oacute;, el <code>.env</code> que el agente abri&oacute;. Un relevo ingenuo lo copia a un archivo en disco y, si hay s&iacute;ntesis, se lo manda a un tercero.</p>
-        <p class="mit">Contenci&oacute;n: el filtro corre <strong>antes de escribir</strong>, no solo antes de enviar &mdash; porque un secreto en <code>.tambo/quipu.md</code> ya es una fuga aunque nunca salga de la m&aacute;quina. Detecta formatos conocidos de credencial, cadenas de alta entrop&iacute;a, l&iacute;neas con forma de asignaci&oacute;n de variable sensible y lo que el usuario agregue en <code>redact</code>. Lo removido deja una marca visible (<code>[redactado: token]</code>) para que nadie confunda una redacci&oacute;n con un dato ausente.</p>
+        <p class="mit">Contenci&oacute;n: el filtro corre <strong>antes de escribir</strong>, no solo antes de enviar &mdash; porque un secreto en <code>.tambo/branches/&lt;rama&gt;/relevo.md</code> ya es una fuga aunque nunca salga de la m&aacute;quina. Detecta formatos conocidos de credencial, cadenas de alta entrop&iacute;a, l&iacute;neas con forma de asignaci&oacute;n de variable sensible y lo que el usuario agregue en <code>redact</code>. Lo removido deja una marca visible (<code>[redactado: token]</code>) para que nadie confunda una redacci&oacute;n con un dato ausente.</p>
       </div>
       <div class="threat">
         <h4>Chaski mismo es c&oacute;digo que se ejecuta autom&aacute;ticamente <span class="tag t-warn">medio</span></h4>
@@ -708,7 +709,7 @@ avis&aacute; de la contradicci&oacute;n en vez de confiar en este texto.</code><
       <p class="sub">Una herramienta invisible tiene que ganarse el derecho a serlo.</p>
       <p>Chaski corre solo, escribe archivos solo y le pasa informaci&oacute;n a un modelo solo. Eso exige m&aacute;s transparencia que una herramienta que el usuario invoca a mano, no menos:</p>
       <ul>
-        <li><strong>El primer uso no pide configuraci&oacute;n.</strong> <code>npx chaski init</code> detecta qu&eacute; hay instalado, engancha lo que puede y queda funcionando en modo <code>local</code>. Una herramienta que exige decidir seis cosas antes de mostrar valor no se adopta.</li>
+        <li><strong>El primer uso no pide configuraci&oacute;n.</strong> <code>npm install -g "@cristobalbn/chaski"</code> y <code>chaski init</code> detecta qu&eacute; hay instalado, engancha lo que puede y queda funcionando en modo <code>local</code>. Una herramienta que exige decidir seis cosas antes de mostrar valor no se adopta.</li>
         <li><strong>Nada ocurre en silencio.</strong> El quipu dice qui&eacute;n lo escribi&oacute;, cu&aacute;ndo y en qu&eacute; modo. Si est&aacute; viejo, se nota; si no se pudo sintetizar, lo dice; si algo se redact&oacute;, queda la marca.</li>
         <li><strong>Los errores explican y proponen.</strong> No &laquo;ENOENT&raquo;, sino qu&eacute; archivo falt&oacute;, por qu&eacute; se buscaba ah&iacute; y qu&eacute; comando lo arregla.</li>
         <li><strong><code>chaski doctor</code> es la pieza central de confianza</strong>, no un extra de diagn&oacute;stico: qu&eacute; hooks est&aacute;n registrados y d&oacute;nde, qu&eacute; sale de la m&aacute;quina, cu&aacute;ndo se escribi&oacute; el quipu por &uacute;ltima vez, qu&eacute; se gast&oacute; esta semana.</li>
@@ -727,7 +728,7 @@ avis&aacute; de la contradicci&oacute;n en vez de confiar en este texto.</code><
       <div class="grid2">
         <div class="cell">
           <h4>El modelo no puede escribir hechos</h4>
-          <p>Hechos e intenci&oacute;n son campos separados en <code>quipu.json</code>, y el Markdown se renderiza desde ah&iacute;. La s&iacute;ntesis solo puede escribir en su propio campo. Un modelo que alucine &laquo;los tests pasan&raquo; no tiene d&oacute;nde poner esa frase &mdash; el estado de los tests se lee del exit code y de ning&uacute;n otro lado.</p>
+          <p>Hechos e intenci&oacute;n son campos separados en <code>estado.json</code>, y el Markdown se renderiza desde ah&iacute;. La s&iacute;ntesis solo puede escribir en su propio campo. Un modelo que alucine &laquo;los tests pasan&raquo; no tiene d&oacute;nde poner esa frase &mdash; el estado de los tests se lee del exit code y de ning&uacute;n otro lado.</p>
         </div>
         <div class="cell">
           <h4>Nada autom&aacute;tico entra a git</h4>
@@ -797,7 +798,7 @@ avis&aacute; de la contradicci&oacute;n en vez de confiar en este texto.</code><
             </tr>
             <tr>
               <td>Hook cancelado por timeout</td>
-              <td class="wrap">El presupuesto de <code>Stop</code> es de 1,5 s compartidos. Hoy (F1) el hook trabaja en l&iacute;nea, s&iacute;ncrono, y se mantiene en ~340 ms con margen de sobra. Encolar y hacer spawn detached (F2) queda para cuando ese margen no alcance.</td>
+              <td class="wrap">El presupuesto de <code>Stop</code> es de 1,5 s compartidos. Hoy (F1) el hook trabaja en l&iacute;nea, s&iacute;ncrono, y se mantiene en ~220 ms con margen de sobra (con recorte en <code>budget.mjs</code> ante miles de archivos). Encolar y hacer spawn detached (F2) queda para cuando ese margen no alcance.</td>
               <td class="wrap">Medici&oacute;n manual documentada en AGENTS.md antes y despu&eacute;s de tocar <code>capture.mjs</code>. No hay todav&iacute;a un test de latencia automatizado en CI &mdash; es una mejora pendiente, no algo ya verificado.</td>
             </tr>
             <tr>
@@ -859,7 +860,7 @@ avis&aacute; de la contradicci&oacute;n en vez de confiar en este texto.</code><
             <li>Quipu por rama y aviso de divergencia con upstream</li>
             <li>Filtro de secretos antes de escribir &mdash; desde el primer d&iacute;a, no despu&eacute;s</li>
             <li><code>.gitignore</code> impuesto por <code>init</code>; respaldo y <code>uninstall</code> reversible</li>
-            <li><code>npx chaski init</code>, <code>doctor</code> y <code>uninstall</code></li>
+            <li><code>chaski init</code>, <code>doctor</code>, <code>probe</code>, <code>version</code> y <code>uninstall</code></li>
           </ul>
         </div>
       </div>
@@ -881,7 +882,7 @@ avis&aacute; de la contradicci&oacute;n en vez de confiar en este texto.</code><
           <ul>
             <li>Quipus hijos, promoci&oacute;n y lock de un solo escritor</li>
             <li>Resoluci&oacute;n de worktrees</li>
-            <li>Parseo de l&iacute;mites, <code>chaski next</code>, reserva <code>synth-only</code>, <code>chaski cost</code></li>
+            <li>Parseo de l&iacute;mites, <code>chaski next</code> y <code>chaski cost</code> (reserva <code>synth-only</code> descartada por ToS)</li>
           </ul>
         </div>
       </div>
@@ -900,7 +901,7 @@ avis&aacute; de la contradicci&oacute;n en vez de confiar en este texto.</code><
     </section>
 
     <footer>
-      Borrador para discusi&oacute;n. Los n&uacute;meros de costo y latencia son estimaciones de dise&ntilde;o y hay que medirlos contra uso real. El soporte de hooks de Codex est&aacute; confirmado como existente, pero su contrato de payload a&uacute;n no se valid&oacute; contra la herramienta.
+      Documento de dise&ntilde;o y arquitectura de Chaski. Los contratos de payload y transcript de Claude Code, Codex CLI y Antigravity CLI est&aacute;n validados emp&iacute;ricamente y cubiertos por tests de contrato en <code>test/fixtures/</code>.
     </footer>
 
   </main>

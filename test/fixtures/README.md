@@ -3,8 +3,9 @@
 Payloads de hooks y transcripts de los tres CLIs soportados.
 
 **Son sintéticos, no capturas literales.** La estructura, los nombres de campo
-y los tipos de evento se tomaron de capturas reales hechas el 2026-10-31 con
-`chaski probe`; el contenido es inventado. Un transcript real lleva rutas con
+y los tipos de evento se tomaron de capturas reales hechas entre el 2026-10-31 y
+el 2026-11-07 con `chaski probe`; el contenido es inventado. Un transcript real
+lleva rutas con
 el nombre de usuario y la conversación completa de alguien, y esto es un
 repositorio público.
 

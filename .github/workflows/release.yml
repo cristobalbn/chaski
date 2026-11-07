@@ -54,6 +54,10 @@ jobs:
       - name: Verificar coherencia entre tag, package.json y CHANGELOG.md
         shell: bash
         run: |
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::El commit actual no pertenece a la rama protegida main. Todo release debe fusionarse primero en main mediante Pull Request."
+            exit 1
+          fi
           pkg_ver=$(node -e "console.log(require('./package.json').version)")
           expected_tag="v$pkg_ver"
           if [[ "${GITHUB_REF:-}" == refs/tags/v* ]] && [ "${GITHUB_REF_NAME}" != "$expected_tag" ]; then

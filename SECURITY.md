@@ -26,8 +26,9 @@ se ejecuta sola en cada turno de tus sesiones.
 - **Leer:** el transcript de tus sesiones, la salida de `git` en tu proyecto,
   y sus propios archivos de configuración.
 - **Escribir:** `.tambo/` dentro del proyecto, `~/.chaski/`, los archivos de
-  configuración de los CLIs que habilitaste, y `.gitignore`, `AGENTS.md` y
-  `.claude/skills/relevo/` durante `init`.
+  configuración de los CLIs que habilitaste, y `.gitignore`, `AGENTS.md`,
+  `.claude/skills/relevo/` y `.agents/skills/relevo/` durante `init`, así como
+  `decisiones/` cuando ejecutas explícitamente `chaski share`.
 - **Red:** ninguna. chaski no hace ninguna petición de red, nunca.
 
 ### Qué NO hace
@@ -67,7 +68,7 @@ un comando que tus CLIs van a ejecutar solos. Para que puedas verificarlo:
 `chaski doctor` imprime el comando exacto registrado en cada configuración —
 son unas diez líneas. Revísalo después de instalar y después de cada
 actualización. Si prefieres no confiar en un paquete publicado, clona el
-repositorio y ejecuta desde el código fuente: son ~2.000 líneas sin dependencias.
+repositorio y ejecuta desde el código fuente: son ~3.100 líneas sin dependencias.
 
 ## Versiones soportadas
 

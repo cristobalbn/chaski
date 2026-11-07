@@ -20,8 +20,22 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - `chaski share [tema] [--yes]`: publica la narrativa de la rama actual en un
   archivo único `decisiones/YYYY-MM-DD-<tema>.md`, pasando nuevamente el filtro
   de secretos y exigiendo confirmación interactiva salvo con `--yes`.
-- `chaski version` / `chaski --version`: imprime la versión instalada; `doctor`
+- `chaski version` / `chaski --version` / `chaski -v`: imprime la versión instalada; `doctor`
   también la incluye en su encabezado.
+
+### Empaquetado y distribución en npm
+- Publicación en el registro público de npm bajo `@cristobalbn/chaski` manteniendo
+  el comando global `chaski`.
+- Workflow `.github/workflows/release.yml` con Trusted Publishing (OIDC en npmjs.com
+  vía `id-token: write` y `--provenance`) o secret `NPM_TOKEN`, automatizando la
+  creación de tags `vX.Y.Z` y GitHub Releases con notas extraídas de `CHANGELOG.md`
+  tras verificar que el commit pertenezca a `main`.
+- Verificación de sincronización en `.github/workflows/test.yml` con avisos
+  automáticos en PRs si se modifican `src/` o `skill/` sin incrementar `version` en
+  `package.json` o si npm está desfasado respecto a `main`.
+- Configuración de `.gitattributes` forzando `eol=lf` en ejecutables con shebang
+  (`#!/usr/bin/env node`), evitando fallos en Linux/macOS al empaquetar desde Windows.
+- Normalización del campo `bin.chaski` en `package.json` y archivo `.github/CODEOWNERS`.
 
 ### Rendimiento y extractores de transcript
 - Reducción de subprocesos de `git` en `capture.mjs` e `inject.mjs`: la rama se
@@ -82,10 +96,12 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Promoción de los resultados de subagentes: al terminar, su conclusión sube
   al relevo del padre con atribución, y si no terminó por `end_turn` se avisa
   que puede no haber acabado. Su exploración se descarta.
-- Suite de 95 tests con `node:test`, sin dependencias: contrato de payload y
-  de transcript por CLI, corpus de 15 formatos de credencial, invariantes del
-  relevo, firma, escritura atómica y lectura incremental. Los fixtures son
-  sintéticos: la forma viene de capturas reales, el contenido es inventado.
+- Suite de 193 tests con `node:test` (42 suites), sin dependencias: contrato de
+  payload y de transcript por CLI, nuevos comandos (`next`, `cost`, `why`,
+  `share`, `version`), presupuesto de tiempo (`budget.mjs`), corpus de 15 formatos
+  de credencial, invariantes del relevo, firma, escritura atómica y lectura
+  incremental. Los fixtures son sintéticos: la forma viene de capturas reales, el
+  contenido es inventado.
 - `chaski probe`: instala una sonda que vuelca el payload crudo de los hooks de
   cada CLI, para cerrar los formatos no documentados y aportar fixtures.
 
@@ -95,8 +111,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   mensajes al usuario siguen en español, y el léxico del producto también
   (`chaski`, `.tambo/`, `relevo`, `quipu`).
 - Los módulos pasan a `capture.mjs`, `inject.mjs`, `cli.mjs`, `lib/paths.mjs`,
-  `lib/facts.mjs`, `lib/secrets.mjs` y `lib/relay.mjs`; el estado vive en
-  `.tambo/branches/<rama>/`.
+  `lib/facts.mjs`, `lib/secrets.mjs`, `lib/relay.mjs`, `lib/ask.mjs` y
+  `lib/budget.mjs`; el estado vive en `.tambo/branches/<rama>/`.
 - La API pública va en inglés: subcomandos, flags y claves de `chaski.json`.
   Los identificadores internos, los comentarios y los mensajes siguen en
   español, y el léxico del producto (`chaski`, `.tambo/`, `relevo`) también,

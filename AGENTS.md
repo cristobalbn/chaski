@@ -41,12 +41,12 @@ público. Lo que se prueba es la forma, no el contenido.
 
 ## Reglas para escribir tests
 
-- **Ningún test toca el `HOME` real.** `cli.mjs` escribe en `~/.claude/`,
-  `~/.codex/` y `~/.gemini/`; un test que no redirija `HOME`/`USERPROFILE` a un
-  directorio descartable modifica la configuración real de quien corre la
-  suite. `test/install.test.mjs` ya arma un `HOME` de usar y tirar por caso —
-  sigue ese patrón para cualquier test nuevo que llame a `init`, `doctor` o
-  `uninstall`.
+- **Ningún test toca el `HOME` real.** `cli.mjs` y `capture.mjs` escriben en
+  `~/.chaski/`, `~/.claude/`, `~/.codex/` y `~/.gemini/`; un test que no redirija
+  `HOME`/`USERPROFILE` a un directorio descartable modifica la configuración
+  real de quien corre la suite. `test/install.test.mjs` ya arma un `HOME` de usar
+  y tirar por caso — sigue ese patrón para cualquier test nuevo que llame a
+  `init`, `doctor` o `uninstall`.
 - **Una aserción negativa necesita la prueba del caso positivo.** Afirmar que
   algo *no aparece* (un secreto, una clave vieja, un patrón) no demuestra nada
   si ese algo no estaba en el fixture para empezar: el test pasa siempre,
@@ -96,9 +96,11 @@ salen de lo que falló durante esa ronda, no de la teoría.
 
 ## Nunca commitees a main
 
-`main` está protegida y exige pull request. Es lo que la gente instala con
-`npm install -g github:cristobalbn/chaski`, así que un commit roto ahí es un
-commit roto en la máquina de otro.
+`main` está protegida y exige pull request, checks de CI en los tres sistemas
+operativos y revisión de Code Owner (`@cristobalbn`). Es la base que se publica
+en npm (`@cristobalbn/chaski`) y lo que se instala con
+`npm install -g "@cristobalbn/chaski"` o `github:cristobalbn/chaski`, así que un
+commit roto ahí es un commit roto en la máquina de otro.
 
 ```bash
 git checkout -b fix/lo-que-sea     # feat/ fix/ docs/ test/ chore/
@@ -219,7 +221,7 @@ por ese test o por uno de punta a punta: la suite verde no te va a avisar.
 
 | Qué | Límite | Consecuencia de pasarse |
 |---|---|---|
-| Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Usamos ~340 ms, y el presupuesto propio de `budget.mjs` recorta trabajo antes de llegar al límite |
+| Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Medido: ~219 ms de mediana (2 subprocesos de git en árbol limpio tras PR #37), y el presupuesto propio de `budget.mjs` (1.100 ms) recorta trabajo antes de llegar al límite |
 | Tamaño del relevo inyectado | 10.000 caracteres | Claude Code manda una ruta en vez del contenido. `MAX_CHARS` está en 6.000 |
 | Lectura del transcript | 8 MB por corrida | Protege el presupuesto de latencia |
 | Limpieza de huérfanos | 1 vez al día | Listar ramas es otro subproceso de git |
@@ -242,15 +244,32 @@ herramienta existe para evitar.
 ## Estructura
 
 ```
-src/capture.mjs      hook de captura — orquesta, no contiene lógica
-src/inject.mjs       hook de inyección — único código en el camino crítico
-src/cli.mjs          init / doctor / next / cost / why / share / uninstall / probe
-src/lib/paths.mjs    rutas, ramas, lock por mkdir, detección de entorno
-src/lib/facts.mjs    extracción desde git y transcript
-src/lib/secrets.mjs  filtro de secretos y rutas excluidas
-src/lib/relay.mjs    render, firma HMAC, escritura atómica, presupuesto
-skill/SKILL.md       instrucciones de la petición «relevo»
+src/cli.mjs          ~1.050 lín. — init / doctor / next / cost / why / share / probe / uninstall / version
+src/capture.mjs      ~550 lín.   — hook de captura (Stop, SubagentStop): orquesta git, transcripts, cuota, costos e historia
+src/inject.mjs       ~200 lín.   — hook de inyección (SessionStart): camino crítico, detecta deriva de commits y archivos
+src/lib/facts.mjs    ~570 lín.   — extracción defensiva de hechos desde git (status, log, diff, upstream) y transcripts
+src/lib/paths.mjs    ~320 lín.   — rutas, slugs de ramas (branchSlug), lock por mkdir, detección de entorno
+src/lib/relay.mjs    ~300 lín.   — render de Markdown, firma HMAC SHA-256 y escritura atómica (writeAtomic)
+src/lib/ask.mjs      ~190 lín.   — petición proactiva de narrativa (shouldAsk), debounces y payloads por CLI
+src/lib/secrets.mjs  ~150 lín.   — filtro de secretos y rutas excluidas antes de escribir a disco
+src/lib/budget.mjs   ~65 lín.    — reloj global y timeouts derivados por subproceso (STOP_HOOK_BUDGET_MS = 1100)
+src/capturar.mjs     ~25 lín.    — puente de compatibilidad hacia capture.mjs
+src/leer.mjs         ~20 lín.    — puente de compatibilidad hacia inject.mjs
+skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo»
 ```
+
+### Archivos de datos y persistencia
+
+- **En el proyecto (`.tambo/`, en `.gitignore`):**
+  - `.tambo/branches/<slug>/estado.json` — hechos, narrativa, marca de agua y firma HMAC.
+  - `.tambo/branches/<slug>/relevo.md` — Markdown inyectado al iniciar sesión.
+  - `.tambo/historia/entries.jsonl` — histórico append-only de narrativas (consultado por `chaski why`).
+- **En el repositorio (versionado en git, opt-in):**
+  - `decisiones/<YYYY-MM-DD>-<tema>.md` — decisiones compartidas explícitamente con `chaski share`.
+- **Globales del usuario (`~/.chaski/`):**
+  - `~/.chaski/clave` — clave local HMAC (permisos `0600`).
+  - `~/.chaski/quota.json` — registro de agotamiento de cuotas por CLI (leído por `chaski next`).
+  - `~/.chaski/cost.json` — contabilidad de turnos extra pedidos y narrativas (leído por `chaski cost`).
 
 ## Al escribir código aquí
 
@@ -301,14 +320,15 @@ eso ya produjo un bug — un `café.txt` llegaba al relevo como
 
 No son intercambiables. Lo que funciona en uno falla en silencio en otro.
 
-| | Claude Code | Antigravity (`agy`) |
-|---|---|---|
-| Config | `~/.claude/settings.json` | `~/.gemini/config/hooks.json` |
-| Organización | por evento | por propietario, luego evento |
-| Campos del payload | snake_case | **camelCase** |
-| Directorio | `cwd` | `workspacePaths` (array) |
-| Transcript | `transcript_path` | `transcriptPath` |
-| Salida del hook | texto plano | **JSON con `injectSteps`** |
+| | Claude Code | Codex CLI | Antigravity (`agy`) |
+|---|---|---|---|
+| Config | `~/.claude/settings.json` | `~/.codex/config.toml` + `hooks.json` | `~/.gemini/config/hooks.json` |
+| Organización | por evento | TOML `[hooks]` + JSON por evento | por propietario, luego evento |
+| Campos del payload | snake_case | snake_case | **camelCase** |
+| Directorio | `cwd` | `cwd` | `workspacePaths` (array) |
+| Transcript | `transcript_path` | `transcript_path` | `transcriptPath` |
+| Salida en `SessionStart` | texto plano | texto plano | **JSON con `injectSteps`** |
+| Salida al pedir narrativa en `Stop` | `hookSpecificOutput.additionalContext` | `{ decision: "block", reason }` | **`{ decision: "continue", reason }`** |
 
 La diferencia de salida es la trampa. A `agy` hay que devolverle:
 
