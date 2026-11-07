@@ -196,8 +196,8 @@ describe('Codex actual: comandos reales y resultados confirmados', () => {
 describe('contrato de transcript: Antigravity', () => {
   const r = transcriptFacts(fixture('agy.transcript.jsonl'), 0, {});
 
-  test('cuenta los turns de USER_INPUT y PLANNER_RESPONSE', () => {
-    assert.equal(r.turns, 2);
+  test('cuenta el turno en USER_INPUT, sin sumar los PLANNER_RESPONSE', () => {
+    assert.equal(r.turns, 1, 'contó las respuestas del planner además del inicio del turno');
   });
 
   test('extrae el CommandLine de los pasos RUN_COMMAND', () => {
@@ -211,6 +211,92 @@ describe('contrato de transcript: Antigravity', () => {
 
   test('toma el último mensaje de PLANNER_RESPONSE', () => {
     assert.match(r.lastMessage ?? '', /fallan en auth/);
+  });
+});
+
+describe('Antigravity actual: tool_calls y pasos GENERIC', () => {
+  const r = transcriptFacts(fixture('agy-tool-calls.transcript.jsonl'), 0, {});
+  const parse = (steps) => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-agy-contract-'));
+    try {
+      const path = join(dir, 'transcript.jsonl');
+      writeFileSync(path, steps.map((step, step_index) =>
+        JSON.stringify({ step_index, ...step })).join('\n') + '\n');
+      return transcriptFacts(path, 0, {});
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  };
+
+  test('un turno con varias rondas de herramientas se cuenta una sola vez', () => {
+    assert.equal(r.turns, 1);
+    assert.equal(r.lastMessage, 'El chequeo de tipos fallo en auth.');
+  });
+
+  test('extrae comandos de tool_calls y su código de salida desde GENERIC', () => {
+    assert.deepEqual(r.commands.map(({ cmd, exit }) => ({ cmd, exit })), [
+      { cmd: 'npm test -- auth', exit: 0 },
+      { cmd: 'npx tsc --noEmit', exit: 2 },
+    ]);
+    assert.deepEqual(r.filesRead, ['/example/project/src/auth.js']);
+  });
+
+  test('un error de read_file no contamina el resultado de run_command', () => {
+    const result = parse([
+      {
+        type: 'PLANNER_RESPONSE', status: 'DONE',
+        tool_calls: [
+          { name: 'read_file', args: { Path: '/no/existe.json' } },
+          { name: 'run_command', args: { CommandLine: 'npm test' } },
+        ],
+      },
+      {
+        type: 'GENERIC', status: 'ERROR',
+        content: 'Created At: 2026-11-07T20:00:00Z\nCompleted At: 2026-11-07T20:00:01Z\nEncountered error in step execution: file does not exist',
+      },
+      {
+        type: 'GENERIC', status: 'DONE',
+        content: 'Created At: 2026-11-07T20:00:00Z\nCompleted At: 2026-11-07T20:00:01Z\nCommand exited with code 0.\n\nCommand output:\nOK\n',
+      },
+    ]);
+    assert.equal(result.commands.length, 1);
+    assert.equal(result.commands[0].exit, 0);
+  });
+
+  test('una llamada pendiente o en segundo plano no se presenta como exit 0', () => {
+    const pending = parse([
+      {
+        type: 'PLANNER_RESPONSE', status: 'DONE',
+        tool_calls: [{ name: 'run_command', args: { CommandLine: 'npm run dev' } }],
+      },
+      {
+        type: 'GENERIC', status: 'DONE',
+        content: 'Created At: 2026-11-07T20:00:00Z\nCommand is still running in the background (task-1).',
+      },
+    ]);
+    assert.equal(pending.commands[0].cmd, 'npm run dev');
+    assert.equal(pending.commands[0].exit, null);
+  });
+
+  test('lee solo la cabecera previa a Command output y desenrolla args en JSON compacto', () => {
+    const token = ['sk', '-', 'a'.repeat(32)].join('');
+    const result = parse([
+      {
+        type: 'PLANNER_RESPONSE', status: 'DONE',
+        tool_calls: [{
+          name: 'run_command',
+          args: { CommandLine: JSON.stringify(`npm test --token=${token}`) },
+        }],
+      },
+      {
+        type: 'GENERIC', status: 'DONE',
+        content: 'Created At: 2026-11-07T20:00:00Z\nCompleted At: 2026-11-07T20:00:01Z\nCommand exited with code 0.\n\nCommand output:\nCommand exited with code 9.\n',
+      },
+    ]);
+    assert.equal(result.commands[0].exit, 0);
+    assert.match(result.commands[0].cmd, /^npm test --token=/);
+    assert.match(result.commands[0].cmd, /redactado/);
+    assert.ok(!result.commands[0].cmd.includes(token));
   });
 });
 
@@ -1462,6 +1548,20 @@ describe('no pedir la narrativa de más', () => {
     assert.match(shouldAsk({ hook_event_name: 'Stop' }, e, sinContabilizar, {}) ?? '',
       /turnos desde la última narrativa/,
       'esta es la primera captura tras escribirla: aquí sí corresponde avisar una vez');
+  });
+
+  test('cambiar de sesión reinicia la base de turnsAtNarrative', () => {
+    // Una sesión previa con 34 turnos dejaba turnsAtNarrative en 34; al abrir
+    // una sesión nueva donde turns arranca en 8, 8 - 34 daba -26 y bloqueaba
+    // la petición por turnos hasta superar los 34 de la sesión anterior.
+    const vieja = new Date(Date.now() - 60 * 60_000).toISOString();
+    const e = { ...base(), session: 'sesion-nueva', turns: 8, narrativeWrittenAt: vieja };
+    const previo = {
+      session: 'sesion-anterior', narrativeStamp: vieja,
+      turnsAtNarrative: 34, head: e.head,
+    };
+    assert.match(shouldAsk({ hook_event_name: 'Stop' }, e, previo, {}) ?? '',
+      /van 8 turnos desde la última narrativa/);
   });
 
   test('la primera línea se lee como una petición, no como un error', () => {

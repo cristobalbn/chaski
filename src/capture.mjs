@@ -156,7 +156,12 @@ function main() {
     // narrativa. Resultado: la pedía cada vez que expiraba el debounce, para
     // siempre. Con `turns` en 2.049 y el contador en 0, se veía en cada turno.
     const narrativaNueva = (estado.narrativeWrittenAt ?? null) !== (previo.narrativeStamp ?? null);
-    estado.turnsAtNarrative = narrativaNueva ? (estado.turns ?? 0) : (previo.turnsAtNarrative ?? 0);
+    // `turns` se reinicia en cada sesión nueva; arrastrar `turnsAtNarrative`
+    // de la sesión anterior dejaba `turns - turnsAtNarrative` en negativo y
+    // postergaba la petición tantos turnos como hubiera durado la sesión previa.
+    const previosEnSesion = mismaSesion && (previo.turnsAtNarrative ?? 0) <= (estado.turns ?? 0)
+      ? (previo.turnsAtNarrative ?? 0) : 0;
+    estado.turnsAtNarrative = narrativaNueva ? (estado.turns ?? 0) : previosEnSesion;
     estado.narrativeStamp = estado.narrativeWrittenAt ?? null;
 
     writeAtomic(relayPath(cwd), md);
