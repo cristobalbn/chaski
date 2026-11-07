@@ -120,13 +120,15 @@ try {
   else if (accion === 'cost') cost();
   else if (accion === 'why') why(process.argv.slice(3));
   else if (accion === 'share') share(process.argv.slice(3));
+  else if (accion === 'version' || accion === '--version' || accion === '-v') version();
   else {
-    console.log('uso: chaski [init|doctor|uninstall|probe|next|cost|why|share]');
-    console.log('  next   muestra qué CLI está disponible y qué quedó pendiente');
-    console.log('  cost   muestra el gasto externo ($0) y los turnos extra de chaski');
-    console.log('  why    busca decisiones pasadas en .tambo/historia/ y decisiones/');
-    console.log('  share  publica una decisión del relevo en decisiones/ (con confirmación)');
-    console.log('  probe  captura el payload real de los hooks de cada CLI');
+    console.log('uso: chaski [init|doctor|uninstall|probe|next|cost|why|share|version]');
+    console.log('  next     muestra qué CLI está disponible y qué quedó pendiente');
+    console.log('  cost     muestra el gasto externo ($0) y los turnos extra de chaski');
+    console.log('  why      busca decisiones pasadas en .tambo/historia/ y decisiones/');
+    console.log('  share    publica una decisión del relevo en decisiones/ (con confirmación)');
+    console.log('  probe    captura el payload real de los hooks de cada CLI');
+    console.log('  version  imprime la versión instalada de chaski');
     process.exitCode = 1;
   }
 } catch (e) {
@@ -501,7 +503,7 @@ function ensureAgentsMd(cwd) {
 // -------------------------------------------------------------- doctor
 
 function doctor() {
-  console.log('\nchaski doctor\n');
+  console.log(`\nchaski doctor (v${pkgVersion()})\n`);
 
   console.log('CLIs y hooks');
   for (const [name, cli] of Object.entries(CLIS)) {
@@ -1037,6 +1039,15 @@ function backup(ruta) {
   if (!existsSync(ruta)) return;
   const bak = ruta + '.chaski-backup';
   if (!existsSync(bak)) copyFileSync(ruta, bak);
+}
+
+function version() {
+  console.log(`chaski ${pkgVersion()}`);
+}
+
+function pkgVersion() {
+  const pkg = readJson(resolve(AQUI, '..', 'package.json'), {}) ?? {};
+  return pkg.version ?? '0.0.0';
 }
 
 function pad(s) { return String(s).padEnd(15); }

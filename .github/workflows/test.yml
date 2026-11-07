@@ -48,3 +48,34 @@ jobs:
       # git es dependencia de runtime: los hechos salen de ahí.
       - name: Comprobar que git está disponible
         run: git --version
+
+      # Cuando entra un PR a main, recuerda en el resumen de GitHub Actions si
+      # la versión en npm o el último tag quedaron atrás respecto a main.
+      - name: Estado de sincronización con npm y tags
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest' && matrix.node == '22'
+        shell: bash
+        run: |
+          pkg_ver=$(node -e "console.log(require('./package.json').version)")
+          npm_ver=$(npm view chaski version 2>/dev/null || echo "no-publicado")
+          last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "sin-tags")
+          {
+            echo "### Sincronización GitHub ↔ npm"
+            echo ""
+            echo "| Fuente | Versión |"
+            echo "|---|---|"
+            echo "| \`package.json\` en \`main\` | \`$pkg_ver\` |"
+            echo "| Último tag en GitHub | \`$last_tag\` |"
+            echo "| Registro público de npm (\`chaski\`) | \`$npm_ver\` |"
+            echo ""
+            if [ "$npm_ver" != "$pkg_ver" ] || [ "$last_tag" != "v$pkg_ver" ]; then
+              echo "> **Recordatorio:** \`main\` avanzó o aún no está publicada la versión \`$pkg_ver\` en npm/tags."
+              echo "> Para publicar en GitHub Releases y npm:"
+              echo "> \`\`\`bash"
+              echo "> npm version patch   # o minor / major, tras actualizar CHANGELOG.md"
+              echo "> git push origin main --follow-tags"
+              echo "> \`\`\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$npm_ver" != "$pkg_ver" ]; then
+            echo "::notice title=Sincronizar npm::main tiene package.json v$pkg_ver y npm tiene '$npm_ver'. Sube un tag vX.Y.Z o ejecuta npm publish para actualizar npm."
+          fi

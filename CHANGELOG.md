@@ -5,6 +5,37 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.0] - 2026-11-07
+
+### Comandos y herramientas de sesión
+- `chaski next`: lee `~/.chaski/quota.json` (alimentado cuando un hook detecta
+  un corte por `rate_limit`) y el `estado.json` de la rama actual para indicar
+  a qué CLI disponible cambiar y qué archivos o pasos quedaron pendientes.
+- `chaski cost`: reporta el gasto externo (`0 tokens · $0.00`, porque chaski
+  no invoca modelos ni APIs externas) y contabiliza en `~/.chaski/cost.json`
+  los turnos extra pedidos por chaski y las narrativas escritas por cada CLI.
+- `chaski why [tema]`: busca decisiones pasadas en `.tambo/historia/entries.jsonl`
+  (registro append-only donde `capture.mjs` preserva cada narrativa antes de que
+  se reemplace), en las ramas activas y en `decisiones/`.
+- `chaski share [tema] [--yes]`: publica la narrativa de la rama actual en un
+  archivo único `decisiones/YYYY-MM-DD-<tema>.md`, pasando nuevamente el filtro
+  de secretos y exigiendo confirmación interactiva salvo con `--yes`.
+- `chaski version` / `chaski --version`: imprime la versión instalada; `doctor`
+  también la incluye en su encabezado.
+
+### Rendimiento y extractores de transcript
+- Reducción de subprocesos de `git` en `capture.mjs` e `inject.mjs`: la rama se
+  resuelve una sola vez por corrida, el `HEAD` corto se toma de `git log -5` y
+  `git status --porcelain --branch` entrega en un único subproceso los archivos
+  sucios, la referencia upstream y los commits entrantes (`behind N`). En árbol
+  limpio con upstream, los subprocesos bajan de 9 a 3 y la mediana de captura
+  baja de 366 ms a 219 ms.
+- Extractores de transcript actualizados para los formatos vigentes de Codex
+  (`exec_command` / `shell_command` emparejados con `function_call_output` por
+  `call_id`, ignorando el JavaScript interno de code mode) y Antigravity
+  (`tool_calls` en `PLANNER_RESPONSE` emparejados con pasos `GENERIC`, contando
+  el turno en `USER_INPUT`).
+
 ### Uso unificado del relevo
 - Petición común **«relevo»** en Claude Code, Codex y agy, también mediante
   **«guarda el relevo»** y **«actualiza el relevo»**. La skill distingue guardar
@@ -251,11 +282,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   Claude Code (3 MB, 743 turnos), Antigravity (2 turnos) y Codex (119 KB,
   8 turnos).
 
-### No implementado todavía
-El documento de diseño describe estas piezas; el código no las tiene. Están
-registradas como issues.
-
-- Disparo automático de la narrativa desde los hooks. Hoy la escribe el agente
-  al pedir «relevo» o al cerrar un bloque según sus instrucciones. Ver el issue #10.
-- `chaski next`, `chaski cost`, `chaski why` y `chaski share`. Ver #12.
-- Reserva de proveedor como `synth-only`. Ver #12.
+### Descartado por términos de uso
+- Reserva de proveedor como `synth-only`: invocar una suscripción de consumidor
+  desde un hook en segundo plano (`claude -p`, `codex exec`, `agy -p`) está
+  prohibido por los términos de uso de los proveedores. En su lugar, la
+  narrativa se pide dentro de la sesión interactiva activa.

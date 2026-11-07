@@ -1441,3 +1441,59 @@ describe('comandos next, cost, why y share', () => {
     }
   });
 });
+
+describe('contrato de empaquetado npm y sincronización con GitHub', () => {
+  const raiz = join(AQUI, '..');
+  const pkg = JSON.parse(readFileSync(join(raiz, 'package.json'), 'utf8'));
+
+  test('npm run check verifica todos los archivos .mjs de src/ y src/lib/', () => {
+    const checkCmd = pkg.scripts?.check ?? '';
+    const mjsRaiz = readdirSync(SRC).filter((f) => f.endsWith('.mjs')).map((f) => `src/${f}`);
+    const mjsLib = readdirSync(join(SRC, 'lib')).filter((f) => f.endsWith('.mjs')).map((f) => `src/lib/${f}`);
+    for (const rel of [...mjsRaiz, ...mjsLib]) {
+      assert.ok(checkCmd.includes(rel),
+        `package.json scripts.check no verifica "${rel}"`);
+    }
+  });
+
+  test('los puntos de entrada con shebang usan LF y nunca CRLF', () => {
+    // Si se publica a npm desde Windows con CRLF en la primera línea, Linux y
+    // macOS fallan al ejecutar el binario con "env: 'node\r': No such file".
+    for (const f of ['cli.mjs', 'capture.mjs', 'inject.mjs']) {
+      const contenido = readFileSync(join(SRC, f), 'utf8');
+      assert.ok(contenido.startsWith('#!/usr/bin/env node\n'),
+        `src/${f} debe iniciar con #!/usr/bin/env node y salto LF (no CRLF)`);
+    }
+    const gitattributes = readFileSync(join(raiz, '.gitattributes'), 'utf8');
+    assert.match(gitattributes, /eol=lf/);
+  });
+
+  test('package.json, CHANGELOG.md y workflows protegen la publicación en GitHub y npm', () => {
+    assert.equal(pkg.scripts?.prepublishOnly, 'npm run check && npm test');
+    assert.equal(pkg.publishConfig?.access, 'public');
+    assert.ok(Array.isArray(pkg.files) && pkg.files.includes('src') && pkg.files.includes('skill'));
+    assert.ok(!pkg.files.includes('test') && !pkg.files.includes('.tambo'));
+
+    const changelog = readFileSync(join(raiz, 'CHANGELOG.md'), 'utf8');
+    assert.ok(changelog.includes(`## [${pkg.version}]`),
+      `CHANGELOG.md no tiene una sección ## [${pkg.version}] para la versión actual de package.json`);
+
+    const releaseYml = readFileSync(join(raiz, '.github', 'workflows', 'release.yml'), 'utf8');
+    assert.match(releaseYml, /npm publish/);
+    assert.match(releaseYml, /gh release create/);
+
+    const testYml = readFileSync(join(raiz, '.github', 'workflows', 'test.yml'), 'utf8');
+    assert.match(testYml, /npm view chaski version/);
+  });
+
+  test('chaski version y --version devuelven la versión exacta de package.json', () => {
+    const m = montar('chaski-ver-');
+    try {
+      assert.equal(m.correr('version').trim(), `chaski ${pkg.version}`);
+      assert.equal(m.correr('--version').trim(), `chaski ${pkg.version}`);
+      assert.match(m.correr('doctor'), new RegExp(`v${pkg.version.replace(/\./g, '\\.')}`));
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
