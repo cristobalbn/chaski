@@ -168,6 +168,28 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   `node --check` no veía, que los tests no veían porque la excepción ocurría
   después de escribir el relevo, y que el hook atrapaba saliendo con código 0.
 
+- La petición de la narrativa ya no aparece en cada turno. Tenía dos causas.
+  El contador `turnsAtNarrative` se comparaba contra `previo.narrativeWrittenAt`,
+  pero la narrativa se escribe fuera de banda —directo en `estado.json`—, así
+  que en la captura siguiente los dos valores coincidían y el contador quedaba
+  clavado en cero: con `turns` en 2.049, la política creía que habían pasado
+  2.049 turnos desde la última narrativa y la pedía cada vez que expiraba el
+  debounce. Ahora se compara contra `narrativeStamp`, la marca que el propio
+  código ya contabilizó.
+- Y una narrativa escrita hace menos de 20 minutos no se vuelve a pedir, pase
+  lo que pase. Sin eso, una sesión que mergeaba tres PR recibía una petición
+  por merge: cada uno mueve el HEAD y «hay commits nuevos» disparaba aunque la
+  narrativa fuera de hace un minuto.
+- La primera línea del mensaje se lee como una petición y no como un fallo: es
+  la única que el CLI muestra en su resumen, y la muestra con «Stop hook error»
+  delante.
+- `init` ya no borra el estado de confianza de los hooks de Codex. Codex lo
+  guarda en un `[hooks.state]` con un `trusted_hash` dentro del bloque
+  delimitado de chaski, así que cada `init` obligaba a aceptar los hooks otra
+  vez y a abrir Codex dos veces, porque el permiso recién se aplica en la
+  sesión siguiente. Ahora se rescata y se vuelve a escribir dentro del bloque,
+  para que `uninstall` siga siendo una resta exacta.
+
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,
   `codex exec`, `agy -p`). chaski es para sesiones interactivas.

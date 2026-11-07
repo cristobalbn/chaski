@@ -145,9 +145,18 @@ function main() {
     }
     // Cuántos turnos tenía el relevo cuando se escribió la narrativa: es con
     // esto que se mide si quedó atrás, y lo anota el código, no el modelo.
-    estado.turnsAtNarrative = estado.narrativeWrittenAt !== previo.narrativeWrittenAt
-      ? (estado.turns ?? 0)
-      : (previo.turnsAtNarrative ?? 0);
+    //
+    // Se compara contra `narrativeStamp` —la marca que esta misma función ya
+    // contabilizó— y NO contra `previo.narrativeWrittenAt`. La narrativa se
+    // escribe fuera de banda, directo en estado.json, así que en la captura
+    // siguiente el previo ya trae la marca nueva y los dos valores coinciden:
+    // comparándolos, el contador nunca se movía de cero y la política creía
+    // que habían pasado todos los turnos de la sesión desde la última
+    // narrativa. Resultado: la pedía cada vez que expiraba el debounce, para
+    // siempre. Con `turns` en 2.049 y el contador en 0, se veía en cada turno.
+    const narrativaNueva = (estado.narrativeWrittenAt ?? null) !== (previo.narrativeStamp ?? null);
+    estado.turnsAtNarrative = narrativaNueva ? (estado.turns ?? 0) : (previo.turnsAtNarrative ?? 0);
+    estado.narrativeStamp = estado.narrativeWrittenAt ?? null;
 
     writeAtomic(relayPath(cwd), md);
     writeAtomic(statePath(cwd), JSON.stringify(estado, null, 2));

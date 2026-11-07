@@ -223,8 +223,8 @@ describe('la marca de agua pertenece a una sesión', () => {
       assert.equal(manana.turns, 40,
         `leyó ${manana.turns} de 40 turns: arrastró la marca de agua de la sesión anterior`);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(casa, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      rmSync(casa, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -285,8 +285,8 @@ describe('volver después de que otra persona trabajó', () => {
       assert.match(salida, /refresh\.ts/, 'no señaló el archivo mencionado en la narrative');
       assert.match(salida, /ya esté resuelto/, 'no avisó que lo pendiente puede estar hecho');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(casa, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      rmSync(casa, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -325,8 +325,8 @@ describe('volver después de que otra persona trabajó', () => {
       assert.ok(!/ahora estás en/.test(salida),
         'avisó de un cambio de rama estando en la misma rama');
     } finally {
-      rmSync(d2, { recursive: true, force: true });
-      rmSync(casa2, { recursive: true, force: true });
+      rmSync(d2, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      rmSync(casa2, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -355,8 +355,8 @@ describe('volver después de que otra persona trabajó', () => {
 
       assert.match(salida, /cookie httpOnly/, 'perdió la narrative recién escrita');
     } finally {
-      rmSync(d2, { recursive: true, force: true });
-      rmSync(casa2, { recursive: true, force: true });
+      rmSync(d2, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      rmSync(casa2, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -369,7 +369,7 @@ test('un formato desconocido no lanza', () => {
     const r = transcriptFacts(t, 0, {});
     assert.equal(r.commands.length, 0);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -541,7 +541,7 @@ test('escritura atómica: no deja el archivo a medias', () => {
       { encoding: 'utf8' }).trim();
     assert.equal(sobrantes, 'relevo.md', `quedaron archivos sueltos: ${sobrantes}`);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -646,7 +646,7 @@ describe('el relevo no crece con el tiempo', () => {
         'borró un relevo reciente: una rama puede existir en otro worktree');
       assert.ok(!existsSync(join(ramas, 'feat-vieja-borrada')));
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -681,7 +681,7 @@ describe('el relevo no crece con el tiempo', () => {
       assert.ok(existsSync(join(ramas, 'con-narrative')),
         'borró una narrative que no se puede recuperar');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -701,7 +701,7 @@ describe('el relevo no crece con el tiempo', () => {
       assert.deepEqual(pruneOrphanRelays(dir, { factsOnly: 0 }), []);
       assert.ok(existsSync(d), 'borró con la limpieza desactivada');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -715,7 +715,7 @@ describe('el relevo no crece con el tiempo', () => {
       assert.deepEqual(pruneOrphanRelays(dir, { factsOnly: 1 }), []);
       assert.ok(existsSync(d), 'borró un relevo sin poder consultar git');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -729,7 +729,7 @@ describe('facts de git en casos que rompían', () => {
       g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
       return fn(dir, g);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   };
 
@@ -843,7 +843,7 @@ describe('presupuesto de tiempo del hook', () => {
       const agotado = git(dir, ['rev-parse', '--abbrev-ref', 'HEAD'], { budget: fakeBudget(0) });
       assert.equal(agotado, null, 'con el presupuesto en cero, igual intentó el subproceso');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -865,7 +865,7 @@ describe('presupuesto de tiempo del hook', () => {
         for (let i = 0; i < n; i++) writeFileSync(join(dir, `sucio-${i}.txt`), `${i} modificado\n`);
         return fn(dir);
       } finally {
-        rmSync(dir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
       }
     };
 
@@ -972,8 +972,8 @@ describe('presupuesto de tiempo del hook', () => {
       assert.equal(estado.facts.dirtyTotal, 2000, 'perdió la cuenta real de archivos sucios');
       assert.ok(estado.trimmed.length > 0, 'con 2.000 archivos debería haber recortado algo y decirlo');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(casa, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      rmSync(casa, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -985,7 +985,7 @@ test('gitFacts no lanza fuera de un repo', () => {
     assert.equal(h.isRepo, false);
     assert.deepEqual(h.dirty, []);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -1062,8 +1062,8 @@ describe('el head que escribe capture.mjs es el que lee inject.mjs', () => {
         '(`head`) sigue siendo la que lee inject.mjs (`estado.head`)');
       assert.match(salida, /1 commit\(s\) nuevo/, 'no contó el commit posterior a la captura');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(casa, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      rmSync(casa, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -1095,8 +1095,8 @@ describe('tope de tamaño que aplica inject.mjs al armar la salida', () => {
         `${salida.length} caracteres: inject.mjs no aplicó su propio tope`);
       assert.match(salida, /Recortado/i, 'no avisó del recorte');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(casa, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      rmSync(casa, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -1131,8 +1131,8 @@ describe('inject.mjs con el agent agy', () => {
       assert.match(parsed.injectSteps[0].systemMessage.systemMessage, /contenido de prueba/,
         'el relevo no llegó dentro de injectSteps');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(casa, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      rmSync(casa, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -1176,8 +1176,8 @@ describe('resolución del directorio del proyecto (subcarpeta y carpeta contened
       assert.match(salida, new RegExp(`codex · ${rama}`),
         'inject.mjs desde subcarpeta no leyó el relevo de la raíz del repo');
     } finally {
-      rmSync(ws, { recursive: true, force: true });
-      rmSync(casa, { recursive: true, force: true });
+      rmSync(ws, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      rmSync(casa, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -1192,7 +1192,7 @@ describe('resolución del directorio del proyecto (subcarpeta y carpeta contened
       }
       assert.equal(projectDir(ws), ws, 'eligió un repo arbitrario habiendo varios');
     } finally {
-      rmSync(ws, { recursive: true, force: true });
+      rmSync(ws, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });
@@ -1303,5 +1303,60 @@ describe('cuándo se pide la narrativa', () => {
     assert.match(t, /ruta y la línea/i, 'no pide ser específico');
     assert.match(t, /skill `relevo`/, 'no nombra la skill');
     assert.ok(!/\/relevo/.test(t), 'nombra un comando que no existe en los tres CLIs');
+  });
+});
+
+describe('no pedir la narrativa de más', () => {
+  // Los dos bugs que hacían aparecer el mensaje después de cada prompt. El
+  // usuario los reportó así: "despues de cada prompt aparece un mensaje de
+  // hooks, es un poco molesto".
+  const base = () => ({
+    agent: 'claude code', turns: 2049, head: 'aaa1111',
+    facts: { dirty: [{ ruta: 'a.js' }] }, commands: [],
+    narrative: 'algo', narrativeWrittenAt: new Date().toISOString(),
+  });
+
+  test('una narrativa recién escrita no se vuelve a pedir, ni con commits nuevos', () => {
+    // Una sesión que mergea tres PR recibía una petición por merge: cada uno
+    // mueve el HEAD y "hay commits nuevos" disparaba aunque la narrativa fuera
+    // de hace un minuto y siguiera siendo exacta.
+    const previo = { head: 'bbb2222', turnsAtNarrative: 0, askedAt: null };
+    assert.equal(shouldAsk({ hook_event_name: 'Stop' }, base(), previo, {}), null,
+      'pidió la narrativa recién escrita');
+  });
+
+  test('pasada la frescura, los commits nuevos sí la piden', () => {
+    const e = { ...base(), narrativeWrittenAt: new Date(Date.now() - 60 * 60_000).toISOString() };
+    const previo = { head: 'bbb2222', turnsAtNarrative: 0, askedAt: null };
+    assert.match(shouldAsk({ hook_event_name: 'Stop' }, e, previo, {}) ?? '', /commits nuevos/);
+  });
+
+  test('el contador de turnos se reinicia con una narrativa escrita fuera de banda', () => {
+    // El bug: la narrativa se escribe directo en estado.json, así que en la
+    // captura siguiente `previo.narrativeWrittenAt` ya traía la marca nueva y
+    // coincidía con la del estado. Comparándolos, el contador nunca se movía
+    // de cero: con turns en 2.049 la política creía que habían pasado 2.049
+    // turnos desde la última narrativa y la pedía cada vez que expiraba el
+    // debounce, para siempre. Se compara contra `narrativeStamp`, que es la
+    // marca que el propio código ya contabilizó.
+    const e = { ...base(), narrativeWrittenAt: new Date(Date.now() - 60 * 60_000).toISOString() };
+
+    // Con la marca ya contabilizada y el contador al día: no pide.
+    const alDia = { narrativeStamp: e.narrativeWrittenAt, turnsAtNarrative: 2045, head: e.head };
+    assert.equal(shouldAsk({ hook_event_name: 'Stop' }, e, alDia, {}), null,
+      'pidió con solo 4 turnos desde la narrativa');
+
+    // Con la marca vieja, el contador se reinicia en la captura siguiente, así
+    // que `turnsAtNarrative` queda en `turns` y no quedan turnos de deuda.
+    const sinContabilizar = { narrativeStamp: null, turnsAtNarrative: 0, head: e.head };
+    assert.match(shouldAsk({ hook_event_name: 'Stop' }, e, sinContabilizar, {}) ?? '',
+      /turnos desde la última narrativa/,
+      'esta es la primera captura tras escribirla: aquí sí corresponde avisar una vez');
+  });
+
+  test('la primera línea se lee como una petición, no como un error', () => {
+    // El CLI la muestra con "Stop hook error:" delante, y es la única línea
+    // que aparece en su resumen.
+    assert.match(askText('hay commits nuevos').split('\n')[0], /^chaski pide guardar el relevo/);
   });
 });

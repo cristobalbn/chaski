@@ -261,9 +261,17 @@ términos de los tres proveedores— sino que se le pide al agent que ya está e
 sesión.
 
 Cada petición cuesta un turno de tu conversación, así que los límites son
-conservadores: **12 minutos** entre peticiones, y solo si hay trabajo real
-detrás (archivos sin commitear, commits nuevos o comandos ejecutados) y la
-narrativa falta o quedó **8 turnos** atrás.
+conservadores, y en este orden:
+
+1. **Una narrativa escrita hace menos de 20 minutos no se vuelve a pedir**,
+   pase lo que pase. Es el corte más fuerte: lo que vuelve insufrible a esta
+   función no es pedirla de más en una sesión larga, es pedirla dos veces
+   seguidas.
+2. **12 minutos** de debounce entre peticiones.
+3. Solo si hay trabajo real detrás: archivos sin commitear, commits nuevos o
+   comandos ejecutados.
+4. Y solo si la narrativa falta, quedó **8 turnos** atrás, o hay commits
+   nuevos.
 
 | | |
 |---|---|
