@@ -91,7 +91,7 @@ describe('contrato de transcript: Codex', () => {
   const r = transcriptFacts(fixture('codex.transcript.jsonl'), 0, {});
 
   test('cuenta los turns del rollout', () => {
-    assert.ok(r.turns >= 2, `esperaba al menos 2 turns, hubo ${r.turns}`);
+    assert.equal(r.turns, 1, 'contó los mensajes además del inicio del turno');
   });
 
   test('extrae commands de response_item y de item_completed', () => {
@@ -107,6 +107,89 @@ describe('contrato de transcript: Codex', () => {
 
   test('toma el último mensaje de task_complete', () => {
     assert.match(r.lastMessage ?? '', /fallan en auth/);
+  });
+});
+
+describe('Codex actual: comandos reales y resultados confirmados', () => {
+  const r = transcriptFacts(fixture('codex-code-mode.transcript.jsonl'), 0, {});
+  const parse = (events) => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-codex-contract-'));
+    try {
+      const path = join(dir, 'transcript.jsonl');
+      writeFileSync(path, events.map((payload, ordinal) =>
+        JSON.stringify({ ordinal, type: 'response_item', payload })).join('\n') + '\n');
+      return transcriptFacts(path, 0, {});
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  };
+  const call = (id, args = { cmd: 'npm test' }) => ({
+    type: 'function_call', name: 'exec_command', call_id: id,
+    arguments: JSON.stringify(args),
+  });
+
+  test('un turno con comentarios y respuesta final se cuenta una sola vez', () => {
+    assert.equal(r.turns, 1);
+    assert.equal(r.lastMessage, 'El chequeo de tipos fallo.');
+  });
+
+  test('omite el JavaScript de code mode y conserva los comandos ejecutados', () => {
+    assert.deepEqual(r.commands.map(({ cmd, exit }) => ({ cmd, exit })), [
+      { cmd: 'npm test', exit: 0 },
+      { cmd: 'npx tsc --noEmit', exit: 2 },
+    ]);
+  });
+
+  test('una llamada sin resultado no se presenta como exit 0', () => {
+    const pending = parse([call('pending')]);
+    assert.equal(pending.commands[0].cmd, 'npm test');
+    assert.equal(pending.commands[0].exit, null);
+    const complete = parse([call('done'), {
+      type: 'function_call_output', call_id: 'done',
+      output: JSON.stringify({ exit_code: 0, output: 'passed' }),
+    }]);
+    assert.equal(complete.commands[0].exit, 0);
+  });
+
+  test('un function_call completed tampoco confirma la ejecución del comando', () => {
+    const result = parse([{ ...call('generated'), status: 'completed' }]);
+    assert.equal(result.commands[0].exit, null);
+  });
+
+  test('asocia el resultado por call_id y preserva el código de salida real', () => {
+    const result = parse([call('a'), call('b', { cmd: 'npm run check' }), {
+      type: 'function_call_output', call_id: 'b',
+      output: JSON.stringify({ exit_code: 7, output: 'failed' }),
+    }]);
+    assert.equal(result.commands[0].exit, null);
+    assert.equal(result.commands[1].exit, 7);
+  });
+
+  test('lee la cabecera del resultado, sin confundir el stdout con el exit code', () => {
+    for (const [output, expected] of [
+      ['Chunk ID: demo\nProcess exited with code 3\nOutput:\nexample', 3],
+      ['Chunk ID: demo\nProcess exited with code 0\nOutput:\nProcess exited with code 9', 0],
+      ['Chunk ID: demo\nProcess running with session ID 123\nOutput:\nProcess exited with code 9', null],
+      [JSON.stringify({ session_id: 123, exit_code: null, output: 'still running' }), null],
+    ]) {
+      const result = parse([call('a'), { type: 'function_call_output', call_id: 'a', output }]);
+      assert.equal(result.commands[0].exit, expected);
+    }
+  });
+
+  test('normaliza comandos en argv y redacta después de extraer el script', () => {
+    const token = ['sk', '-', 'a'.repeat(32)].join('');
+    for (const command of [
+      ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', '-Command', 'npm test --token=' + token],
+      ['/bin/bash', '-lc', 'npm test --token=' + token],
+      ['cmd.exe', '/d', '/c', 'npm test --token=' + token],
+      ['npm', 'test', '--token=' + token],
+    ]) {
+      const result = parse([call('a', { command })]);
+      assert.match(result.commands[0].cmd, /^npm test --token=/);
+      assert.match(result.commands[0].cmd, /redactado/);
+      assert.ok(!result.commands[0].cmd.includes(token));
+    }
   });
 });
 
