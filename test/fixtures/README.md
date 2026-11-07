@@ -19,6 +19,7 @@ existen para detectar.
 | `claude-code.transcript.jsonl` | bloques con `tool_use` y `tool_result` |
 | `codex.payload.json` | hook `SessionStart`, Codex CLI 0.166.0 |
 | `codex.transcript.jsonl` | rollout `{timestamp, ordinal, type, payload}` |
+| `codex-code-mode.transcript.jsonl` | formato observado el 2026-11-07: `custom_tool_call` y `CommandExecution`; contenido sintético |
 | `agy.payload.json` | hook `Stop`, Antigravity CLI 1.4.12 |
 | `agy.transcript.jsonl` | pasos con `step_index`, `type` y `content` |
 

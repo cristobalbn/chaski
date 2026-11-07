@@ -306,35 +306,81 @@ function extractRollout(ev, res, config) {
   }
 
   if (ev.type === 'response_item' && kind === 'message') {
-    res.turns++;
+    // Un turno puede incluir usuario, comentarios y respuesta final. Su inicio
+    // ya se contó con task_started; sumarlos adelanta la petición de narrativa.
     if (p.role === 'assistant') {
       const txt = textFrom(p.content);
       if (txt) res.lastMessage = txt;
     }
   }
 
-  // Llamadas a herramientas: aparecen como response_item con tipos de
-  // function/tool call, o anidadas en item_completed.
+  if (kind === 'function_call_output') {
+    const command = res.commands.find((c) => c.id === p.call_id);
+    const exit = rolloutResultExit(p.output);
+    if (command && exit !== null) command.exit = exit;
+    return;
+  }
+
+  // Code mode usa una herramienta llamada exec que ejecuta JavaScript, no un
+  // comando de shell. Sus procesos reales llegan como CommandExecution.
   const item = kind === 'item_completed' ? (p.item ?? {}) : p;
   const name = String(item.name ?? item.type ?? '');
+  const execution = /^(CommandExecution|command_execution|local_shell_call)$/i.test(item.type ?? '');
+  if (!execution && !/(?:^|\.)(exec_command|shell_command|shell|bash|run_command)$/i.test(name)) return;
 
-  if (/shell|command|exec|bash/i.test(name)) {
-    const args = item.arguments ?? item.input ?? item.command ?? '';
-    const bruto = typeof args === 'string' ? args : JSON.stringify(args);
-    const m = /"?command"?\s*:\s*(\[[^\]]*\]|"[^"]*")/i.exec(bruto);
-    let linea = bruto;
-    if (m) {
-      try {
-        const v = JSON.parse(m[1]);
-        linea = Array.isArray(v) ? v.join(' ') : String(v);
-      } catch { linea = m[1]; }
-    }
-    const { texto } = redact(meaningfulLine(linea), config);
-    if (texto) {
-      const fallo = /error|fail/i.test(String(item.status ?? ''));
-      res.commands.push({ cmd: texto, id: item.id ?? ev.ordinal, exit: fallo ? 1 : 0 });
-    }
+  const line = rolloutCommand(item);
+  if (!line) return;
+  const { texto } = redact(meaningfulLine(line), config);
+  if (!texto) return;
+  const id = item.call_id ?? item.id ?? ev.ordinal;
+  const exit = Number.isInteger(item.exit_code) ? item.exit_code
+    : execution && !('exit_code' in item)
+      ? (/error|fail/i.test(item.status ?? '') ? 1 : item.status === 'completed' ? 0 : null)
+      : null;
+  const previous = res.commands.find((c) => c.id === id);
+  if (previous) {
+    previous.cmd = texto;
+    if (exit !== null) previous.exit = exit;
+  } else {
+    // Una llamada generada todavía no es un resultado: sin confirmación,
+    // queda desconocido. Antes se escribía exit 0 por defecto.
+    res.commands.push({ cmd: texto, id, exit });
   }
+}
+
+function rolloutCommand(item) {
+  let args = item.arguments ?? item.input;
+  if (typeof args === 'string') {
+    try { args = JSON.parse(args); } catch { return null; }
+  }
+  const command = args?.cmd ?? args?.command ?? item.command;
+  if (typeof command === 'string') return command;
+  if (!Array.isArray(command) || !command.every((arg) => typeof arg === 'string')) return null;
+
+  // Windows registra el intérprete y sus flags como argv. El script es lo
+  // que informa; serializar todo el array oculta el comando entre escapes.
+  const executable = (command[0] ?? '').split(/[\\/]/).pop();
+  const flag = /^(powershell|pwsh)(\.exe)?$/i.test(executable) ? /^-(command|c)$/i
+    : /^cmd(\.exe)?$/i.test(executable) ? /^\/c$/i
+      : /^(ba|da|z|k)?sh(\.exe)?$/i.test(executable) ? /^-[a-z]*c[a-z]*$/i : null;
+  const at = flag ? command.findIndex((arg, i) => i > 0 && flag.test(arg)) : -1;
+  return (at >= 0 ? command.slice(at + 1) : command).join(' ');
+}
+
+function rolloutResultExit(output) {
+  let result = output;
+  if (typeof output === 'string') {
+    try { result = JSON.parse(output); } catch {}
+  }
+  if (result && typeof result === 'object') {
+    return Number.isInteger(result.exit_code) ? result.exit_code : null;
+  }
+  if (typeof output !== 'string') return null;
+  // El stdout puede contener ejemplos de códigos de salida. Solo la cabecera
+  // generada por la herramienta confirma cómo terminó el proceso.
+  const header = output.split(/^Output:\s*$/m)[0];
+  const match = /^Process exited with code (-?\d+)\s*$/m.exec(header);
+  return match ? Number(match[1]) : null;
 }
 
 function textFrom(contenido) {
