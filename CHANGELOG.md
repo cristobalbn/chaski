@@ -5,6 +5,16 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Uso unificado del relevo
+- Petición común **«relevo»** en Claude Code, Codex y agy, también mediante
+  **«guarda el relevo»** y **«actualiza el relevo»**. La skill distingue guardar
+  de **«continúa desde el relevo»**, que pide leer y retomar el trabajo.
+- `init` actualiza un bloque delimitado de peticiones en `AGENTS.md`, incluso
+  si ya existía una sección de relevo, y conserva el texto fuera de ese bloque.
+- El resumen de instalación, `doctor`, el relevo sin narrativa y el README
+  muestran la petición común. Los atajos nativos siguen disponibles; agy
+  también admite `/relevo` directamente.
+
 ### Agregado
 - Captura de hechos desde git y el transcript de la sesión, sin llamadas a
   modelos: archivos modificados, diff, exit codes de comandos, commits
@@ -155,7 +165,7 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 El documento de diseño describe estas piezas; el código no las tiene. Están
 registradas como issues.
 
-- Disparo automático de la narrativa. Hoy solo se escribe con `/relevo` a
-  mano. Ver el issue #10.
+- Disparo automático de la narrativa desde los hooks. Hoy la escribe el agente
+  al pedir «relevo» o al cerrar un bloque según sus instrucciones. Ver el issue #10.
 - `chaski next`, `chaski cost`, `chaski why` y `chaski share`. Ver #12.
 - Reserva de proveedor como `synth-only`. Ver #12.

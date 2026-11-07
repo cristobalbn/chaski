@@ -1,6 +1,6 @@
 ---
 name: relevo
-description: Actualiza la narrativa del relevo de chaski con el estado del trabajo actual — qué se está haciendo, qué se decidió, qué quedó a medias y cuál es el siguiente paso. Usar al cerrar un bloque de trabajo, antes de una sesión larga, o cuando el usuario lo pida.
+description: Guarda la narrativa de Chaski al pedir «relevo», «guarda el relevo» o «actualiza el relevo», o al cerrar un bloque de trabajo para cambiar de agente. Registra intención, decisiones, pendientes y siguiente paso. No usar para consultas sobre Chaski ni para leer o continuar un relevo existente.
 ---
 
 # Actualizar el relevo
@@ -8,6 +8,17 @@ description: Actualiza la narrativa del relevo de chaski con el estado del traba
 Escribes la parte del relevo que un script no puede deducir: la **intención**.
 Los hechos —archivos tocados, diff, tests, commits— ya los escribió chaski y
 son exactos. No los repitas ni los corrijas.
+
+## Petición común
+
+En Claude Code, Codex y agy, un mensaje que solo diga **«relevo»**, o que pida
+**«guarda el relevo»** o **«actualiza el relevo»**, solicita guardar la narrativa:
+ejecuta los pasos de abajo y confirma al terminar.
+
+**«Continúa desde el relevo»** solicita retomar el trabajo. Lee el relevo de la
+rama actual, contrástalo con el código y continúa con lo pendiente; no ejecutes
+estos pasos de guardado por esa petición. Una pregunta sobre el funcionamiento
+del relevo tampoco solicita sobrescribirlo.
 
 ## Pasos
 
