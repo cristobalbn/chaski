@@ -132,14 +132,15 @@ export function git(cwd, args, opciones = {}) {
 }
 
 /** Directorio de estado de la rama activa. El relevo sigue a la rama, no a la carpeta. */
-export function branchDir(cwd) {
-  const dir = join(tambo(cwd), 'branches', branchSlug(currentBranch(cwd)));
+export function branchDir(cwd, branch = undefined) {
+  const rama = branch === undefined ? currentBranch(cwd) : branch;
+  const dir = join(tambo(cwd), 'branches', branchSlug(rama));
   mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-export function relayPath(cwd) { return join(branchDir(cwd), 'relevo.md'); }
-export function statePath(cwd) { return join(branchDir(cwd), 'estado.json'); }
+export function relayPath(cwd, branch = undefined) { return join(branchDir(cwd, branch), 'relevo.md'); }
+export function statePath(cwd, branch = undefined) { return join(branchDir(cwd, branch), 'estado.json'); }
 
 /** Config y estado global de chaski, fuera de cualquier proyecto. */
 export function globalDir() {

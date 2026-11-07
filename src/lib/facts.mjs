@@ -22,23 +22,24 @@ const MS_POR_ARCHIVO_NUMSTAT = 0.6;
 const RESERVA_DESPUES_DE_NUMSTAT_MS = 200;
 
 /** Hechos de git: rama, archivos sin commitear, diff y divergencia con upstream. */
-export function gitFacts(cwd, config, budget = null) {
+export function gitFacts(cwd, config, budget = null, branch = undefined) {
   const h = {
-    branch: currentBranch(cwd, budget), isRepo: false, dirty: [], commits: [], upstream: null,
+    branch: branch === undefined ? currentBranch(cwd, budget) : branch,
+    isRepo: false, dirty: [], commits: [], upstream: null,
     trimmed: [],
   };
   if (h.branch === null) return h;
   h.isRepo = true;
 
-  // status --porcelain es la fuente PRIMARIA, no numstat. Antes era al
+  // status --porcelain --branch es la fuente PRIMARIA, no numstat. Antes era al
   // revés, y eso es justo el defecto: numstat calcula diff real por archivo
   // y con miles de archivos sin commitear tarda segundos (medido: ~4,5 s con
   // 10.000, contra ~0,1 s de status --porcelain sobre el mismo árbol), más
   // que el presupuesto entero del hook. status ya trae todo lo que el relevo
-  // necesita para la lista y el total — rama, ruta, si es nuevo, incluso
-  // renombres (`viejo -> nuevo`) — y numstat solo agrega el detalle de
-  // líneas +/-, que es justamente lo que un relevo con miles de archivos no
-  // necesita mostrar.
+  // necesita para la lista y el total — rama, upstream, divergencia, ruta, si
+  // es nuevo, incluso renombres (`viejo -> nuevo`) — y numstat solo agrega el
+  // detalle de líneas +/-, que es justamente lo que un relevo con miles de
+  // archivos no necesita mostrar.
   //
   // El parseo NO usa columnas fijas: el stdout llega sin el espacio inicial de
   // la primera línea, así que un slice(3) cortaría un carácter del name.
@@ -48,10 +49,16 @@ export function gitFacts(cwd, config, budget = null) {
   // está limpio, y afirmarlo sería mentir. Por eso se distingue null (no se
   // pudo pedir) de '' (se pidió y no hay nada sucio) en vez de usar `?? ''`
   // como hacían todas las llamadas de esta función en la versión anterior.
-  const status = hasTime(budget, 100) ? git(cwd, ['status', '--porcelain'], { budget }) : null;
+  const status = hasTime(budget, 100)
+    ? git(cwd, ['status', '--porcelain', '--branch'], { budget }) : null;
   const porArchivo = new Map();
+  let statusUpstream = null;
   if (status !== null) {
     for (const linea of status.split('\n')) {
+      if (linea.startsWith('## ')) {
+        statusUpstream = parseStatusBranch(linea);
+        continue;
+      }
       const m = /^\s*(\S{1,2})\s+(.+?)\s*$/.exec(linea);
       if (!m) continue;
       const ruta = m[2].replace(/^"|"$/g, '').split(' -> ').pop();
@@ -122,10 +129,10 @@ export function gitFacts(cwd, config, budget = null) {
   h.dirty = todos.slice(0, 50);
   h.dirtyTotal = todos.length;
 
-  // Divergencia con upstream: la más cara de las tres cadenas (hasta 3
-  // subprocesos) y la de menor prioridad de las cuatro — va último.
+  // Divergencia con upstream: si `status --branch` ya trajo la referencia y el
+  // conteo, solo lanza git cuando upstream efectivamente tiene commits nuevos.
   if (hasTime(budget, 150)) {
-    h.upstream = upstreamDivergence(cwd, h.dirty.map((s) => s.ruta), budget);
+    h.upstream = upstreamDivergence(cwd, h.dirty.map((s) => s.ruta), budget, statusUpstream);
   } else {
     h.trimmed.push('divergencia con upstream: se omitió, no quedaba presupuesto de tiempo');
   }
@@ -134,16 +141,46 @@ export function gitFacts(cwd, config, budget = null) {
 }
 
 /**
+ * Extrae el upstream y cuántos commits tiene por delante de HEAD a partir de
+ * la cabecera `## rama...upstream [ahead X, behind Y]` de `git status --branch`.
+ */
+function parseStatusBranch(linea) {
+  const cuerpo = linea.slice(3).trim();
+  const idx = cuerpo.indexOf('...');
+  if (idx === -1) return { hasUpstream: false };
+  const resto = cuerpo.slice(idx + 3);
+  const m = /^([^\s\[]+)(?:\s+\[([^\]]+)\])?/.exec(resto);
+  if (!m) return { hasUpstream: false };
+  const ref = m[1];
+  const detalle = m[2] ?? '';
+  if (/\bgone\b/.test(detalle)) return { hasUpstream: false };
+  const behind = /\bbehind\s+(\d+)\b/.exec(detalle);
+  return {
+    hasUpstream: true,
+    ref,
+    ahead: behind ? (parseInt(behind[1], 10) || 0) : 0,
+  };
+}
+
+/**
  * Qué hicieron los demás en los archivos que estás tocando.
  * Sale de la información que git ya tiene local: no hace fetch, no usa red.
  */
-function upstreamDivergence(cwd, misArchivos, budget = null) {
-  const up = git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], { budget });
-  if (!up) return null;
-  if (!hasTime(budget)) return null;
+function upstreamDivergence(cwd, misArchivos, budget = null, statusUpstream = null) {
+  let up = null;
+  let ahead = 0;
+  if (statusUpstream) {
+    if (!statusUpstream.hasUpstream) return null;
+    up = statusUpstream.ref;
+    ahead = statusUpstream.ahead;
+  } else {
+    up = git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], { budget });
+    if (!up) return null;
+    if (!hasTime(budget)) return null;
 
-  const cuenta = git(cwd, ['rev-list', '--count', `HEAD..${up}`], { budget });
-  const ahead = parseInt(cuenta ?? '0', 10) || 0;
+    const cuenta = git(cwd, ['rev-list', '--count', `HEAD..${up}`], { budget });
+    ahead = parseInt(cuenta ?? '0', 10) || 0;
+  }
   if (ahead === 0) return { ref: up, ahead: 0, collisions: [] };
   if (!hasTime(budget)) return { ref: up, ahead, collisions: [] };
 
