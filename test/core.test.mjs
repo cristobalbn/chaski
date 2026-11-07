@@ -954,6 +954,49 @@ describe('facts de git en casos que rompían', () => {
       assert.match(md, /300 archivo\(s\)/, 'el relevo miente sobre cuántos hay');
     });
   });
+
+  test('detecta upstream y colisiones desde git status --branch', () => {
+    const remoto = mkdtempSync(join(tmpdir(), 'chaski-remoto-'));
+    try {
+      execFileSync('git', ['init', '--bare', '-q'], { cwd: remoto });
+      conRepo((dir, g) => {
+        writeFileSync(join(dir, 'compartido.txt'), 'v1\n');
+        g('add', '-A'); g('commit', '-qm', 'inicial');
+        const rama = g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+        g('remote', 'add', 'origin', remoto);
+        g('push', '-u', '-q', 'origin', rama);
+
+        const alDia = gitFacts(dir, {});
+        assert.deepEqual(alDia.upstream, { ref: `origin/${rama}`, ahead: 0, collisions: [] });
+
+        // Otro clon empuja un cambio sobre compartido.txt y actualiza refs remotas.
+        const otro = mkdtempSync(join(tmpdir(), 'chaski-otro-'));
+        try {
+          execFileSync('git', ['clone', '-q', remoto, otro]);
+          execFileSync('git', ['config', 'user.email', 'o@o'], { cwd: otro });
+          execFileSync('git', ['config', 'user.name', 'o'], { cwd: otro });
+          writeFileSync(join(otro, 'compartido.txt'), 'v2 remoto\n');
+          execFileSync('git', ['add', '-A'], { cwd: otro });
+          execFileSync('git', ['commit', '-qm', 'remoto'], { cwd: otro });
+          execFileSync('git', ['push', '-q', 'origin', rama], { cwd: otro });
+        } finally {
+          rmSync(otro, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+        }
+
+        g('fetch', '-q', 'origin');
+        writeFileSync(join(dir, 'compartido.txt'), 'v2 local\n');
+
+        const atrasado = gitFacts(dir, {});
+        assert.deepEqual(atrasado.upstream, {
+          ref: `origin/${rama}`,
+          ahead: 1,
+          collisions: ['compartido.txt'],
+        });
+      });
+    } finally {
+      rmSync(remoto, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });
 
 describe('presupuesto de tiempo del hook', () => {

@@ -27,13 +27,14 @@ function main() {
   const budget = createBudget(SESSION_START_BUDGET_MS);
   try {
     const cwd = projectDir(cwdFromPayload());
-    const ruta = relayPath(cwd);
+    const ramaActual = currentBranch(cwd, budget);
+    const ruta = relayPath(cwd, ramaActual);
     if (!existsSync(ruta)) return;
 
     let md = readFileSync(ruta, 'utf8');
     if (!md.trim()) return;
 
-    const estado = readJson(statePath(cwd), {}) ?? {};
+    const estado = readJson(statePath(cwd, ramaActual), {}) ?? {};
     let verificado = estado.signature ? isValidSignature(md, estado.signature) : false;
 
     // El Markdown se renderiza al capturar, así que una narrative escrita
@@ -55,7 +56,7 @@ function main() {
 
     // Si el repo se movió desde que se escribió el relevo, hay que decirlo:
     // un relevo desactualizado presentado como verdad es peor que nada.
-    const deriva = detectDrift(cwd, estado, budget);
+    const deriva = detectDrift(cwd, estado, budget, ramaActual);
     if (deriva) partes.push('', deriva);
 
     partes.push('', CLOSING_MARK);
@@ -98,10 +99,10 @@ function emitir(texto, agent) {
 }
 
 /** ¿Cambió el repo desde que se escribió el relevo? */
-function detectDrift(cwd, estado, budget = null) {
+function detectDrift(cwd, estado, budget = null, rama = undefined) {
   const avisos = [];
 
-  const ramaActual = currentBranch(cwd, budget);
+  const ramaActual = rama === undefined ? currentBranch(cwd, budget) : rama;
   if (estado.facts?.branch && ramaActual && estado.facts.branch !== ramaActual) {
     avisos.push(`- El relevo se escribió en \`${estado.facts.branch}\` y ahora estás en \`${ramaActual}\`.`);
   }

@@ -14,7 +14,7 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, pruneOrphanRelays, existsSync, projectDir } from './lib/paths.mjs';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
@@ -60,7 +60,10 @@ function main() {
     liberar = acquireLock(cwd);
     if (!liberar) return ok();
 
-    const previo = readJson(statePath(cwd), {}) ?? {};
+    const branch = currentBranch(cwd, budget);
+    const rutaEstado = statePath(cwd, branch);
+    const rutaRelevo = relayPath(cwd, branch);
+    const previo = readJson(rutaEstado, {}) ?? {};
 
     // La marca de agua pertenece a UNA sesión y a UN transcript. Si cambia
     // cualquiera de los dos, se lee desde el principio: arrastrar el offset
@@ -73,7 +76,8 @@ function main() {
     const desde = (mismaSesion && mismoTranscript) ? (previo.offset ?? 0) : 0;
 
     const t = transcriptFacts(ev.transcript_path, desde, config, budget);
-    const g = gitFacts(cwd, config, budget);
+    const g = gitFacts(cwd, config, budget, branch);
+    const headFromLog = g.commits?.[0]?.split(' ')[0] || null;
 
     const estado = {
       version: 1,
@@ -88,10 +92,9 @@ function main() {
       turns: (mismaSesion ? (previo.turns ?? 0) : 0) + t.turns,
       facts: g,
       // HEAD al momento de escribir: inject.mjs lo compara para detectar deriva.
-      // Siempre con su propio intento aunque el presupuesto esté muy ajustado:
-      // es el valor más barato y más esencial de todos, y git() ya no lo deja
-      // exceder lo que queda.
-      head: g.isRepo ? (gitHead(cwd, budget) ?? null) : null,
+      // Sale del primer commit de `git log -5` sin lanzar otro subproceso; solo
+      // si el log fue recortado por presupuesto se pide con `gitHead`.
+      head: g.isRepo ? (headFromLog ?? gitHead(cwd, budget) ?? null) : null,
       // Si algún paso de gitFacts se quedó sin presupuesto, se declara aquí
       // -en un campo de hechos, no de narrative- para que el agent siguiente
       // sepa que el relevo es incompleto por diseño y no por error silencioso.
@@ -164,8 +167,8 @@ function main() {
     estado.turnsAtNarrative = narrativaNueva ? (estado.turns ?? 0) : previosEnSesion;
     estado.narrativeStamp = estado.narrativeWrittenAt ?? null;
 
-    writeAtomic(relayPath(cwd), md);
-    writeAtomic(statePath(cwd), JSON.stringify(estado, null, 2));
+    writeAtomic(rutaRelevo, md);
+    writeAtomic(rutaEstado, JSON.stringify(estado, null, 2));
     heartbeat(estado.agent);
     occasionalPrune(cwd, config);
 
@@ -228,7 +231,10 @@ function promote(ev, cwd, config) {
     liberar = acquireLock(cwd);
     if (!liberar) return ok(); // el padre está escribiendo; se pierde esta promoción
 
-    const estado = readJson(statePath(cwd), null);
+    const branch = currentBranch(cwd);
+    const rutaEstado = statePath(cwd, branch);
+    const rutaRelevo = relayPath(cwd, branch);
+    const estado = readJson(rutaEstado, null);
     // Sin relevo del padre no hay dónde promote. Crear uno desde un subagente
     // dejaría un relevo con la conclusión de un hijo y ningún hecho.
     if (!estado) return ok();
@@ -277,8 +283,8 @@ function promote(ev, cwd, config) {
 
     const md = render(estado);
     estado.signature = sign(md);
-    writeAtomic(relayPath(cwd), md);
-    writeAtomic(statePath(cwd), JSON.stringify(estado, null, 2));
+    writeAtomic(rutaRelevo, md);
+    writeAtomic(rutaEstado, JSON.stringify(estado, null, 2));
   } catch (e) {
     process.stderr.write(`chaski: promoción omitida (${e?.message ?? e})\n`);
   } finally {
