@@ -17,7 +17,12 @@ import { execFileSync } from 'node:child_process';
 import { transcriptFacts, gitFacts } from '../src/lib/facts.mjs';
 import { redact, isExcludedPath } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS } from '../src/lib/relay.mjs';
-import { branchSlug, pruneOrphanRelays } from '../src/lib/paths.mjs';
+import { branchSlug, pruneOrphanRelays, git } from '../src/lib/paths.mjs';
+import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
+
+/** Presupuesto falso: `remaining()` fijo, no atado al reloj real. Para
+ * probar decisiones de presupuesto sin depender de cuánto tarda la máquina. */
+const fakeBudget = (ms) => ({ remaining: () => ms, expired: () => ms <= 0, elapsed: () => 0 });
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FIX = join(AQUI, 'fixtures');
@@ -778,6 +783,197 @@ describe('facts de git en casos que rompían', () => {
       const md = render({ writtenAt: new Date().toISOString(), agent: 't', facts: h });
       assert.match(md, /300 archivo\(s\)/, 'el relevo miente sobre cuántos hay');
     });
+  });
+});
+
+describe('presupuesto de tiempo del hook', () => {
+  test('budget.remaining() cuenta hacia atrás y expired() se activa al cruzar el límite', () => {
+    const b = createBudget(50);
+    assert.ok(b.remaining() <= 50 && b.remaining() > 0);
+    assert.equal(b.expired(), false);
+    // No se espera en caliente: se verifica con un presupuesto ya vencido,
+    // no durmiendo el test hasta que el real lo esté.
+    const vencido = createBudget(-1);
+    assert.equal(vencido.expired(), true);
+    assert.ok(vencido.remaining() <= 0);
+  });
+
+  test('effectiveTimeout nunca excede lo que queda del presupuesto', () => {
+    // Antes del arreglo, git() usaba siempre el timeout pedido (4.000 ms) sin
+    // mirar cuánto quedaba del presupuesto del hook (1,5 s compartido): una
+    // sola llamada podía dejar correr un subproceso más tiempo que el
+    // presupuesto entero. Si se revierte a `return timeout` a secas (ignorar
+    // `budget`), este test falla: pide 4.000 y con 80 ms de presupuesto
+    // restante tiene que devolver 80, no 4.000.
+    assert.equal(effectiveTimeout(4000, fakeBudget(80)), 80);
+    // Sin presupuesto (budget null), el comportamiento viejo se conserva.
+    assert.equal(effectiveTimeout(4000, null), 4000);
+    // Con más presupuesto que el timeout pedido, se respeta el timeout.
+    assert.equal(effectiveTimeout(100, fakeBudget(5000)), 100);
+  });
+
+  test('hasTime respeta el piso pedido', () => {
+    assert.equal(hasTime(fakeBudget(200), 100), true);
+    assert.equal(hasTime(fakeBudget(100), 100), false, 'el límite es estricto: > piso, no >=');
+    assert.equal(hasTime(null, 100), true, 'sin presupuesto, nunca se corta');
+  });
+
+  test('git() con el presupuesto ya agotado no intenta el subproceso', () => {
+    // La mitad "ni se intenta" del arreglo. Sin esto, con el presupuesto en
+    // cero git() igual lanzaría el subproceso -- más lento y, en el peor
+    // caso, el mismo defecto que se arregla: una llamada que no debía
+    // correr corriendo igual. Se verifica contra un repo real donde
+    // `rev-parse` SÍ tendría éxito si se intentara: la única explicación de
+    // que vuelva null es que el presupuesto lo frenó antes de spawnear nada.
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-presupuesto-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: dir });
+      // Con un commit: en un repo recién creado `rev-parse HEAD` falla
+      // siempre, y el test habría pasado por el motivo equivocado.
+      execFileSync('git', ['config', 'user.email', 't@t'], { cwd: dir });
+      execFileSync('git', ['config', 'user.name', 't'], { cwd: dir });
+      writeFileSync(join(dir, 'a.txt'), 'x');
+      execFileSync('git', ['add', '-A'], { cwd: dir });
+      execFileSync('git', ['commit', '-qm', 'inicial'], { cwd: dir });
+
+      const sinBudget = git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+      assert.notEqual(sinBudget, null, 'el repo es real; sin budget tiene que responder');
+
+      const agotado = git(dir, ['rev-parse', '--abbrev-ref', 'HEAD'], { budget: fakeBudget(0) });
+      assert.equal(agotado, null, 'con el presupuesto en cero, igual intentó el subproceso');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  describe('gitFacts corta trabajo caro antes de agotar el presupuesto', () => {
+    const conRepoSucio = (n, fn) => {
+      const dir = mkdtempSync(join(tmpdir(), 'chaski-presupuesto-sucio-'));
+      try {
+        execFileSync('git', ['init', '-q'], { cwd: dir });
+        execFileSync('git', ['config', 'user.email', 't@t'], { cwd: dir });
+        execFileSync('git', ['config', 'user.name', 't'], { cwd: dir });
+        writeFileSync(join(dir, 'base.txt'), 'x');
+        // Los archivos sucios van COMMITEADOS y luego modificados, no creados
+        // nuevos: `git diff --numstat` no lista archivos sin seguimiento, así
+        // que un árbol sucio solo de untracked nunca trae el detalle +/- y no
+        // sirve para distinguir "numstat corrió" de "numstat se omitió".
+        for (let i = 0; i < n; i++) writeFileSync(join(dir, `sucio-${i}.txt`), String(i));
+        execFileSync('git', ['add', '-A'], { cwd: dir });
+        execFileSync('git', ['commit', '-qm', 'inicial'], { cwd: dir });
+        for (let i = 0; i < n; i++) writeFileSync(join(dir, `sucio-${i}.txt`), `${i} modificado\n`);
+        return fn(dir);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+
+    test('con presupuesto ajustado, se sacrifica numstat y upstream antes que la rama, el HEAD o la lista', () => {
+      // El orden de sacrificio no es azar: numstat es caro y de poco valor
+      // con miles de archivos (el relevo solo muestra 20 y el total aparte);
+      // rama, HEAD y la lista de sucios son baratos y esenciales. Antes de
+      // este cambio no existía ningún presupuesto: con muchos archivos,
+      // numstat corría siempre entero y podía llevarse todo el hook consigo.
+      conRepoSucio(30, (dir) => {
+        const h = gitFacts(dir, {}, fakeBudget(150));
+
+        assert.equal(h.isRepo, true, 'rama/HEAD: lo más barato, no debería sacrificarse nunca con 150 ms');
+        assert.equal(h.dirty.length, 30, 'la lista de archivos sucios debe sobrevivir el recorte');
+        assert.ok(h.commits.length > 0, 'el log de commits es barato: no debería sacrificarse con 150 ms');
+
+        // numstat se sacrificó: ningún archivo trae +/-, y queda declarado.
+        assert.ok(h.dirty.every((f) => f.mas === null), 'numstat corrió pese al presupuesto ajustado');
+        assert.ok(h.trimmed.some((t) => /numstat/.test(t)), 'no declaró que omitió numstat');
+      });
+    });
+
+    test('con presupuesto amplio (el caso normal), numstat corre completo y nada se declara recortado', () => {
+      // Guarda que el arreglo no degrade el caso de todos los días: un
+      // repo con pocos archivos sucios debe seguir mostrando el detalle de
+      // líneas +/-, igual que antes de que existiera el presupuesto.
+      conRepoSucio(10, (dir) => {
+        const h = gitFacts(dir, {}, createBudget(STOP_HOOK_BUDGET_MS));
+        assert.equal(h.trimmed.length, 0, `se recortó algo sin necesidad: ${JSON.stringify(h.trimmed)}`);
+        assert.ok(h.dirty.some((f) => f.mas !== null), 'numstat no corrió con presupuesto de sobra');
+      });
+    });
+
+    test('sin presupuesto ni para "git status", no se afirma que el árbol está limpio', () => {
+      // El bug que esto evita es más grave que perder detalle: decir "árbol
+      // de trabajo limpio" porque la lista de sucios quedó vacía confunde
+      // "no se comprobó" con "no hay nada". Antes de distinguir null de ''
+      // en el retorno de status, cualquier omisión por presupuesto se leía
+      // como un repo limpio -- la mentira que el relevo existe para evitar.
+      conRepoSucio(5, (dir) => {
+        const h = gitFacts(dir, {}, fakeBudget(80));
+        assert.equal(h.isRepo, true);
+        assert.equal(h.dirtyUnknown, true, 'no detectó que status se omitió');
+        assert.equal(h.dirty.length, 0);
+        assert.ok(h.trimmed.some((t) => /status/.test(t)), 'no declaró que omitió status');
+
+        const md = render({ writtenAt: new Date().toISOString(), agent: 't', facts: h });
+        // La afirmación prohibida es la frase, no la palabra: el aviso
+        // correcto dice "No asumas que está limpio", así que buscar /limpio/
+        // suelto daba rojo contra el comportamiento bueno.
+        assert.ok(!/Árbol de trabajo limpio/i.test(md), 'afirmó "limpio" sin haber comprobado nada');
+        assert.match(md, /no se pudo comprobar/i);
+      });
+    });
+
+    test('el relevo declara el recorte en una sección propia, antes de los hechos', () => {
+      conRepoSucio(20, (dir) => {
+        const h = gitFacts(dir, {}, fakeBudget(150));
+        const md = render({ writtenAt: new Date().toISOString(), agent: 't', facts: h, trimmed: h.trimmed });
+        assert.match(md, /Captura incompleta por presupuesto de tiempo/);
+        const posSeccion = md.indexOf('Captura incompleta');
+        const posHechos = md.indexOf('Estado del código');
+        assert.ok(posSeccion < posHechos, 'el aviso de recorte debe ir antes de los hechos, no después');
+      });
+    });
+  });
+
+  test('extremo real: con miles de archivos modificados, capture.mjs termina muy por debajo del presupuesto compartido de 1,5 s', { timeout: 20_000 }, () => {
+    // Antes de este cambio, medido: ~2,1 s con 5.000 archivos y ~4,3 s con
+    // 10.000 (gitFacts solo; el hook completo, más) -- ambos por encima del
+    // presupuesto de 1,5 s que el hook `Stop` comparte con los demás hooks
+    // del evento, así que Claude Code lo habría cancelado y se habría
+    // perdido el relevo entero de ese turno. Esta prueba usa 2.000 archivos
+    // reales (no un presupuesto falso) para ejercitar el camino completo:
+    // capture.mjs de punta a punta, con el presupuesto real de producción.
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-presupuesto-real-'));
+    const casa = mkdtempSync(join(tmpdir(), 'chaski-presupuesto-real-home-'));
+    const entorno = { ...process.env, HOME: casa, USERPROFILE: casa };
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: dir });
+      execFileSync('git', ['config', 'user.email', 't@t'], { cwd: dir });
+      execFileSync('git', ['config', 'user.name', 't'], { cwd: dir });
+      for (let i = 0; i < 2000; i++) writeFileSync(join(dir, `f${i}.txt`), 'x');
+      execFileSync('git', ['add', '-A'], { cwd: dir });
+      execFileSync('git', ['commit', '-qm', 'inicial'], { cwd: dir });
+      for (let i = 0; i < 2000; i++) writeFileSync(join(dir, `f${i}.txt`), 'x cambiado\n');
+
+      const t0 = Date.now();
+      execFileSync(process.execPath, [join(AQUI, '..', 'src', 'capture.mjs'), 'Stop', 'test'],
+        { input: JSON.stringify({ cwd: dir, session_id: 's1', hook_event_name: 'Stop' }),
+          encoding: 'utf8', env: entorno });
+      const transcurrido = Date.now() - t0;
+
+      assert.ok(transcurrido < 1500,
+        `el hook tardó ${transcurrido} ms, por encima del presupuesto compartido de 1,5 s`);
+
+      const estado = JSON.parse(readFileSync(
+        // La rama se consulta, no se asume: `git init` la nombra según
+        // init.defaultBranch, y dar por hecho "main" es la dependencia de
+        // máquina que CI ya nos encontró una vez.
+        join(dir, '.tambo', 'branches',
+          execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim(),
+          'estado.json'), 'utf8'));
+      assert.equal(estado.facts.dirtyTotal, 2000, 'perdió la cuenta real de archivos sucios');
+      assert.ok(estado.trimmed.length > 0, 'con 2.000 archivos debería haber recortado algo y decirlo');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(casa, { recursive: true, force: true });
+    }
   });
 });
 

@@ -96,6 +96,20 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   relevo cambiaba según el evento. Se normaliza al escribir, y los archivos
   que ya tienen las dos claves convergen solos.
 
+- El hook de captura tiene presupuesto de tiempo propio (`src/lib/budget.mjs`):
+  un reloj global que cada paso consulta antes de lanzar un subproceso, más un
+  timeout por llamada derivado de lo que queda. Con 5.000 archivos modificados
+  el hook pasaba de 2.000 ms y Claude Code lo cancelaba, perdiendo el relevo
+  entero del turno; ahora tarda ~340 ms. Se sacrifica primero lo caro y poco
+  informativo —el detalle `+/-` por archivo, después el log de commits— y la
+  rama, el HEAD, la lista de archivos y su total sobreviven siempre.
+- El recorte se declara en el relevo en una sección propia, con qué se omitió y
+  por qué. Un relevo incompleto presentado como completo es peor que uno
+  recortado.
+- Sin presupuesto ni para `git status`, el relevo ya no dice «árbol de trabajo
+  limpio»: dice que no se pudo comprobar. Confundir «no lo sé» con «no hay
+  nada» era la mentira más cara que podía contar.
+
 ### Verificado contra las herramientas
 - Ninguno de los tres CLIs dispara hooks en modo headless (`claude -p`,
   `codex exec`, `agy -p`). chaski es para sesiones interactivas.

@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { mkdirSync, rmSync, statSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { MIN_GIT_CALL_MS, effectiveTimeout } from './budget.mjs';
 
 export const TAMBO = '.tambo';
 
@@ -51,15 +52,29 @@ function fingerprint(texto) {
 }
 
 /** Rama actual del árbol en cwd, o null si no hay repo. */
-export function currentBranch(cwd) {
-  return git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']);
+export function currentBranch(cwd, budget = null) {
+  return git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'], { budget });
 }
 
 /**
  * Ejecuta git y devuelve stdout, o null ante cualquier fallo.
  * Nunca lanza: un hook que falla le arruina la sesión al usuario.
+ *
+ * `opciones.budget`, si se pasa, hace dos cosas: si ya no queda tiempo para
+ * que valga la pena intentar el subproceso, ni lo lanza (devuelve null sin
+ * costo); y si queda algo pero menos que el `timeout` pedido, el timeout
+ * efectivo se recorta a lo que queda. Antes el timeout por llamada (4.000 ms)
+ * era mayor que el presupuesto entero del hook `Stop` (1,5 s compartido), así
+ * que no protegía nada: una sola llamada cara podía agotar todo el hook. Con
+ * esto, ninguna llamada puede ya exceder lo que queda del presupuesto global,
+ * aunque la estimación de costo de quien la llamó haya sido optimista.
  */
-export function git(cwd, args, timeout = 4000) {
+export function git(cwd, args, opciones = {}) {
+  const { timeout = 4000, budget = null } =
+    typeof opciones === 'number' ? { timeout: opciones } : opciones;
+  // Sin tiempo ni para que valga la pena intentarlo: ni se spawnea.
+  if (budget && budget.remaining() <= MIN_GIT_CALL_MS) return null;
+  const timeoutEfectivo = effectiveTimeout(timeout, budget);
   try {
     return execFileSync('git', [
       // Sin esto, git escapa en octal cualquier ruta con acentos: un
@@ -68,7 +83,7 @@ export function git(cwd, args, timeout = 4000) {
       '-c', 'core.quotepath=false',
       ...args,
     ], {
-      cwd, encoding: 'utf8', timeout,
+      cwd, encoding: 'utf8', timeout: timeoutEfectivo,
       stdio: ['ignore', 'pipe', 'ignore'],
       maxBuffer: 16 * 1024 * 1024,
     }).trim();

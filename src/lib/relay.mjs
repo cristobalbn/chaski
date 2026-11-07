@@ -94,6 +94,22 @@ export function render(estado) {
     L.push('');
   }
 
+  // Igual de prioritario que el corte por cuota, y por la misma razón: cambia
+  // cómo se lee todo lo que sigue. Esto no es "el agent no terminó", es "la
+  // captura de chaski no terminó" -- el turno anterior puede estar completo
+  // y el relevo sobre él, incompleto. Honesto en vez de silencioso: la
+  // alternativa era dejar que el hook se cancelara y perder el relevo entero.
+  if (Array.isArray(estado.trimmed) && estado.trimmed.length) {
+    L.push('## Captura incompleta por presupuesto de tiempo');
+    L.push('');
+    L.push('Este turno tenía demasiados archivos modificados o un árbol git caro de leer, y la captura se quedó sin presupuesto antes de reunir todos los hechos. Se priorizó rama, HEAD, la lista de archivos sin commitear y su total; esto se omitió:');
+    L.push('');
+    for (const t of estado.trimmed) L.push(`- ${t}`);
+    L.push('');
+    L.push('_No es que no haya pasado nada: es que no cupo en el presupuesto de 1,5 s del hook `Stop`, compartido con los demás hooks del evento._');
+    L.push('');
+  }
+
   // --- Narrativa: lo que un script no puede deducir. Va primero porque es
   //     lo que el agent nuevo más necesita, y rotulada como interpretación.
   if (estado.narrative) {
@@ -115,7 +131,12 @@ export function render(estado) {
   L.push('## Estado del código');
   L.push('');
 
-  if (Array.isArray(h.dirty) && h.dirty.length) {
+  if (h.dirtyUnknown) {
+    // No es que esté limpio: no se llegó a preguntar. Afirmar "limpio" aquí
+    // sería la misma clase de mentira que el relevo existe para evitar.
+    L.push('_No se pudo comprobar el estado del árbol de trabajo (sin presupuesto de tiempo). No asumas que está limpio._');
+    L.push('');
+  } else if (Array.isArray(h.dirty) && h.dirty.length) {
     // El total puede ser mayor que lo guardado: el estado topa la lista para
     // no crecer sin límite, pero el relevo debe informar el número real.
     const total = h.dirtyTotal ?? h.dirty.length;
