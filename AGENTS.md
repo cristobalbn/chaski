@@ -221,7 +221,7 @@ por ese test o por uno de punta a punta: la suite verde no te va a avisar.
 
 | Qué | Límite | Consecuencia de pasarse |
 |---|---|---|
-| Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Medido: ~219 ms de mediana (2 subprocesos de git en árbol limpio tras PR #37), y el presupuesto propio de `budget.mjs` (1.100 ms) recorta trabajo antes de llegar al límite |
+| Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Medido: ~219 ms de mediana (3 subprocesos de git en árbol limpio con upstream tras PR #37, o 4 si hay archivos sucios), y el presupuesto propio de `budget.mjs` (1.100 ms) recorta trabajo antes de llegar al límite |
 | Tamaño del relevo inyectado | 10.000 caracteres | Claude Code manda una ruta en vez del contenido. `MAX_CHARS` está en 6.000 |
 | Lectura del transcript | 8 MB por corrida | Protege el presupuesto de latencia |
 | Limpieza de huérfanos | 1 vez al día | Listar ramas es otro subproceso de git |
@@ -268,8 +268,12 @@ skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo»
   - `decisiones/<YYYY-MM-DD>-<tema>.md` — decisiones compartidas explícitamente con `chaski share`.
 - **Globales del usuario (`~/.chaski/`):**
   - `~/.chaski/clave` — clave local HMAC (permisos `0600`).
+  - `~/.chaski/latidos.json` — última ejecución del hook por CLI (leído por `chaski doctor`).
+  - `~/.chaski/ultima-limpieza` — marca de tiempo diaria para limpieza de relevos huérfanos.
   - `~/.chaski/quota.json` — registro de agotamiento de cuotas por CLI (leído por `chaski next`).
   - `~/.chaski/cost.json` — contabilidad de turnos extra pedidos y narrativas (leído por `chaski cost`).
+  - `~/.chaski/config.json` — configuración global opcional del usuario.
+  - `~/.chaski/<cli>-<script>-<evento>.cmd` (o `.sh`) — wrappers generados por `init` para Codex y `agy`.
 
 ## Al escribir código aquí
 
@@ -322,8 +326,9 @@ No son intercambiables. Lo que funciona en uno falla en silencio en otro.
 
 | | Claude Code | Codex CLI | Antigravity (`agy`) |
 |---|---|---|---|
-| Config | `~/.claude/settings.json` | `~/.codex/config.toml` + `hooks.json` | `~/.gemini/config/hooks.json` |
-| Organización | por evento | TOML `[hooks]` + JSON por evento | por propietario, luego evento |
+| Config | `~/.claude/settings.json` | `~/.codex/config.toml` | `~/.gemini/config/hooks.json` |
+| Organización | JSON por evento (`hooks.<Evento>`) | Bloque TOML delimitado (`[[hooks.<Evento>]]` + `[hooks.state]`) | JSON por propietario (`chaski.<Evento>`) |
+| Eventos que registra `init` | `SessionStart`, `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | `SessionStart`, `Stop` | `SessionStart`, `Stop` |
 | Campos del payload | snake_case | snake_case | **camelCase** |
 | Directorio | `cwd` | `cwd` | `workspacePaths` (array) |
 | Transcript | `transcript_path` | `transcript_path` | `transcriptPath` |
