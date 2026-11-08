@@ -297,8 +297,8 @@ conservadores, y en este orden:
 |---|---|
 | Apagarlo | `"askNarrative": false` en `chaski.json` o `chaski.local.json` |
 | Cómo se ve | Cuatro líneas bajo el rótulo **«Stop hook feedback»**. Ese rótulo y el `Ran 1 stop hook` los pinta Claude Code al ejecutar cualquier hook y no se pueden suprimir; lo nuestro es el texto, y es corto a propósito porque ocupa pantalla del usuario. Se emite con `hookSpecificOutput.additionalContext`, que la documentación llama «non-error feedback»: mantiene el turno extra y las protecciones contra bucles sin rotularse como error. En una versión de Claude Code anterior a ese campo la petición no llega — no rompe nada |
-| Dónde funciona | Los tres, con el contrato de cada uno: `decision: "block"` en Claude Code y Codex, `decision: "continue"` en Antigravity, que trata cualquier otro valor como permiso para parar |
-| En Codex | su hook `Stop` se registra **síncrono**, porque un hook en segundo plano no puede bloquear. Esperas la captura (~340 ms) al cerrar cada turno |
+| Dónde funciona | Los tres, con el contrato de cada uno: `hookSpecificOutput.additionalContext` en Claude Code, `decision: "block"` en Codex y `decision: "continue"` en Antigravity, que trata cualquier otro valor como permiso para parar |
+| En Codex | su hook `Stop` se registra **síncrono**, porque un hook en segundo plano no puede bloquear. Esperas la captura (~220 ms) al cerrar cada turno |
 
 ### La primera vez, verifica
 
@@ -380,7 +380,7 @@ eso el modelo es el último recurso y no el primero.
 
 | Archivo | Cuándo corre | Qué hace |
 |---|---|---|
-| `src/capture.mjs` | hooks `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | Lee el transcript desde una marca de agua y git; escribe `relevo.md`, `estado.json` y `.tambo/historia/` |
+| `src/capture.mjs` | hook `Stop` en los tres CLIs; también `SessionEnd`, `PreCompact`, `SubagentStop` y `StopFailure` en Claude Code | Lee el transcript desde una marca de agua y git; escribe `relevo.md`, `estado.json` y `.tambo/historia/` |
 | `src/inject.mjs` | hook `SessionStart` | Imprime el relevo; lo que imprime entra al contexto del agente |
 | `src/cli.mjs` | a mano | `init`, `doctor`, `next`, `cost`, `why`, `share`, `version`, `uninstall`, `probe` |
 | `skill/SKILL.md` | al pedir «relevo» | Instrucciones para que el agente escriba la narrativa |
@@ -431,6 +431,7 @@ Todo tiene valores por defecto razonables. No hace falta configurar nada.
 | `excludePaths` | Rutas que nunca aparecen en el relevo |
 | `pruneAfterDays` | Días antes de borrar el relevo de una rama que ya no existe. Por defecto 30; `0` desactiva la limpieza |
 | `pruneNarrativeAfterDays` | Lo mismo para los relevos que tienen narrativa. Por defecto 90 |
+| `askNarrative` | Si es `false`, desactiva las peticiones automáticas de narrativa en el hook `Stop` |
 
 Los relevos con narrativa viven el triple a propósito: los hechos se
 recalculan desde git en cualquier momento, pero la narrativa existe solo
@@ -484,8 +485,10 @@ tipo `.env`, `*.pem` o `id_rsa` nunca aparecen en el relevo. Lo redactado deja
 marca visible, para que nadie confunda una redacción con un dato ausente.
 
 **Alcance de escritura:** `.tambo/` del proyecto, `~/.chaski/`, y los archivos
-de configuración de los CLIs que habilitaste. En ningún otro lugar. No ejecuta
-scripts del repositorio, no abre puertos y no hace commits.
+de configuración de los CLIs que habilitaste, más `.gitignore`, `AGENTS.md`,
+`.claude/skills/relevo/` y `.agents/skills/relevo/` durante `init` y
+`decisiones/` cuando ejecutas explícitamente `chaski share`. En ningún otro
+lugar. No ejecuta scripts del repositorio, no abre puertos y no hace commits.
 
 Para reportar una vulnerabilidad, ver [SECURITY.md](SECURITY.md).
 
@@ -505,9 +508,9 @@ bloqueos de cuenta — y hay suspensiones documentadas en sus foros. OpenAI apun
 a usar una API key para automatización.
 
 La narrativa la escribe **el agente que ya tienes abierto**, que es uso
-interactivo de una sesión que iniciaste tú. Si prefieres que la genere un
-proceso aparte, configura tu propia API key: esa es la excepción que los
-términos nombran explícitamente.
+interactivo de una sesión que iniciaste tú (los términos solo permiten
+automatización externa mediante una API key propia, pero chaski no necesita
+siquiera eso porque nunca invoca un modelo por fuera).
 
 No existe una opción de configuración para invocar tu suscripción de forma
 automática. No está implementada a propósito: una configuración que pone en
@@ -521,10 +524,12 @@ riesgo tu cuenta no debería estar a un flag de distancia.
   `claude -p`, `codex exec` y `agy -p` no disparan los hooks `SessionStart` ni
   `Stop`. chaski es para sesiones interactivas; si lo necesitas en CI, esta
   herramienta no es la indicada.
-- **No busca en el historial de meses atrás**, no comparte memoria con tu
-  equipo, no administra cuotas y no soporta veinte herramientas. Si necesitas
-  eso, [ai-memory](https://github.com/akitaonrails/ai-memory) es más completo y
-  está más maduro.
+- **No es una base de datos vectorial ni un servicio en la nube**, no sincroniza
+  estado en tiempo real entre máquinas y solo soporta tres herramientas (para
+  historial local tiene `chaski why`, para decisiones puntuales `chaski share` y
+  para ver el último corte por `rate_limit` tiene `chaski next`). Si necesitas
+  búsqueda semántica o veinte integraciones, [ai-memory](https://github.com/akitaonrails/ai-memory)
+  es más completo.
 - **No hace commits** ni toca tu historial de git.
 
 ---
@@ -533,7 +538,7 @@ riesgo tu cuenta no debería estar a un flag de distancia.
 
 | Límite | Valor | Por qué |
 |---|---|---|
-| Latencia del hook | ~220 ms (antes ~340 ms; se redujeron los subprocesos de git de 9 a 3) | El presupuesto de `Stop` en Claude Code es de 1,5 s **compartido** entre todos los hooks del evento. Hay margen de casi 7x, pero si tienes muchos hooks ahí, mide |
+| Latencia del hook | ~220 ms (antes ~340 ms; se redujeron los subprocesos de git de 9 a 3 en árbol limpio, o 4 si hay archivos sucios) | El presupuesto de `Stop` en Claude Code es de 1,5 s **compartido** entre todos los hooks del evento. Hay margen de casi 7x, pero si tienes muchos hooks ahí, mide |
 | Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
 | Narrativa | puede atrasarse unos turnos | Los hechos están siempre al día; el porqué depende de cuándo pediste «relevo» |
 | Hooks de Codex | requieren conceder confianza | La primera vez que abres Codex con hooks instalados pide confiar en ellos. Hasta que aceptes, no se ejecuta ninguno, y el permiso se aplica desde la sesión siguiente |
@@ -578,8 +583,9 @@ presupuestos de latencia y tamaño, y las trampas conocidas de cada CLI.
 El más importante: **cero dependencias de runtime**. La herramienta se ejecuta
 sola en cada turno, así que un árbol de npm sería superficie de ataque.
 
-Agregar soporte para otro CLI es un archivo en `src/lib/` más una entrada en el
-mapa `CLIS` de `src/cli.mjs`.
+Agregar soporte para otro CLI implica añadir su entrada e instalador en `CLIS`
+(`src/cli.mjs`), su extractor en `src/lib/facts.mjs`, su formato de petición en
+`src/lib/ask.mjs` y su fixture en `test/fixtures/`.
 
 ## Soporte
 

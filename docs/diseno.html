@@ -247,6 +247,9 @@
             <tr><td class="wrap"><code>chaski cost</code></td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap"><code>historia/</code> y <code>chaski why</code></td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap"><code>chaski share</code> y <code>decisiones/</code></td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Modos <code>synth</code> / <code>strict</code>, s&iacute;ntesis externa (API key / Ollama) y techo de modo</td><td><span class="tag t-flat">dise&ntilde;o (no implementado: todo es local + agente en sesi&oacute;n)</span></td></tr>
+            <tr><td class="wrap">Archivos intermedios <code>.tambo/sub/</code> para subagentes</td><td><span class="tag t-flat">descartado por innecesario (<code>SubagentStop</code> promueve directo)</span></td></tr>
+            <tr><td class="wrap">Fallback por <code>mtime</code> de archivos cuando no hay git</td><td><span class="tag t-flat">dise&ntilde;o (sin git se deriva solo del transcript)</span></td></tr>
             <tr><td class="wrap">Reserva de proveedor <code>synth-only</code></td><td><span class="tag t-crit">descartado por ToS</span></td></tr>
             <tr><td class="wrap">Verificaci&oacute;n en macOS y Linux</td><td><span class="tag t-ok">CI en Ubuntu, macOS y Windows</span></td></tr>
           </tbody>
@@ -396,7 +399,7 @@
       </div>
       <p>Con estos umbrales, una sesi&oacute;n de trabajo t&iacute;pica termina con <strong>cinco a ocho s&iacute;ntesis</strong>. Como las escribe el agente que ya est&aacute; en sesi&oacute;n, cada una cuesta unas 400 palabras de salida sobre un contexto que ya estaba cargado &mdash; una fracci&oacute;n de un turno real de trabajo, donde el agente lee archivos, corre comandos y razona sobre todo eso. El quipu se paga a s&iacute; mismo la primera vez que evita que un agente nuevo re-explore el repo.</p>
       <p>La pol&iacute;tica importa m&aacute;s ahora que la s&iacute;ntesis la hace el agente en sesi&oacute;n: cada disparo le agrega un turno a <em>tu</em> conversaci&oacute;n. Un hook que bloqueara en cada <code>Stop</code> duplicar&iacute;a tus turnos y ser&iacute;a insufrible. Por eso el debounce no es un ajuste fino sino una condici&oacute;n de usabilidad, y <code>PreCompact</code> es el disparo que de verdad importa: ahí el relevo es inminente y el turno extra est&aacute; justificado.</p>
-      <p><em>Los umbrales son el punto de partida, no dogma: viven en configuraci&oacute;n y el valor correcto se va a aprender con uso real.</em></p>
+      <p><em>Los umbrales de la tabla eran el punto de partida de dise&ntilde;o; en el c&oacute;digo actual (<code>src/lib/ask.mjs</code>) la pol&iacute;tica implementada en <code>Stop</code> usa: narrativa fresca intocable durante <strong>20 min</strong> (<code>NARRATIVA_FRESCA_MIN</code>), debounce de <strong>12 min</strong> entre peticiones (<code>DEBOUNCE_MIN</code>), y disparo cuando falta narrativa, hay commits nuevos o pasaron <strong>&ge;8 turnos</strong> (<code>TURNOS_MIN</code>) habiendo trabajo real detr&aacute;s (archivos sucios, commits o comandos).</em></p>
     </section>
 
     <section id="subagentes">
@@ -564,9 +567,9 @@
         <table>
           <thead><tr><th>Proveedor</th><th>Eventos que importan</th><th>Config</th><th>Estado</th></tr></thead>
           <tbody>
-            <tr><td>Claude Code</td><td class="wrap"><code>SessionStart</code> &middot; <code>Stop</code> &middot; <code>PreCompact</code> &middot; <code>SessionEnd</code> &middot; <code>SubagentStop</code> &middot; <code>StopFailure</code></td><td class="num">~/.claude/settings.json</td><td><span class="tag t-ok">doc. oficial</span></td></tr>
-            <tr><td>Antigravity (<code>agy</code>)</td><td class="wrap"><code>SessionStart</code> &middot; <code>PreInvocation</code> &middot; <code>PostToolUse</code> &middot; <code>PostInvocation</code> &middot; <code>Stop</code></td><td class="num">~/.gemini/config/hooks.json</td><td><span class="tag t-ok">validado</span></td></tr>
-            <tr><td>Codex CLI</td><td class="wrap"><code>SessionStart</code> &middot; <code>Stop</code> &middot; <code>PreCompact</code> &middot; <code>SubagentStop</code>, con modelo de confianza propio</td><td class="num">~/.codex/config.toml</td><td><span class="tag t-ok">validado</span></td></tr>
+            <tr><td>Claude Code</td><td class="wrap"><code>SessionStart</code> &middot; <code>Stop</code> &middot; <code>PreCompact</code> &middot; <code>SessionEnd</code> &middot; <code>SubagentStop</code> &middot; <code>StopFailure</code></td><td class="num">~/.claude/settings.json</td><td><span class="tag t-ok">registrados por init</span></td></tr>
+            <tr><td>Antigravity (<code>agy</code>)</td><td class="wrap"><code>SessionStart</code> &middot; <code>Stop</code> (m&aacute;s <code>PostInvocation</code> en <code>probe</code>)</td><td class="num">~/.gemini/config/hooks.json</td><td><span class="tag t-ok">registrados por init</span></td></tr>
+            <tr><td>Codex CLI</td><td class="wrap"><code>SessionStart</code> &middot; <code>Stop</code>, con modelo de confianza propio (<code>[hooks.state]</code>)</td><td class="num">~/.codex/config.toml</td><td><span class="tag t-ok">registrados por init</span></td></tr>
             <tr><td>Gemini CLI</td><td class="wrap">hooks nativos, con <code>hooks migrate</code> desde Claude Code</td><td class="num">~/.gemini/settings.json</td><td><span class="tag t-flat">solo Code Assist</span></td></tr>
             <tr><td>Copilot &middot; Cursor &middot; opencode &middot; Amp</td><td class="wrap">por determinar</td><td class="num">&mdash;</td><td><span class="tag t-flat">futuro</span></td></tr>
           </tbody>
@@ -650,7 +653,7 @@ avis&aacute; de la contradicci&oacute;n en vez de confiar en este texto.</code><
       <div class="threat">
         <h4>Alcance de escritura <span class="tag t-warn">medio</span></h4>
         <p>Una herramienta que corre en cada turno y puede escribir donde quiera es un riesgo desproporcionado para lo que hace.</p>
-        <p class="mit">Contenci&oacute;n: Chaski escribe en <code>.tambo/</code> del proyecto, en <code>~/.chaski/</code> y en los configs de los CLIs que t&uacute; habilitaste. En ning&uacute;n otro lugar. No ejecuta scripts del repositorio, no abre puertos, no hace commits &mdash; el snapshot autom&aacute;tico de git existe pero es <em>opt-in</em> y viene apagado, porque escribir en el historial de alguien no deber&iacute;a ser el comportamiento por defecto de una herramienta de notas.</p>
+        <p class="mit">Contenci&oacute;n: Chaski escribe en <code>.tambo/</code> del proyecto, en <code>~/.chaski/</code> y en los configs de los CLIs que t&uacute; habilitaste (m&aacute;s <code>.gitignore</code>, <code>AGENTS.md</code> y las carpetas de la skill durante <code>init</code>, y <code>decisiones/</code> si ejecutas <code>chaski share</code>). En ning&uacute;n otro lugar. No ejecuta scripts del repositorio, no abre puertos y no hace commits &mdash; el snapshot autom&aacute;tico de git se consider&oacute; en el dise&ntilde;o pero no est&aacute; implementado, porque escribir en el historial de alguien no deber&iacute;a ser el comportamiento de una herramienta de notas.</p>
       </div>
       <h3>Y la privacidad, que es una decisi&oacute;n y no un descuido</h3>
       <p>La s&iacute;ntesis manda conversaci&oacute;n &mdash; y con ella, c&oacute;digo &mdash; a un proveedor. Esa es la decisi&oacute;n que determina si Chaski puede instalarse en la m&aacute;quina de una empresa, as&iacute; que es expl&iacute;cita y est&aacute; en tres niveles:</p>

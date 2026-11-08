@@ -47,9 +47,10 @@ hook se ejecuta de verdad.
   envíalo como fixture en `test/fixtures/`.
 - **Formatos de credencial que el filtro no detecta.** Agregalos a
   `src/lib/secrets.mjs` con un caso de prueba.
-- **Adaptadores para otros CLIs o mejoras a comandos.** Un archivo en `src/lib/`
-  más una entrada en el mapa `CLIS` o en los subcomandos de `src/cli.mjs`
-  (`next`, `cost`, `why`, `share`, `version`, etc.).
+- **Adaptadores para otros CLIs o mejoras a comandos.** Entrada e instalador en
+  el mapa `CLIS` de `src/cli.mjs`, extractor en `src/lib/facts.mjs`, formato de
+  petición en `src/lib/ask.mjs` o mejoras a los subcomandos (`next`, `cost`,
+  `why`, `share`, `version`, etc.).
 - **Más casos en los tests.** Nuevas variantes de transcripts de los CLIs
   soportados (capturadas con `chaski probe`) o de herramientas emergentes.
 
