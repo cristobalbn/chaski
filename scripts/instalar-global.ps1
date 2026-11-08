@@ -11,7 +11,7 @@
 # enlace simbólico exige privilegios de administrador y esto no.
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath (Resolve-Path (Join-Path $PSScriptRoot '..'))
-& npm.cmd install --global . --install-links --offline --ignore-scripts
+& npm.cmd install --global . --install-links --offline --ignore-scripts --force
 if ($LASTEXITCODE -ne 0) { throw 'No se pudo instalar chaski globalmente.' }
 $npmPrefix = (& npm.cmd prefix -g).Trim()
 $globalBin = Join-Path $npmPrefix 'chaski.cmd'
