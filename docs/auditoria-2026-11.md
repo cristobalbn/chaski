@@ -109,17 +109,17 @@ converger tres auditores. Que resultara real no valida la decisión.
 ## Límites conocidos, decididos y no corregidos
 
 El criterio fue el riesgo para el usuario, no la completitud. Un proyecto de
-~2.000 líneas sin dependencias puede morir de sobre-ingeniería.
+~3.100 líneas sin dependencias puede morir de sobre-ingeniería.
 
-| Límite | Por qué no se arregla |
+| Límite | Estado / Por qué |
 |---|---|
 | Rutas de más de ~240 caracteres rompen git y chaski reporta "no es un repositorio" | Se midió: no hay arreglo barato. Documentado para que el síntoma sea reconocible |
-| 4.000–6.000 archivos modificados agotan el presupuesto de 1,5 s y se pierde el relevo | Tiene arreglo y se hará, pero necesita un presupuesto de tiempo global: cambio aparte |
+| 4.000–6.000 archivos modificados agotan el presupuesto de 1,5 s y se pierde el relevo | **Resuelto**: implementado presupuesto global en `src/lib/budget.mjs` con degradación controlada de hechos y reducción a 3 subprocesos git en PR #37 (~220-340 ms) |
 | Sin migración de `.tambo/ramas/` | Mover archivos en disco ajeno, en una carpeta sincronizada, es peor que el huérfano. El README explica cómo recuperarlos a mano |
 | `.tambo/branches/sin-rama/` mezcla inglés y español | Mismo problema que el anterior, y el nombre ya existe en disco |
 | Falsa alarma de firma si un cliente de sincronización bloquea `estado.json` a mitad de escritura | La alarma es conservadora: el agente recibe la instrucción correcta de desconfiar |
 | `doctor` siempre termina con código 0 | No sirve para encadenar en CI. Documentado; arreglarlo es trivial pero cambia un contrato |
-| Nadie ejecutó nada fuera de Windows | Los permisos `0600` de la clave HMAC no están verificados en POSIX real |
+| Nadie ejecutó nada fuera de Windows | **Resuelto**: suite validada en Linux y macOS vía `.github/workflows/test.yml` sobre Node 20, 22 y LTS, confirmando wrappers `.sh` y permisos POSIX |
 
 ## Lo que esta auditoría cambió en cómo se trabaja aquí
 

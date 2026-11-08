@@ -24,7 +24,7 @@ No hay `npm install` porque no hay nada que instalar.
 
 ## Probar los cambios a mano
 
-Hasta que exista la suite de tests, el ciclo es este:
+Además de la suite automatizada (`npm test`), para probar los hooks a mano el ciclo es este:
 
 ```bash
 mkdir /tmp/prueba && cd /tmp/prueba && git init
@@ -47,10 +47,11 @@ hook se ejecuta de verdad.
   envíalo como fixture en `test/fixtures/`.
 - **Formatos de credencial que el filtro no detecta.** Agregalos a
   `src/lib/secrets.mjs` con un caso de prueba.
-- **Adaptadores para otros CLIs.** Un archivo en `src/lib/` más una entrada en
-  el mapa `CLIS` de `src/cli.mjs`.
-- **Más casos en los tests.** Falta cubrir el adaptador de Codex y de
-  `agy` con fixtures de más de una versión de cada CLI.
+- **Adaptadores para otros CLIs o mejoras a comandos.** Un archivo en `src/lib/`
+  más una entrada en el mapa `CLIS` o en los subcomandos de `src/cli.mjs`
+  (`next`, `cost`, `why`, `share`, `version`, etc.).
+- **Más casos en los tests.** Nuevas variantes de transcripts de los CLIs
+  soportados (capturadas con `chaski probe`) o de herramientas emergentes.
 
 ## Qué no se va a aceptar
 
@@ -65,8 +66,10 @@ hook se ejecuta de verdad.
 
 ## Flujo de trabajo
 
-`main` siempre tiene que quedar instalable: es lo que la gente baja con
-`npm install -g github:cristobalbn/chaski`. Así que nada entra directo.
+`main` siempre tiene que quedar instalable: es la base publicada en npm
+(`@cristobalbn/chaski`) y lo que la gente instala con
+`npm install -g "@cristobalbn/chaski"` o `github:cristobalbn/chaski`. Así que
+nada entra directo.
 
 ```bash
 git checkout -b feat/lo-que-sea     # o fix/, docs/, test/
@@ -91,10 +94,10 @@ El CI corre la suite en Linux, Windows y macOS por tres versiones de Node, y
 falla si `package.json` declara alguna dependencia. Si tocas un adaptador,
 agrega o ajusta su fixture en `test/fixtures/`.
 
-`main` está protegida y exige pull request. No exige aprobación de otra
-persona —sería absurdo en un proyecto de un solo mantenedor— pero sí obliga a
-que todo pase por un PR, incluido el dueño del repo. El PR es el lugar donde
-queda escrito **por qué** se hizo un cambio, y eso vale más que el commit.
+`main` está protegida y exige pull request, los checks de CI en los tres
+sistemas operativos y revisión del Code Owner (`@cristobalbn` en
+`.github/CODEOWNERS`). El PR es el lugar donde queda escrito **por qué** se
+hizo un cambio, y eso vale más que el commit.
 
 ## Pull requests
 
@@ -119,5 +122,6 @@ el registro de npm hasta que se incrementa `version` en `package.json`.
   2. Al mergear a `main`, `.github/workflows/release.yml` se dispara solo:
      verifica `package.json` + `CHANGELOG.md`, corre `npm run check` y `npm test`,
      crea el tag `vX.Y.Z`, publica el GitHub Release y ejecuta
-     `npm publish --provenance --access public` (requiere `NPM_TOKEN` en GitHub
-     Secrets o `npm publish` local tras `npm login`).
+     `npm publish --provenance --access public` vía Trusted Publishing (OIDC
+     configurado en npmjs.com para `release.yml`) o con secret `NPM_TOKEN` como
+     respaldo.

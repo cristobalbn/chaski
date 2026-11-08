@@ -6,7 +6,10 @@
 #
 # La ruta se resuelve contra la ubicación del script y no contra el directorio
 # actual: así sigue funcionando desde cualquier parte.
-param([ValidateSet('codex', 'claude', 'agy')][string]$Agente = 'codex')
+param(
+  [ValidateSet('codex', 'claude', 'agy')][string]$Agente = 'codex',
+  [Parameter(ValueFromRemainingArguments = $true)][string[]]$Argumentos
+)
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath (Resolve-Path (Join-Path $PSScriptRoot '..'))
-& $Agente
+& $Agente @Argumentos

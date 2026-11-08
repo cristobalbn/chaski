@@ -15,6 +15,9 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -76,7 +79,7 @@ jobs:
               echo "|---|---|"
               echo "| Versión en \`main\` | \`${base_ver:-?}\` |"
               echo "| Versión en este PR (\`package.json\`) | \`$pkg_ver\` |"
-              echo "| Versión actual en npm (\`chaski\`) | \`$npm_ver\` |"
+              echo "| Versión actual en npm (\`@cristobalbn/chaski\`) | \`$npm_ver\` |"
               echo "| Archivos de producción modificados (\`src/\`, \`skill/\`) | \`$code_changed\` |"
               echo ""
             } >> "$GITHUB_STEP_SUMMARY"
@@ -104,7 +107,7 @@ jobs:
             echo "| \`package.json\` en \`main\` | \`$pkg_ver\` |"
             echo "| Último tag en GitHub | \`$last_tag\` |"
             echo "| Commits en \`src/\` o \`skill/\` desde \`$last_tag\` | \`$commits_since_tag\` |"
-            echo "| Registro público de npm (\`chaski\`) | \`$npm_ver\` |"
+            echo "| Registro público de npm (\`@cristobalbn/chaski\`) | \`$npm_ver\` |"
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
 
