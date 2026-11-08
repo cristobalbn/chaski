@@ -11,24 +11,25 @@ son exactos. No los repitas ni los corrijas.
 
 ## Petición común
 
-En Claude Code, Codex y agy, un mensaje que solo diga **«relevo»**, o que pida
-**«guarda el relevo»** o **«actualiza el relevo»**, solicita guardar la narrativa:
-ejecuta los pasos de abajo y confirma al terminar.
+En Claude Code, Codex y agy:
+- **«relevo»**, **«guarda el relevo»** o **«actualiza el relevo»**: solicita guardar la narrativa de la sesión actual. Ejecuta los pasos de **Guardar el relevo** y confirma al terminar.
+- **«continúa desde el relevo»**: solicita retomar el trabajo. Lee el bloque `<<<RELEVO-CHASKI>>>` inyectado al inicio de la sesión (o `.tambo/branches/<slug>/relevo.md`), contrástalo con `git status` y los archivos mencionados, y ejecuta el siguiente paso pendiente; **no** sobrescribas la narrativa al recibir esta petición.
+- Una pregunta sobre el funcionamiento del relevo o sobre decisiones pasadas (para lo cual puedes ejecutar `chaski why [tema]`) tampoco solicita sobrescribirlo.
 
-**«Continúa desde el relevo»** solicita retomar el trabajo. Lee el relevo de la
-rama actual, contrástalo con el código y continúa con lo pendiente; no ejecutes
-estos pasos de guardado por esa petición. Una pregunta sobre el funcionamiento
-del relevo tampoco solicita sobrescribirlo.
+## Pasos para guardar el relevo
 
-## Pasos
+1. **Ubica la raíz del repositorio Git** (si el espacio de trabajo es una carpeta contenedora con un único repo hijo o una subcarpeta del repo, usa la raíz de ese repositorio).
+2. **Ubica el archivo `.tambo/branches/<slug>/estado.json`** correspondiente a la rama actual (`git rev-parse --abbrev-ref HEAD`):
+   - Si el nombre de la rama solo contiene letras, números, `.`, `_` o `-` y hasta 60 caracteres (por ejemplo `main`, `develop`, `feat-pagos`), `<slug>` es el nombre de la rama tal cual: `.tambo/branches/main/estado.json`.
+   - Si el nombre de la rama contiene `/` u otros caracteres especiales (por ejemplo `feat/pagos` o `fix/login`), chaski reemplaza esos caracteres por `-` y agrega un sufijo hash de 6 caracteres: `.tambo/branches/feat-pagos-<hash>/estado.json` (dentro del archivo, `"facts.branch"` coincide exactamente con la rama actual). Lista `.tambo/branches/` para tomar la carpeta `<rama-con-guiones>-*` sin adivinar el hash.
+3. **Actualiza únicamente los tres campos de narrativa** en ese JSON (codificación UTF-8):
+   - `"narrative"`: texto con las cuatro secciones de abajo.
+   - `"narrativeAuthor"`: tu identificador canónico (`"claude code"`, `"codex"` o `"agy"`).
+   - `"narrativeWrittenAt"`: marca ISO 8601 UTC actual (`new Date().toISOString()`), posterior al `"writtenAt"` del archivo para que la siguiente captura la archive en `.tambo/historia/entries.jsonl`.
+4. **No toques ningún otro campo.** `facts`, `commands`, `offset`, `turns`, `subagents` y `signature` los calcula y firma chaski.
+5. **Confirma al usuario en una línea** qué quedó anotado como siguiente paso.
 
-1. Ubica la raíz del repositorio Git (si el espacio de trabajo es una carpeta contenedora con un único repo hijo o una subcarpeta del repo, usa la raíz de ese repositorio). Lee `.tambo/branches/<rama-actual>/estado.json` desde esa raíz, donde `<rama-actual>` sale de `git rev-parse --abbrev-ref HEAD`.
-2. Escribe la narrativa en el campo `narrative` de ese JSON en UTF-8, junto con
-   `narrativeAuthor` (tu nombre de agente) y `narrativeWrittenAt` (ISO 8601 de ahora).
-3. No toques ningún otro campo. `facts`, `commands`, `offset` y `signature` son de chaski.
-4. Confirma al usuario en una línea: qué quedó anotado como siguiente paso.
-
-El Markdown se regenera solo en el próximo turno. No edites `relevo.md` a mano.
+El Markdown (`relevo.md`) se regenera y firma solo en el próximo turno. **No edites `relevo.md` a mano.**
 
 ## Qué escribir
 

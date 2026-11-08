@@ -258,22 +258,32 @@ src/leer.mjs         ~20 lín.    — puente de compatibilidad hacia inject.mjs
 skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo»
 ```
 
-### Archivos de datos y persistencia
+### Archivos de datos, esquemas y persistencia
 
 - **En el proyecto (`.tambo/`, en `.gitignore`):**
   - `.tambo/branches/<slug>/estado.json` — hechos, narrativa, marca de agua y firma HMAC.
-  - `.tambo/branches/<slug>/relevo.md` — Markdown inyectado al iniciar sesión.
-  - `.tambo/historia/entries.jsonl` — histórico append-only de narrativas (consultado por `chaski why`).
+    - **Regla de `<slug>` (`branchSlug` en `src/lib/paths.mjs`)**: si el nombre de la rama (`git rev-parse --abbrev-ref HEAD`) solo tiene `[a-zA-Z0-9._-]` y hasta 60 caracteres (ej. `main`), `<slug>` es la rama tal cual. Si tiene `/` u otros caracteres o pasa de 60 letras (ej. `feat/pagos`), reemplaza fuera de `[a-zA-Z0-9._-]` por `-`, recorta a 60 caracteres y añade un sufijo FNV-1a de 6 caracteres en base 36 (`feat-pagos-<hash6>`). Para obtener la ruta exacta desde Node: `node -e "import('./src/lib/paths.mjs').then(m=>console.log(m.statePath(process.cwd())))"`.
+    - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy"`), `session`, `transcript`, `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ estado, ruta, mas, menos }], dirtyTotal, commits, upstream: { ref, ahead, behind, collisions } | null, trimmed }`), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ id, kind, reason, conclusion, at }]`, máx. 8), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre `relevo.md`), `askedAt`, `askedReason`, `turnsAtNarrative`, `narrativeStamp`.
+    - **Campos exclusivos del agente (al guardar narrativa)**: `narrative` (string Markdown), `narrativeAuthor` (`"claude code" | "codex" | "agy"`), `narrativeWrittenAt` (ISO 8601 UTC actual, posterior a `writtenAt`).
+  - `.tambo/branches/<slug>/relevo.md` — Markdown renderizado desde `estado.json` por `render()` (`src/lib/relay.mjs`), firmado con HMAC e inyectado por `inject.mjs`. Nunca se edita a mano.
+  - `.tambo/historia/entries.jsonl` — histórico append-only de narrativas redactadas (consultado por `chaski why`). Cada línea es `{ at, author, branch, head, narrative }`.
 - **En el repositorio (versionado en git, opt-in):**
-  - `decisiones/<YYYY-MM-DD>-<tema>.md` — decisiones compartidas explícitamente con `chaski share`.
+  - `decisiones/<YYYY-MM-DD>-<tema>.md` — decisiones publicadas explícitamente con `chaski share [tema] [--yes]`.
 - **Globales del usuario (`~/.chaski/`):**
-  - `~/.chaski/clave` — clave local HMAC (permisos `0600`).
-  - `~/.chaski/latidos.json` — última ejecución del hook por CLI (leído por `chaski doctor`).
-  - `~/.chaski/ultima-limpieza` — marca de tiempo diaria para limpieza de relevos huérfanos.
-  - `~/.chaski/quota.json` — registro de agotamiento de cuotas por CLI (leído por `chaski next`).
-  - `~/.chaski/cost.json` — contabilidad de turnos extra pedidos y narrativas (leído por `chaski cost`).
-  - `~/.chaski/config.json` — configuración global opcional del usuario.
-  - `~/.chaski/<cli>-<script>-<evento>.cmd` (o `.sh`) — wrappers generados por `init` para Codex y `agy`.
+  - `~/.chaski/clave` — clave local HMAC aleatoria de 32 bytes en hex (permisos `0600`).
+  - `~/.chaski/latidos.json` — `{ "<agent>": "<ISO>" }`, última ejecución del hook por CLI (leído por `chaski doctor`).
+  - `~/.chaski/ultima-limpieza` — timestamp en ms de la última poda diaria de relevos huérfanos.
+  - `~/.chaski/quota.json` — `{ "<agent>": { at, reason, message } }`, cortes por cuota de las últimas 12 h (leído por `chaski next`; se limpia cuando ese CLI completa un `Stop` normal).
+  - `~/.chaski/cost.json` — `{ asks: [{ at, agent, branch, reason }], narratives: [{ at, agent, branch }] }` (últimos 500 de cada uno, leído por `chaski cost`).
+  - `~/.chaski/config.json` — configuración global opcional del usuario. Se mezcla con `chaski.json` (proyecto) y `chaski.local.json` (máquina local) con precedencia `local > proyecto > global` en claves escalares (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`) y concatenación de arreglos en `redact` y `excludePaths`.
+  - `~/.chaski/<cli>-<script>-<evento>.cmd` (o `.sh`) — wrappers sin espacios en la ruta generados por `init` para Codex y `agy`.
+
+### Códigos de salida de CLI y hooks
+
+- `src/capture.mjs` y `src/inject.mjs`: **siempre `0`** (invariante 4; cualquier fallo interno escribe una línea en `stderr` y sale con `0`).
+- `chaski doctor`, `next`, `cost`, `why`, `uninstall`, `probe`, `version`: **siempre `0`**.
+- `chaski init`: devuelve **`1`** si algún CLI instalado falló al configurarse, si se ejecuta desde el caché temporal de `npx` o si `AGENTS.md` tiene marcadores `<!-- chaski:requests:... -->` corruptos; `0` en caso contrario.
+- `chaski share`: devuelve **`1`** si la rama actual no tiene narrativa en `estado.json`; `0` si publica o si el usuario cancela en la confirmación interactiva.
 
 ## Al escribir código aquí
 
@@ -392,8 +402,10 @@ el código tiene razón — dilo en vez de confiar en el texto.
 Al cerrar un bloque de trabajo, deja escrito el porqué: qué se intentaba, qué se
 decidió y qué se descartó, qué quedó a medias con su ruta, y el siguiente paso.
 La fuente de las instrucciones es [`skill/SKILL.md`](skill/SKILL.md). Escribe
-solo `narrative`, `narrativeAuthor` y `narrativeWrittenAt` en el estado de la rama
-actual. Los atajos nativos están documentados en el README.
+solo `narrative`, `narrativeAuthor` (`"claude code"`, `"codex"` o `"agy"`) y
+`narrativeWrittenAt` (ISO 8601 UTC actual) en `.tambo/branches/<slug>/estado.json`
+(donde `<slug>` es `main` para `main`, o `<rama-con-guiones>-<hash6>` si la rama
+tiene `/`). Los atajos nativos están documentados en el README.
 
 **No edites `relevo.md` a mano.** Lo regenera `capture.mjs` desde `estado.json`
 en la captura siguiente, así que la edición se pierde, y la firma deja de

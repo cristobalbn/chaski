@@ -34,6 +34,26 @@ un resumen a mano funciona exactamente hasta el día en que te olvidas.
 
 ---
 
+## Índice
+
+- [Instalación](#instalación)
+  - [Si le pasaste este enlace a un agente](#si-le-pasaste-este-enlace-a-un-agente)
+  - [Opción 1 — npm (recomendada)](#opción-1--npm-recomendada)
+  - [Opción 2 — desde el código fuente](#opción-2--desde-el-código-fuente)
+  - [Dos pasos después de instalar](#dos-pasos-después-de-instalar)
+  - [Actualizar y desinstalar](#actualizar)
+- [Uso diario](#uso)
+  - [Qué escribir en el chat del agente](#la-misma-petición-en-los-tres-agentes)
+  - [La narrativa se pide sola](#la-narrativa-se-pide-sola)
+  - [Referencia de comandos en terminal](#referencia-de-comandos-en-terminal)
+- [Configuración (`chaski.json`, `chaski.local.json`, `~/.chaski/config.json`)](#configuración)
+- [Equipos y repositorios compartidos](#equipos-y-repositorios-compartidos)
+- [Arquitectura](#arquitectura)
+- [Seguridad y términos de uso](#seguridad)
+- [Límites conocidos](#límites-conocidos)
+
+---
+
 ## Instalación
 
 **Requisitos:** Node.js ≥ 20. Nada más — cero dependencias de runtime.
@@ -308,21 +328,17 @@ Si responde con los archivos tocados y qué quedó a medias, funcionó. Si no,
 
 ### La misma petición en los tres agentes
 
-Escribe en el **chat del agente**:
+En el **chat de cualquiera de los tres agentes**, usa siempre las mismas frases:
 
-```text
-relevo
-```
+| Qué quieres hacer | Qué escribes en el chat | Qué hace el agente |
+|---|---|---|
+| **Guardar la intención** antes de cerrar o cambiar de CLI | `relevo`, `guarda el relevo` o `actualiza el relevo` | Escribe `narrative`, `narrativeAuthor` y `narrativeWrittenAt` en `.tambo/branches/<slug>/estado.json` y confirma en una línea el siguiente paso |
+| **Retomar el trabajo** al abrir otro CLI o nueva sesión | `continúa desde el relevo` | Lee el bloque `<<<RELEVO-CHASKI>>>`, lo contrasta con el código actual y retoma el paso pendiente **sin sobrescribir** la narrativa |
+| **Verificar que recibió el relevo** | `¿qué sabes del estado de este trabajo?` | Resume los archivos modificados, el diff y lo pendiente |
 
-También reconoce **«guarda el relevo»** y **«actualiza el relevo»**. Es una petición
-en lenguaje natural que activa la skill instalada por `chaski init`; depende de
-que el agente haya cargado las instrucciones del proyecto. Espera su confirmación.
-Para retomar, escribe **«continúa desde el relevo»**: pide leer y continuar el
-trabajo, sin sobrescribir la narrativa al llegar.
+Los atajos nativos siguen disponibles si prefieres invocar la skill directamente:
 
-Los atajos nativos siguen disponibles si prefieres seleccionar la skill:
-
-| Agente | Atajo para guardar |
+| Agente | Atajo nativo para guardar |
 |---|---|
 | [Claude Code](https://code.claude.com/docs/en/skills) | `/relevo` |
 | [Codex CLI](https://learn.chatgpt.com/docs/build-skills) | `$relevo` o `/skills` → `relevo` |
@@ -333,36 +349,26 @@ Si la skill aún no aparece tras actualizar, abre una sesión nueva en ese proye
 
 Los **hechos** —archivos, diff, exit codes, commits— se escriben solos en cada
 turno, sin costo. La **narrativa** —qué estás intentando, qué decidiste, qué
-descartaste y por qué— la escribe el agente cuando pides **«relevo»**.
+descartaste y por qué— la escribe el agente cuando pides **«relevo»** (o cuando
+chaski se la pide automáticamente).
 
-No es obligatorio. Sin narrativa el relevo sigue siendo útil, porque los hechos
-son lo que evita que el siguiente agente rompa algo. La narrativa es lo que
-evita que reabra decisiones ya cerradas.
+No es obligatorio pedirlo a mano. Sin narrativa el relevo sigue siendo útil,
+porque los hechos son lo que evita que el siguiente agente rompa algo; la
+narrativa es lo que evita que reabra decisiones ya cerradas.
 
-### Otros comandos del día a día
+### Referencia de comandos en terminal
 
-```bash
-chaski next                 # muestra qué CLI está disponible y qué quedó pendiente
-chaski cost                 # muestra el gasto externo ($0) y los turnos extra de chaski
-chaski why [tema]           # busca decisiones anteriores en .tambo/historia/ y decisiones/
-chaski share [tema]         # publica la decisión de la rama actual en decisiones/ (pide confirmación)
-chaski share [tema] --yes   # publica sin pedir confirmación interactiva
-chaski version              # muestra la versión instalada (también chaski --version o -v)
-```
-
-- **`chaski next`** lee `~/.chaski/quota.json` (alimentado cuando un hook detecta
-  un corte por `rate_limit`) y el `estado.json` de tu rama para decirte en un
-  segundo a qué CLI cambiarte y qué archivos o pasos quedaron en vuelo.
-- **`chaski cost`** reporta el gasto externo (`0 tokens · $0.00`, porque chaski
-  nunca llama a APIs ni modelos externos) y contabiliza cuántos turnos extra
-  pidió chaski y cuántas narrativas escribió cada CLI en los últimos 7 días.
-- **`chaski why [tema]`** busca en `.tambo/historia/entries.jsonl` —el archivo
-  append-only donde `capture.mjs` preserva cada narrativa antes de que la
-  siguiente la reemplace—, en las ramas activas y en `decisiones/`.
-- **`chaski share [tema]`** toma la narrativa de la rama actual, vuelve a pasar
-  el filtro de secretos de `src/lib/secrets.mjs`, muestra en pantalla la ruta
-  `decisiones/YYYY-MM-DD-<tema>.md` y el contenido exacto, y pide confirmación
-  antes de escribir (o usa `--yes`). Nunca sobrescribe un archivo existente.
+| Comando | Cuándo usarlo | Qué hace y dónde lee/escribe |
+|---|---|---|
+| `chaski init` | Al instalar chaski en un proyecto o tras actualizar | Registra los hooks a nivel de usuario (`~/.claude/settings.json`, `~/.codex/config.toml`, `~/.gemini/antigravity/hooks/hooks.json`), agrega `.tambo/` y `chaski.local.json` a `.gitignore`, instala la skill en `.claude/skills/relevo/` y `.agents/skills/relevo/`, y actualiza el bloque de relevo en `AGENTS.md`. Sale con código `1` si algún CLI falló |
+| `chaski doctor` | Para verificar la instalación o diagnosticar si algo no captura | Muestra la versión instalada, los hooks registrados por CLI, el último latido en `~/.chaski/latidos.json`, si `.tambo/` está ignorado en git, el estado y firma del relevo de la rama actual y qué sale de tu máquina. Siempre sale con código `0` |
+| `chaski next` | Al agotarse la cuota de un CLI o antes de retomar | Lee `~/.chaski/quota.json` (alimentado cuando un hook detecta un corte por `rate_limit`) y `.tambo/branches/<slug>/estado.json` para indicar qué CLI está disponible (`→`), cuántos archivos hay sin commitear y cuál es el paso pendiente |
+| `chaski cost` | Para revisar cuántos turnos extra pidió chaski | Reporta el gasto externo (`0 tokens · $0.00`, porque chaski nunca llama a APIs ni modelos externos) y contabiliza desde `~/.chaski/cost.json` las peticiones automáticas y narrativas escritas por cada CLI en los últimos 7 días y en total |
+| `chaski why [tema]` | Para consultar por qué se tomó o descartó una decisión pasada | Busca en `.tambo/historia/entries.jsonl` (donde `capture.mjs` archiva cada narrativa antes de que se reemplace), en las ramas activas de `.tambo/branches/` y en `decisiones/`. Si pasas `tema`, filtra por texto o nombre de rama |
+| `chaski share [tema] [--yes]` | Para compartir una decisión de tu relevo local con el equipo en git | Toma la narrativa de la rama actual, vuelve a pasar el filtro de secretos (`src/lib/secrets.mjs`), muestra la vista previa de `decisiones/YYYY-MM-DD-<tema>.md` y pide confirmación interactiva antes de escribir (o publica directo con `--yes`). Nunca sobrescribe un archivo existente; si ya existe, añade sufijo `-2`, `-3`, etc. Sale con código `1` si la rama no tiene narrativa |
+| `chaski probe [--show \| --clean]` | Diagnóstico de payloads de hooks o creación de nuevos fixtures | `chaski probe` instala una sonda temporal en `~/.chaski/sonda.mjs`; `--show` muestra los payloads capturados en `~/.chaski/sonda.log`; `--clean` restaura los hooks normales de chaski |
+| `chaski uninstall` | Para quitar los hooks de chaski de tus CLIs | Restaura `~/.claude/settings.json`, `~/.codex/config.toml` y `~/.gemini/antigravity/hooks/hooks.json` desde sus respaldos `.chaski-backup` (o resta el bloque de chaski). Conserva `.tambo/` y `~/.chaski/` |
+| `chaski version` (`--version`, `-v`) | Para consultar la versión instalada | Imprime `chaski X.Y.Z` desde `package.json` |
 
 ---
 
@@ -438,13 +444,25 @@ recalculan desde git en cualquier momento, pero la narrativa existe solo
 porque alguien la escribió y no se recupera. Un relevo de rama viva no se
 borra nunca, sin importar la antigüedad.
 
-### `chaski.local.json` — tu máquina, **en `.gitignore`**
+### `chaski.local.json` — tu máquina en este proyecto, **en `.gitignore`**
 
-Mismas claves. Se suma a la del proyecto en lugar de reemplazarla.
+Mismas claves. `init` lo agrega a `.gitignore` automáticamente.
 
-La partición es deliberada: tu equipo comparte la política del repositorio, pero
-cada máquina declara lo suyo. Alguien clona y funciona, sin heredar la
-configuración de nadie.
+### `~/.chaski/config.json` — global de tu usuario, para todos tus proyectos
+
+Mismas claves. Se aplica a cualquier repositorio en tu máquina sin tener que
+crear archivos por proyecto.
+
+### Orden de precedencia al combinar los tres niveles
+
+Cuando existen dos o tres archivos a la vez, chaski los combina así:
+- **Claves escalares** (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`): manda el nivel más específico (`chaski.local.json` > `chaski.json` > `~/.chaski/config.json`).
+- **Listas de seguridad** (`redact` y `excludePaths`): **se concatenan** entre los tres niveles (`global + proyecto + local`), de modo que una configuración local siempre suma patrones de redacción o rutas excluidas y nunca desactiva la política compartida del repositorio.
+
+La partición es deliberada: tu equipo comparte la política del repositorio en
+`chaski.json`, y cada máquina declara lo suyo en `chaski.local.json` o
+`~/.chaski/config.json`. Alguien clona y funciona, sin heredar la configuración
+privada de nadie.
 
 ---
 
