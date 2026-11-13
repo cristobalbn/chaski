@@ -85,7 +85,11 @@ function wrapper(script, event, agent) {
        `${q(process.execPath)} ${q(script)} ${event} ${agent} %*`, ''].join('\r\n')
     : ['#!/bin/sh', '# Generado por chaski. Evita el doble escapado de comillas.',
        `exec ${q(process.execPath)} ${q(script)} ${event} ${agent} "$@"`, ''].join('\n');
-  writeFileSync(ruta, cuerpo, win ? undefined : { mode: 0o755 });
+  // Idéntico al que ya está: no se toca. Un init repetido sobre una
+  // instalación sana no debe escribir nada (#50), ni siquiera los wrappers.
+  let actual = null;
+  try { actual = readFileSync(ruta, 'utf8'); } catch {}
+  if (actual !== cuerpo) writeFileSync(ruta, cuerpo, win ? undefined : { mode: 0o755 });
   return ruta.replace(/\//g, win ? '\\' : '/');
 }
 
@@ -165,20 +169,38 @@ function init() {
   }
 
   console.log('');
-  let fallos = 0;
+  // Tres resultados distintos y no dos (#50): "configurado" y "ya estaba"
+  // son éxito; "falló" no lo es y el resumen tiene que decirlo. Antes todo
+  // CLI detectado salía en "CLIs CONECTADOS", aunque los tres hubieran fallado.
+  const estado = { configurados: [], yaEstaban: [], fallidos: [] };
   for (const name of detectados) {
     const cli = CLIS[name];
     try {
+      // Los install* devuelven el contenido en vez de escribirlo: si es
+      // idéntico al que hay, no se toca el archivo. Así init es idempotente
+      // de verdad —incluso con la configuración en solo lectura— y no deja
+      // un respaldo ni un temporal por nada.
+      let nuevo;
+      if (cli.formato === 'json-claude') nuevo = installClaude(cli.config);
+      else if (cli.formato === 'json-agy') nuevo = installAgy(cli.config);
+      else if (cli.formato === 'toml-codex') nuevo = installCodex(cli.config);
+      let actual = null;
+      try { actual = readFileSync(cli.config, 'utf8'); } catch {}
+      if (actual === nuevo) {
+        estado.yaEstaban.push(name);
+        console.log(`  ${pad(name)} ya configurado     →  ${cli.config}`);
+        continue;
+      }
       backup(cli.config);
-      if (cli.formato === 'json-claude') installClaude(cli.config);
-      else if (cli.formato === 'json-agy') installAgy(cli.config);
-      else if (cli.formato === 'toml-codex') installCodex(cli.config);
+      writeAtomic(cli.config, nuevo);
+      estado.configurados.push(name);
       console.log(`  ${pad(name)} hooks registrados  →  ${cli.config}`);
     } catch (e) {
-      fallos++;
+      estado.fallidos.push(name);
       console.log(`  ${pad(name)} FALLÓ: ${e?.message ?? e}`);
     }
   }
+  const fallos = estado.fallidos.length;
 
   // Los archivos de proyecto van SOLO en el repositorio, nunca en la carpeta
   // desde la que se invocó init si esa carpeta no es el repositorio.
@@ -198,7 +220,7 @@ function init() {
   ensureGitignore(CWD);
   installSkill(CWD);
   ensureAgentsMd(CWD);
-  finalSummary(detectados);
+  finalSummary(estado);
 
   // Un CLI que no se pudo configurar tiene que verse en el código de salida,
   // no solo en una línea del informe: si un agent o un script corre init,
@@ -215,11 +237,18 @@ chaski: ${fallos} CLI(s) no se pudieron configurar. Ver arriba.`);
  * que deducir nada ni inventar la explicación: si un agent hizo la
  * instalación, puede relayar esto tal cual.
  */
-function finalSummary(detectados) {
+function finalSummary({ configurados, yaEstaban, fallidos }) {
+  const conectados = [...configurados, ...yaEstaban];
+  // Un agent que resume la salida toma el titular: tiene que coincidir con
+  // lo que pasó, no con lo que se intentó.
+  const titular = !conectados.length
+    ? ' chaski NO quedó instalado: ningún CLI se pudo configurar'
+    : fallidos.length ? ' instalación incompleta' : ' chaski quedó instalado';
+  const detectados = conectados;
   const L = [
     '',
     '────────────────────────────────────────────────────────────',
-    ' chaski quedó instalado',
+    titular,
     '────────────────────────────────────────────────────────────',
     '',
     ' QUÉ HACE',
@@ -227,7 +256,10 @@ function finalSummary(detectados) {
     '   tocados, diff, resultado de los commands, commits) en .tambo/.',
     '   Al abrir cualquiera de tus CLIs, se lo entrega al agent nuevo.',
     '',
-    ` CLIs CONECTADOS: ${detectados.join(', ')}`,
+    ...(configurados.length ? [` CLIs CONFIGURADOS AHORA: ${configurados.join(', ')}`] : []),
+    ...(yaEstaban.length ? [` CLIs QUE YA ESTABAN CONFIGURADOS: ${yaEstaban.join(', ')}`] : []),
+    ...(fallidos.length ? [` CLIs QUE NO SE PUDIERON CONFIGURAR: ${fallidos.join(', ')}`,
+      '   Revisa el error de cada uno arriba y vuelve a correr chaski init.'] : []),
     '',
     ' PRIMERO: REINICIA TUS SESIONES',
     '   Los CLIs cargan los hooks al abrir la sesión. Una que ya estaba',
@@ -296,7 +328,7 @@ function installClaude(ruta) {
   poner('SubagentStop', CAPTURE);
   poner('StopFailure', CAPTURE);
   mkdirSync(dirname(ruta), { recursive: true });
-  writeAtomic(ruta, JSON.stringify(s, null, 2));
+  return JSON.stringify(s, null, 2);
 }
 
 function installAgy(ruta) {
@@ -308,7 +340,7 @@ function installAgy(ruta) {
     SessionStart: [{ type: 'command', command: cmd(INJECT, 'SessionStart', 'agy', true), timeout: 10 }],
     Stop: [{ type: 'command', command: cmd(CAPTURE, 'Stop', 'agy', true), timeout: 10 }],
   };
-  writeAtomic(ruta, JSON.stringify(h, null, 2));
+  return JSON.stringify(h, null, 2);
 }
 
 function installCodex(ruta) {
@@ -364,7 +396,7 @@ function installCodex(ruta) {
   const conEstado = confianza
     ? bloque.replace(MARCA_FIN, `${confianza}\n${MARCA_FIN}`)
     : bloque;
-  writeAtomic(ruta, `${limpio.trimEnd()}\n\n${conEstado}\n`);
+  return `${limpio.trimEnd()}\n\n${conEstado}\n`;
 }
 
 /**
