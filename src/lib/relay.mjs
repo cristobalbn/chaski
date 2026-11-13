@@ -259,6 +259,27 @@ export function preamble(estado, verificado) {
 
 export const CLOSING_MARK = '<<<FIN-RELEVO-CHASKI>>>';
 
+/**
+ * Neutraliza cualquier delimitador del marco dentro del cuerpo del relevo.
+ *
+ * El cuerpo lleva texto que chaski no escribió: la narrative, las conclusiones
+ * de subagents (que pueden repetir una página o un archivo hostil que el
+ * subagente leyó), mensajes de commit, nombres de rama. Si ese texto trae
+ * `<<<FIN-RELEVO-CHASKI>>>`, cierra el bloque de "datos, no instrucciones"
+ * antes de tiempo y lo que sigue se lee como texto fuera del marco. Las
+ * conclusiones además sobreviven entre sesiones, así que la inyección se
+ * repetiría en cada arranque de los tres CLIs.
+ *
+ * Se reemplaza toda corrida de tres o más `<` o `>`, no solo las marcas
+ * exactas: una variante con espacios o guiones distintos también parece un
+ * cierre para un modelo, y el relevo no necesita esas corridas para nada.
+ */
+export function neutralizeMarks(texto) {
+  return String(texto ?? '')
+    .replace(/<{3,}/g, (m) => '‹'.repeat(m.length))
+    .replace(/>{3,}/g, (m) => '›'.repeat(m.length));
+}
+
 function truncate(texto) {
   if (texto.length <= MAX_CHARS) return texto;
   const corte = texto.lastIndexOf('\n', MAX_CHARS - 200);
