@@ -536,7 +536,7 @@ function doctor() {
   // usuario adivinando por qué .tambo/ sigue vacío.
   const sinLatido = Object.entries(CLIS)
     .filter(([n, c]) => isInstalled(c.bin) && existsSync(c.config)
-      && readFileSync(c.config, 'utf8').includes('chaski')
+      && (registeredEvents(c) ?? []).length > 0
       && !Object.keys(lat).some((k) => k.replace(/-/g, ' ') === n));
   for (const [name] of sinLatido) {
     console.log(`\n  ⚠ ${name}: hooks registrados pero nunca ejecutados.`);
@@ -584,13 +584,84 @@ function doctor() {
 
 function checkHooks(cli) {
   if (!existsSync(cli.config)) return 'sin config — ejecuta init';
-  const txt = readFileSync(cli.config, 'utf8');
-  if (!txt.includes('chaski')) return 'hooks NO registrados — ejecuta init';
-  // Alternancia de más largo a más corto: con "Stop" primero, "StopFailure"
-  // matchearía como "Stop" y el event no aparecería en el informe.
-  const eventos = [...txt.matchAll(/"?(SessionStart|SessionEnd|SubagentStop|StopFailure|PreCompact|Stop)"?/g)]
-    .map((m) => m[1]);
-  return `registrado (${[...new Set(eventos)].join(', ')})`;
+  const eventos = registeredEvents(cli);
+  if (eventos === null) return 'config ilegible — revisa el archivo';
+  if (!eventos.length) return 'hooks NO registrados — ejecuta init';
+  return `registrado (${eventos.join(', ')})`;
+}
+
+/**
+ * Eventos con un hook de chaski de verdad registrado, según la estructura de
+ * cada formato. `null` si el archivo no se puede leer o parsear.
+ *
+ * Antes bastaba con que el texto contuviera "chaski" y se sacaban los eventos
+ * con una regex sobre todo el archivo (#51): un comentario que mencionara
+ * chaski, SessionStart y Stop hacía que doctor declarara hooks que no existían
+ * y mandara al usuario a conceder confianza en Codex por nada. Ahora cuenta
+ * solo un comando que apunte a un script o wrapper de chaski, dentro de la
+ * clave de hooks que ese CLI realmente lee.
+ */
+function registeredEvents(cli) {
+  let txt;
+  try { txt = readFileSync(cli.config, 'utf8').replace(/^﻿/, ''); } catch { return null; }
+  // Un comando que ejecuta un hook de chaski: los scripts de entrada (y los
+  // puentes con nombres viejos) o un wrapper generado en ~/.chaski/. Va aquí
+  // y no como const de módulo: el despacho de comandos corre arriba del
+  // archivo, antes de que un const declarado más abajo se inicialice.
+  const HOOK_DE_CHASKI = /(?:capture|inject|capturar|leer)\.mjs|[\\/]\.chaski[\\/][\w.-]+\.(?:cmd|sh)\b/;
+  const eventos = new Set();
+  const esNuestro = (c) => typeof c === 'string' && HOOK_DE_CHASKI.test(c);
+
+  if (cli.formato === 'toml-codex') {
+    // Sin parser TOML (cero dependencias): se recorren las líneas, se ignoran
+    // los comentarios y se atribuye cada `command` a la tabla `[[hooks.X…]]`
+    // en la que aparece.
+    let evento = null;
+    for (const linea of txt.split(/\r?\n/)) {
+      const l = linea.trim();
+      if (!l || l.startsWith('#')) continue;
+      const tabla = l.match(/^\[\[?\s*([^\]]+?)\s*\]\]?/);
+      if (tabla) {
+        const m = tabla[1].match(/^hooks\.([A-Za-z]+)(?:\.hooks)?$/);
+        evento = m ? m[1] : null;
+        continue;
+      }
+      const c = l.match(/^command\s*=\s*(".*"|'.*')/);
+      if (evento && c) {
+        let valor;
+        try { valor = c[1].startsWith('"') ? JSON.parse(c[1]) : c[1].slice(1, -1); } catch { valor = c[1]; }
+        if (esNuestro(valor)) eventos.add(evento);
+      }
+    }
+    return [...eventos];
+  }
+
+  let datos;
+  try { datos = JSON.parse(txt); } catch { return null; }
+  if (!datos || typeof datos !== 'object') return [];
+
+  if (cli.formato === 'json-claude') {
+    // hooks.<Evento> = [{ matcher?, hooks: [{ type, command }] }]
+    for (const [ev, grupos] of Object.entries(datos.hooks ?? {})) {
+      if (!Array.isArray(grupos)) continue;
+      const hay = grupos.some((g) => Array.isArray(g?.hooks) && g.hooks.some((h) => esNuestro(h?.command)));
+      if (hay) eventos.add(ev);
+    }
+  } else if (cli.formato === 'json-agy') {
+    // <propietario>.<Evento> = [{ type, command }] o, en PreToolUse y
+    // PostToolUse, [{ matcher, hooks: [...] }]. Se mira cualquier propietario
+    // por si alguien movió el bloque, pero solo cuentan comandos de chaski.
+    for (const owner of Object.values(datos)) {
+      if (!owner || typeof owner !== 'object' || Array.isArray(owner)) continue;
+      for (const [ev, lista] of Object.entries(owner)) {
+        if (!Array.isArray(lista)) continue;
+        const hay = lista.some((h) => esNuestro(h?.command)
+          || (Array.isArray(h?.hooks) && h.hooks.some((x) => esNuestro(x?.command))));
+        if (hay) eventos.add(ev);
+      }
+    }
+  }
+  return [...eventos];
 }
 
 // ----------------------------------------------------------- uninstall

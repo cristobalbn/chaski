@@ -24,6 +24,11 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   narrativa coincide con el estado actual, se inyecta con una nota de que la
   narrativa se firma en el próximo turno. Un relevo.md editado o hechos
   alterados en estado.json siguen disparando el aviso.
+- `chaski doctor` ya no declara hooks registrados por palabras que aparecen
+  solo en comentarios u otras claves (#51). Ahora cuenta un evento solo si,
+  dentro de la clave de hooks que ese CLI lee, hay un comando que apunta a un
+  script o wrapper de chaski. Un archivo que no se puede parsear se reporta como
+  ilegible en vez de como registrado.
 
 ## [0.1.0] - 2026-11-07
 
