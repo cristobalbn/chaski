@@ -10,7 +10,7 @@
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { relayPath, statePath, readJson, currentBranch, git, projectDir } from './lib/paths.mjs';
-import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS } from './lib/relay.mjs';
+import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks } from './lib/relay.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
 
 main();
@@ -52,12 +52,15 @@ function main() {
       verificado = estado.signature ? isValidSignature(md, estado.signature) : false;
     }
 
-    const partes = [preamble(estado, verificado), '', md];
+    // Se neutraliza aquí, en la salida, y no al renderizar: así cubre también
+    // un relevo.md editado a mano (con firma inválida) y no altera la firma.
+    const partes = [preamble(estado, verificado), '', neutralizeMarks(md)];
 
     // Si el repo se movió desde que se escribió el relevo, hay que decirlo:
     // un relevo desactualizado presentado como verdad es peor que nada.
+    // La deriva lleva nombres de rama y mensajes de commit: también se neutraliza.
     const deriva = detectDrift(cwd, estado, budget, ramaActual);
-    if (deriva) partes.push('', deriva);
+    if (deriva) partes.push('', neutralizeMarks(deriva));
 
     partes.push('', CLOSING_MARK);
 
@@ -136,6 +139,12 @@ function changesSinceRelay(cwd, estado, budget = null) {
   const avisos = [];
   const head = git(cwd, ['rev-parse', '--short', 'HEAD'], { budget });
   if (!estado.head || !head || estado.head === head) return avisos;
+  // `estado.head` va como argumento a git más abajo. Sin validar, un valor
+  // como `--output=<archivo>` lo interpreta git como opción de `log`/`diff` y
+  // escribe un archivo. Lo escribe capture.mjs, pero estado.json es editable.
+  // Hoy `cat-file -e` lo rechaza antes, así que es defensa en profundidad:
+  // no depender de que ese paso vaya primero.
+  if (!/^[0-9a-f]{4,40}$/i.test(String(estado.head))) return avisos;
 
   // Si el commit del relevo ya no existe, la historia se reescribió
   // (rebase, squash, fuerza). Nada de lo que sigue es comparable.

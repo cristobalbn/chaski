@@ -116,7 +116,13 @@ function main() {
       // agent nuevo las lee al arrancar y las perdería para el que venga
       // después. Su antigüedad se muestra en el relevo, que es la forma honesta
       // de que algo viejo se note sin desaparecer.
-      subagents: previo.subagents ?? null,
+      //
+      // Pero no para siempre. Una conclusión es texto de modelo que puede
+      // repetir lo que el subagente leyó (una página, un archivo hostil), y se
+      // inyecta en cada arranque de los tres CLIs. Sin vencimiento, un texto
+      // así quedaba hasta que lo desplazaran seis conclusiones nuevas, lo que
+      // en un repo sin subagentes es nunca. Ver freshSubagents().
+      subagents: freshSubagents(previo.subagents),
       // Tareas en segundo plano que quedan corriendo. Si cambias de CLI con
       // algo a medio ejecutar, el agent nuevo tiene que saberlo.
       backgroundTasks: liveTasks(ev),
@@ -299,6 +305,28 @@ function promote(ev, cwd, config) {
     if (liberar) liberar();
   }
   return ok();
+}
+
+/**
+ * Las conclusiones que no vencieron. Sin `at` legible se descartan: no hay
+ * cómo fecharlas.
+ *
+ * Vencen a las 72 h: alcanza para un fin de semana entre una sesión y otra,
+ * que es el relevo entre CLIs que motivó preservarlas, y acota cuánto tiempo
+ * puede repetirse en cada arranque un texto que nadie verificó.
+ *
+ * El plazo va DENTRO de la función, no como `const` de módulo: `main()` corre
+ * en la línea de arriba del archivo, antes de que un `const` declarado aquí
+ * abajo se inicialice, y el ReferenceError lo atrapaba el hook en silencio.
+ */
+function freshSubagents(lista, ahora = Date.now()) {
+  const SUBAGENT_TTL_MS = 72 * 3600 * 1000;
+  if (!Array.isArray(lista)) return null;
+  const vivas = lista.filter((s) => {
+    const t = Date.parse(s?.at ?? '');
+    return Number.isFinite(t) && ahora - t < SUBAGENT_TTL_MS;
+  });
+  return vivas.length ? vivas : null;
 }
 
 /**

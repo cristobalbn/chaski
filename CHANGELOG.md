@@ -5,6 +5,19 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Seguridad
+- El relevo inyectado ya no puede cerrar su propio marco de datos: `inject.mjs`
+  neutraliza toda corrida de tres o más `<` o `>` en el cuerpo y en el aviso de
+  deriva. Una narrativa, una conclusión de subagente, un mensaje de commit o un
+  nombre de rama que traía `<<<FIN-RELEVO-CHASKI>>>` dejaba el texto siguiente
+  fuera del bloque "datos, no instrucciones".
+- Las conclusiones de subagentes vencen a las 72 h. Desde el #28 se preservaban
+  entre sesiones sin plazo, así que un texto de modelo no verificado se
+  inyectaba en cada arranque de los tres CLIs hasta que lo desplazaran seis
+  conclusiones nuevas.
+- `estado.head` se valida como SHA antes de pasarlo a git (defensa en
+  profundidad: hoy `git cat-file -e` ya rechaza un valor con forma de opción).
+
 ## [0.1.0] - 2026-11-07
 
 ### Comandos y herramientas de sesión
