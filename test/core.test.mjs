@@ -1133,6 +1133,29 @@ describe('presupuesto de tiempo del hook', () => {
       });
     });
 
+    test('si "rev-parse" no responde a tiempo, sigue siendo un repo y se declara', () => {
+      // Lo encontró el CI de Windows: con un runner lento, el primer git
+      // pasaba del presupuesto, currentBranch() volvía null y gitFacts lo
+      // tomaba por "no es un repo". El relevo decía "Sin repositorio git" y
+      // perdía la lista de archivos. Aquí es determinista: el presupuesto está
+      // en cero solo para la primera consulta, la de la rama.
+      conRepoSucio(4, (dir) => {
+        let llamadas = 0;
+        const primeraSinTiempo = {
+          remaining: () => (llamadas++ === 0 ? 0 : 5000),
+          expired: () => false,
+          elapsed: () => 0,
+        };
+        const h = gitFacts(dir, {}, primeraSinTiempo);
+        assert.equal(h.branch, null, 'el fixture no dejó la rama sin leer; el test no probaría nada');
+        assert.equal(h.isRepo, true, 'tomó una rama sin respuesta por "no es un repo"');
+        assert.equal(h.dirty.length, 4, 'perdió la lista de archivos sucios');
+        assert.ok(h.trimmed.some((t) => /rev-parse/.test(t)), 'no declaró que la rama no se pudo leer');
+        const md = render({ writtenAt: new Date().toISOString(), agent: 't', facts: h, trimmed: h.trimmed });
+        assert.doesNotMatch(md, /Sin repositorio git/);
+      });
+    });
+
     test('el relevo declara el recorte en una sección propia, antes de los hechos', () => {
       conRepoSucio(20, (dir) => {
         const h = gitFacts(dir, {}, fakeBudget(150));
@@ -1164,6 +1187,14 @@ describe('presupuesto de tiempo del hook', () => {
       execFileSync('git', ['add', '-A'], { cwd: dir });
       execFileSync('git', ['commit', '-qm', 'inicial'], { cwd: dir });
       for (let i = 0; i < 2000; i++) writeFileSync(join(dir, `f${i}.txt`), 'x cambiado\n');
+      // Un `git status` previo, fuera de la medición. Los 2.000 archivos se
+      // acaban de escribir: en los runners de Windows el antivirus todavía los
+      // está escaneando y git refresca el índice entero en la primera pasada.
+      // Con eso, el `status` del hook pasaba del presupuesto y la cuenta quedaba
+      // en 0 (declarada como recorte, sin mentir, pero el test medía al
+      // antivirus y no a chaski). Un árbol que alguien editó a mano no llega
+      // al hook recién creado en el mismo segundo.
+      execFileSync('git', ['status', '--porcelain'], { cwd: dir, stdio: 'ignore' });
 
       const t0 = Date.now();
       execFileSync(process.execPath, [join(AQUI, '..', 'src', 'capture.mjs'), 'Stop', 'test'],
