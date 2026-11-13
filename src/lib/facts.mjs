@@ -3,8 +3,9 @@
 //
 // Invariante del proyecto: el modelo NO puede escribir en estos campos.
 // El estado de los tests sale del exit code y de ningún otro lado.
-import { readFileSync, statSync, openSync, readSync, closeSync } from 'node:fs';
-import { git, currentBranch } from './paths.mjs';
+import { readFileSync, statSync, openSync, readSync, closeSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { git, currentBranch, projectDir } from './paths.mjs';
 import { isExcludedPath, redact } from './secrets.mjs';
 import { hasTime } from './budget.mjs';
 
@@ -28,7 +29,16 @@ export function gitFacts(cwd, config, budget = null, branch = undefined) {
     isRepo: false, dirty: [], commits: [], upstream: null,
     trimmed: [],
   };
-  if (h.branch === null) return h;
+  if (h.branch === null) {
+    // `null` no significa "no es un repo": git() también devuelve null cuando
+    // el subproceso no respondió dentro del presupuesto. Tomarlo como "sin
+    // repositorio" hacía que un runner lento —o una máquina cargada— produjera
+    // un relevo que afirmaba "Sin repositorio git" y perdía la lista de
+    // archivos. Se distingue mirando el disco, que no cuesta un subproceso:
+    // si hay un .git, es un repo cuya rama no se pudo leer, y se declara.
+    if (!existsSync(join(projectDir(cwd), '.git'))) return h;
+    h.trimmed.push('rama actual: "git rev-parse" no respondió dentro del presupuesto de tiempo');
+  }
   h.isRepo = true;
 
   // status --porcelain --branch es la fuente PRIMARIA, no numstat. Antes era al
