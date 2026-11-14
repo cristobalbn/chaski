@@ -6,13 +6,17 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org)
 [![Dependencias](https://img.shields.io/badge/dependencias-0-brightgreen.svg)](package.json)
 
-**Relevo de contexto entre agentes de código.** Cuando se agota la cuota de un
-CLI, el siguiente arranca sabiendo qué se decidió, qué quedó a medias y cuál es
-el siguiente paso — sin vigilar contadores ni copiar y pegar nada.
+**Relevo de contexto entre agentes de código.** Trabajas en Claude Code y se
+acaba la cuota. Abres Codex en la misma carpeta y ya sabe lo que pasó: «estabas
+migrando el login a tokens; falta actualizar los tests de `auth/`». Sin vigilar
+contadores ni copiar y pegar nada.
+
+**Privacidad:** chaski no envía nada por red por su cuenta. Todo queda en tu
+máquina, y los secretos se redactan antes de escribir a disco
+([detalle](#seguridad)).
 
 Los chaskis eran los mensajeros del imperio inca: cada uno corría un tramo y en
-el **tambo** entregaba el mensaje al siguiente. Lo que llevaban era un registro
-de nudos. Mismo problema, misma solución.
+el **tambo** entregaba el mensaje al siguiente. Mismo problema, misma solución.
 
 Compatible con **Claude Code**, **Codex CLI** y **Antigravity CLI (`agy`)**. Con
 uno solo ya sirve: el relevo entre sesiones de la misma herramienta tiene valor
@@ -28,10 +32,11 @@ chaski init
 chaski doctor           # verifica qué quedó conectado
 ```
 
-Después **cierra y vuelve a abrir tu CLI**: los hooks se leen al arrancar. Si
-usas Codex, además tiene que aceptar los hooks (ver
-[Dos pasos después de instalar](#dos-pasos-después-de-instalar)). Si la
-terminal no reconoce `chaski`, ábrela de nuevo.
+Después **cierra y vuelve a abrir tu CLI**: chaski se engancha con *hooks* (un
+hook es un comando que el CLI ejecuta solo al iniciar o terminar un turno) y el
+CLI los lee únicamente al arrancar. Si usas Codex, además tiene que aceptar los
+hooks (ver [Dos pasos después de instalar](#dos-pasos-después-de-instalar)). Si
+la terminal no reconoce `chaski`, ábrela de nuevo.
 
 No hace falta clonar este repositorio: clonar es solo para contribuir o auditar
 el código ([ver abajo](#para-contribuir-o-auditar-el-código)).
@@ -55,11 +60,13 @@ un resumen a mano funciona exactamente hasta el día en que te olvidas.
 ## Índice
 
 - [Instalación](#instalación)
-  - [Si le pasaste este enlace a un agente](#si-le-pasaste-este-enlace-a-un-agente)
   - [Con npm](#con-npm)
-  - [Para contribuir o auditar el código](#para-contribuir-o-auditar-el-código)
+  - [Qué hace `init`](#qué-hace-init)
   - [Dos pasos después de instalar](#dos-pasos-después-de-instalar)
-  - [Actualizar y desinstalar](#actualizar)
+  - [Verificar la instalación](#verificar-la-instalación)
+  - [Si le pasaste este enlace a un agente](#si-le-pasaste-este-enlace-a-un-agente)
+  - [Actualizar](#actualizar)
+  - [Desinstalar](#desinstalar)
 - [Uso diario](#uso)
   - [Qué escribir en el chat del agente](#la-misma-petición-en-los-tres-agentes)
   - [La narrativa se pide sola](#la-narrativa-se-pide-sola)
@@ -67,10 +74,16 @@ un resumen a mano funciona exactamente hasta el día en que te olvidas.
 - [Configuración (`chaski.json`, `chaski.local.json`, `~/.chaski/config.json`)](#configuración)
 - [Equipos y repositorios compartidos](#equipos-y-repositorios-compartidos)
 - [Arquitectura](#arquitectura)
-- [Seguridad y términos de uso](#seguridad)
+- [Seguridad](#seguridad)
+- [Términos de uso de los proveedores](#términos-de-uso-de-los-proveedores)
 - [Lo que chaski no hace](#lo-que-chaski-no-hace)
 - [Límites conocidos](#límites-conocidos)
 - [Contribuir](#contribuir)
+  - [Para contribuir o auditar el código](#para-contribuir-o-auditar-el-código)
+- [Soporte](#soporte) y [Licencia](#licencia)
+
+El detalle técnico que no hace falta para usar chaski está en la
+[referencia técnica](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md).
 
 ---
 
@@ -78,7 +91,173 @@ un resumen a mano funciona exactamente hasta el día en que te olvidas.
 
 **Requisitos:** Node.js ≥ 20. Nada más — cero dependencias de runtime.
 
+### Con npm
+
+```bash
+npm install -g "@cristobalbn/chaski"
+cd tu-proyecto
+chaski init
+```
+
+*(Las comillas son opcionales: el comando funciona igual en PowerShell, cmd y bash/zsh.)*
+
+Instalado así, los hooks apuntan a la copia global de npm (la ruta exacta la
+muestra `chaski doctor`), no a ningún clon. Un clon local de este repositorio
+es independiente de lo que ejecutan tus CLIs: puedes borrarlo o moverlo sin
+romper nada.
+
+También se puede instalar directo desde GitHub:
+
+```bash
+npm install -g github:cristobalbn/chaski
+```
+
+> **No uses `npx "@cristobalbn/chaski" init`** (ni `npx github:cristobalbn/chaski init`).
+> Los hooks guardan una ruta absoluta a los scripts, y el caché de `npx` es
+> temporal: la ruta desaparece y los hooks fallan en silencio. `init` detecta
+> ese caso y aborta con una explicación.
+
+### Qué hace `init`
+
+1. Detecta cuáles de los tres CLIs tienes instalados y registra los hooks **a
+   nivel de usuario**, con rutas nativas del sistema operativo. Respalda cada
+   archivo de configuración antes de tocarlo.
+2. Agrega `.tambo/` y `chaski.local.json` a tu `.gitignore`.
+3. Instala la skill `relevo` (un archivo de instrucciones que el agente carga
+   al oírte pedir «relevo») dos veces: en `.claude/skills/relevo/`, que lee
+   Claude Code, y en `.agents/skills/relevo/`, que leen Codex y Antigravity.
+   Es el mismo archivo y reconoce las mismas peticiones: **«relevo»**,
+   **«guarda el relevo»** y **«actualiza el relevo»**.
+4. Agrega una sección de relevo a tu `AGENTS.md`. Si ya existe, añade o actualiza
+   un bloque delimitado con las peticiones comunes y conserva el resto del texto.
+
+Si no encuentra ningún CLI en el `PATH` (la lista de carpetas donde tu terminal
+busca programas), no toca nada y sale con 0.
+
+<details>
+<summary>Si abres el CLI en una carpeta que no es la raíz del repo</summary>
+
+Los hooks van a **nivel de usuario** y sirven para todos tus proyectos. Los
+archivos de proyecto —la skill, el bloque de `AGENTS.md`, la línea del
+`.gitignore`— van **solo en el repositorio**, nunca en la carpeta desde la que
+invocaste `init` si esa carpeta no es el repositorio.
+
+Esto importa si tienes una carpeta contenedora con varios proyectos dentro:
+instalar ahí la skill la aplicaría a todos, y el `AGENTS.md` le hablaría de
+chaski a quien esté trabajando en otro proyecto. Todo lo de un proyecto vive en
+su proyecto.
+
+Si abres un agente en la carpeta contenedora, el relevo se inyecta igual
+—los hooks son de usuario y chaski resuelve el repositorio hijo— y la petición
+automática de la narrativa trae las instrucciones completas para escribirla sin
+la skill. Lo que no tendrás ahí es el atajo `/relevo`.
+
+`init` y `doctor` muestran en la línea `proyecto` / `directorio` la carpeta
+donde vive el relevo, y explican cuándo no es la carpeta actual. Hay que
+saber cómo se resuelve. `<slug-de-la-rama>` es el nombre de la rama convertido
+a un nombre de carpeta seguro (`main` queda `main`; `feat/pagos` queda
+`feat-pagos-<hash6>`).
+
+| Abres el CLI en… | El relevo vive en… |
+|---|---|
+| la raíz de un repo o una subcarpeta suya | la raíz del repo, `.tambo/branches/<slug-de-la-rama>/` |
+| una carpeta sin git con **un único** repo hijo | ese repo hijo |
+| una carpeta sin git con cero o varios repos hijos | esa misma carpeta, `.tambo/branches/sin-rama/` |
+
+En carpetas sin git, **cada carpeta desde la que abras un CLI tiene su propio
+relevo**: el de la carpeta padre no lo ve quien abre una subcarpeta, y al revés.
+Y si a mitad de una tarea creas el único repo dentro de una carpeta sin git, el
+relevo pasa a ese repo y el anterior (`sin-rama`) queda en la carpeta padre sin
+migrarse.
+
+</details>
+
+### Dos pasos después de instalar
+
+Hay dos cosas que `init` no puede hacer por ti, y sin ellas parece que la
+herramienta no funciona.
+
+**1. Reinicia tus sesiones.** Los CLIs cargan los hooks al abrir la sesión, así
+que una que ya estaba abierta no los tiene y `.tambo/` va a seguir vacío.
+Ciérrala y vuelve a abrirla.
+
+**2. En Codex, acepta los hooks.** La primera vez que abras Codex te va a
+preguntar si confías en ellos. **Tienes que aceptar** —aparece como «trust
+all»— o no ejecuta ninguno. Y el permiso, aunque queda guardado, recién se
+aplica en la sesión siguiente: cierra Codex y vuelve a abrirlo una vez más.
+
+Si algo no captura, `chaski doctor` detecta exactamente este caso y te dice
+qué falta:
+
+```
+⚠ codex: hooks registrados pero nunca ejecutados.
+  Codex pide confiar en los hooks la primera vez que lo abres.
+  Acepta ("trust all") y vuelve a abrirlo: el permiso se aplica
+  desde la sesión siguiente.
+```
+
+### Verificar la instalación
+
+**1. Revisa la configuración.**
+
+```bash
+chaski doctor
+```
+
+Imprime en qué eventos de cada configuración hay un hook de chaski, las rutas de
+`capture.mjs` e `inject.mjs` de esta instalación, el último latido de cada CLI
+(la fecha en que su hook corrió por última vez), el estado del relevo y **qué
+sale de tu máquina**. Para ver el comando textual, abre la config del CLI.
+
+Esta es la salida real en un proyecto recién creado y **sin ningún CLI
+configurado** (las rutas y el directorio dependen de tu máquina; `…` marca lo
+omitido):
+
+```
+chaski doctor (v0.1.2)
+
+CLIs y hooks
+  claude code     sin config — ejecuta init
+  codex           sin config — ejecuta init
+  agy             sin config — ejecuta init
+
+Ejecutables del hook
+  capture         ok  …\src\capture.mjs
+  inject          ok  …\src\inject.mjs
+
+Latidos (última vez que cada CLI ejecutó el hook)
+  ninguno todavía — abre una sesión y vuelve a revisar
+
+Proyecto
+  …
+  .tambo en git   NO IGNORADO — ejecuta init
+  relevo          todavía no existe para esta rama
+
+Qué sale de esta máquina
+  capture         nada: solo lee archivos locales y git
+  inject          nada: imprime un archivo local
+  skill relevo    usa el agente que ya tienes abierto (uso interactivo)
+  llamadas        chaski NO invoca claude -p, codex exec ni agy -p
+```
+
+Tras `chaski init` y una sesión real, lo que cambia es: cada CLI instalado pasa
+de `sin config — ejecuta init` a `registrado (…)`, con la lista de eventos que
+tienen un hook de chaski entre paréntesis; `.tambo en git` pasa a `ignorado, correcto`; aparece una
+línea de latido por CLI con la fecha de su última ejecución; y el relevo pasa a
+mostrar su tamaño, `firma válida` y si tiene narrativa. Los dos bloques `ok` de
+ejecutables y `Qué sale de esta máquina` deben verse igual que arriba. Si ves
+`FALTA`, `NO VALIDA`, `hooks NO registrados` o un aviso `⚠`, el propio mensaje
+dice qué hacer.
+
+**2. Prueba de punta a punta.** Al abrir el segundo CLI, pregúntale *«¿qué
+sabes del estado de este trabajo?»*. Si responde con los archivos tocados y qué
+quedó a medias, funcionó. Si no, `chaski doctor` te dice qué hook no quedó
+registrado y dónde.
+
 ### Si le pasaste este enlace a un agente
+
+<details>
+<summary>Instrucciones para el agente que instala chaski en nombre del usuario</summary>
 
 Si estás leyendo esto porque alguien te pidió instalar chaski en su proyecto,
 sigue exactamente esto y no hace falta que leas el resto del README.
@@ -116,193 +295,36 @@ Después:
 `chaski doctor` y dile qué paso falló. Los modos de fallo conocidos están en
 [Límites conocidos](#límites-conocidos).
 
-**No instales con `npx`**: los hooks guardan una ruta absoluta y el caché de
-`npx` es temporal. `init` aborta si detecta ese caso.
+**No instales con `npx`** (ver la advertencia en [Con npm](#con-npm)).
 
 **No agregues configuración que no te pidieron.** chaski funciona sin
 `chaski.json`; crearlo «por las dudas» solo agrega algo que mantener.
 
-### Con npm
-
-```bash
-npm install -g "@cristobalbn/chaski"
-cd tu-proyecto
-chaski init
-```
-
-*(Las comillas son opcionales: el comando funciona igual en PowerShell, cmd y bash/zsh.)*
-
-Instalado así, los hooks apuntan a la copia global de npm (la ruta exacta la
-muestra `chaski doctor`), no a ningún clon. Un clon local de este repositorio
-es independiente de lo que ejecutan tus CLIs: puedes borrarlo o moverlo sin
-romper nada.
-
-También se puede instalar directo desde GitHub:
-
-```bash
-npm install -g github:cristobalbn/chaski
-```
-
-> **No uses `npx "@cristobalbn/chaski" init`** (ni `npx github:cristobalbn/chaski init`). Los hooks guardan una ruta absoluta a los
-> scripts, y el caché de `npx` es temporal: la ruta desaparece y los hooks
-> fallan en silencio. `init` detecta ese caso y aborta con una explicación.
-
-### Para contribuir o auditar el código
-
-**No es necesario para usar chaski**: para eso basta [npm](#con-npm). El clon
-trae lo que el paquete de npm deja fuera a propósito —historial, `test/`,
-`docs/`, `scripts/`, CI y `CONTRIBUTING.md`—.
-
-Clónalo si vas a contribuir, o si prefieres leer lo que vas a ejecutar antes de
-instalarlo, algo razonable en una herramienta que corre sola en cada turno. Son
-~3.800 líneas de JavaScript sin dependencias:
-
-```bash
-git clone https://github.com/cristobalbn/chaski.git
-cd chaski
-npm run check          # verifica la sintaxis; no hay build
-npm test               # node:test, sin dependencias
-cd ../tu-proyecto
-node ../chaski/src/cli.mjs init
-```
-
-Ojo con este último paso: un `init` corrido desde el clon registra hooks que
-apuntan **al clon**. Si después lo mueves o lo borras, los hooks quedan
-apuntando a un archivo inexistente. Para auditar y luego usar, instala con npm
-y deja el clon solo para leer.
-
-### Dónde escribe `init`, y dónde no
-
-Los hooks van a **nivel de usuario** y sirven para todos tus proyectos. Los
-archivos de proyecto —la skill, el bloque de `AGENTS.md`, la línea del
-`.gitignore`— van **solo en el repositorio**, nunca en la carpeta desde la que
-invocaste `init` si esa carpeta no es el repositorio.
-
-Esto importa si tienes una carpeta contenedora con varios proyectos dentro:
-instalar ahí la skill la aplicaría a todos, y el `AGENTS.md` le hablaría de
-chaski a quien esté trabajando en otro proyecto. Todo lo de un proyecto vive en
-su proyecto.
-
-Si abres un agente en la carpeta contenedora, el relevo se inyecta igual
-—los hooks son de usuario y chaski resuelve el repositorio hijo— y la petición
-automática de la narrativa trae las instrucciones completas para escribirla sin
-la skill. Lo que no tendrás ahí es el atajo `/relevo`.
-
-`init` y `doctor` muestran en la línea `proyecto` / `directorio` la carpeta
-donde vive el relevo, y explican cuándo no es la carpeta actual. Hay que
-saber cómo se resuelve:
-
-| Abres el CLI en… | El relevo vive en… |
-|---|---|
-| la raíz de un repo o una subcarpeta suya | la raíz del repo, `.tambo/branches/<slug-de-la-rama>/` |
-| una carpeta sin git con **un único** repo hijo | ese repo hijo |
-| una carpeta sin git con cero o varios repos hijos | esa misma carpeta, `.tambo/branches/sin-rama/` |
-
-En carpetas sin git, **cada carpeta desde la que abras un CLI tiene su propio
-relevo**: el de la carpeta padre no lo ve quien abre una subcarpeta, y al revés.
-Y si a mitad de una tarea creas el único repo dentro de una carpeta sin git, el
-relevo pasa a ese repo y el anterior (`sin-rama`) queda en la carpeta padre sin
-migrarse.
-
-### Qué hace `init`
-
-1. Detecta cuáles de los tres CLIs tienes instalados y registra los hooks **a
-   nivel de usuario**, con rutas nativas del sistema operativo. Respalda cada
-   archivo de configuración antes de tocarlo.
-2. Agrega `.tambo/` y `chaski.local.json` a tu `.gitignore`.
-3. Instala la skill `relevo` dos veces: en `.claude/skills/relevo/`, que lee
-   Claude Code, y en `.agents/skills/relevo/`, que leen Codex y Antigravity.
-   Es el mismo archivo y reconoce las mismas peticiones: **«relevo»**,
-   **«guarda el relevo»** y **«actualiza el relevo»**.
-4. Agrega una sección de relevo a tu `AGENTS.md`. Si ya existe, añade o actualiza
-   un bloque delimitado con las peticiones comunes y conserva el resto del texto.
-
-Si no encuentra ningún CLI en el PATH, no toca nada y sale con 0.
-
-### Dos pasos después de instalar
-
-Hay dos cosas que `init` no puede hacer por ti, y sin ellas parece que la
-herramienta no funciona.
-
-**1. Reinicia tus sesiones.** Los CLIs cargan los hooks al abrir la sesión, así
-que una que ya estaba abierta no los tiene y `.tambo/` va a seguir vacío.
-Ciérrala y vuelve a abrirla.
-
-**2. En Codex, acepta los hooks.** La primera vez que abras Codex te va a
-preguntar si confías en ellos. **Tienes que aceptar** —aparece como «trust
-all»— o no ejecuta ninguno. Y el permiso, aunque queda guardado, recién se
-aplica en la sesión siguiente: cierra Codex y vuelve a abrirlo una vez más.
-
-Si algo no captura, `chaski doctor` detecta exactamente este caso y te dice
-qué falta:
-
-```
-⚠ codex: hooks registrados pero nunca ejecutados.
-  Codex pide confiar en los hooks la primera vez que lo abres.
-  Acepta ("trust all") y vuelve a abrirlo: el permiso se aplica
-  desde la sesión siguiente.
-```
-
-### Verificar la instalación
-
-```bash
-chaski doctor
-```
-
-Imprime en qué eventos de cada configuración hay un hook de chaski, las rutas de
-`capture.mjs` e `inject.mjs` de esta instalación, el último latido de cada CLI,
-el estado del relevo y **qué sale de tu máquina**. Para ver el comando textual,
-abre la config del CLI.
-
-### Capturar payloads (`chaski probe`)
-
-Herramienta de diagnóstico: instala una sonda que vuelca a disco el payload
-crudo que cada CLI le pasa a sus hooks. Sirve para ver por qué un hook no
-captura, y para aportar fixtures si agregas soporte a otro CLI.
-
-```bash
-chaski probe              # instala la sonda en los CLIs que tengas
-# abre cada CLI en modo INTERACTIVO, escribe algo, ciérralo
-chaski probe --show       # mira lo capturado
-chaski probe --clean      # quita la sonda
-```
-
-Tiene que ser una sesión interactiva: ninguno de los tres dispara hooks en
-modo headless.
+</details>
 
 ### Actualizar
 
 ```bash
 npm install -g "@cristobalbn/chaski"   # o: npm install -g github:cristobalbn/chaski
 cd tu-proyecto
-chaski init                            # repítelo en cada proyecto que uses con Chaski
+chaski init                            # repítelo en cada proyecto que uses con chaski
 ```
 
-**Ejecutar `chaski init` no es opcional.** Los hooks se registran con la ruta absoluta
-de los scripts, así que una actualización que mueva la carpeta de instalación
-—o que cambie un nombre de archivo— deja la configuración apuntando a algo que
-ya no existe, y el CLI imprime un error de módulo no encontrado en cada turno.
-`chaski init` reescribe las rutas y es idempotente: correrlo de nuevo sobre una
-instalación sana no cambia nada.
+Después cierra y vuelve a abrir tus CLIs: leen los hooks una sola vez, al
+arrancar. **`chaski init` no es opcional tras actualizar**: los hooks guardan
+la ruta absoluta de los scripts y, si una versión la mueve, el CLI imprime un
+error de módulo no encontrado en cada turno
+([por qué y qué pasa con la sesión abierta](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#actualizar-por-qué-init-no-es-opcional)).
+Las configuraciones anteriores a la 0.1.0 siguen funcionando mediante puentes de
+compatibilidad, pero `init` sigue siendo el paso correcto
+([detalle](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#puentes-de-compatibilidad-capturarmjs-leermjs)).
 
-También actualiza las copias de la skill y el bloque de peticiones de `AGENTS.md`
-en ese proyecto. Las secciones antiguas sin delimitadores se conservan, porque
-pueden contener instrucciones escritas por ti.
+Para saber qué versión tienes y si hay una más nueva:
 
-Si ya estás viendo ese error, corre `chaski init`. Pero **la sesión que ya lo
-tiene abierto no lo va a ver desaparecer**: los CLIs leen su configuración de
-hooks una sola vez, al arrancar, así que `init` corrige la ruta para la
-próxima sesión, no para la que está corriendo. Cierra esa sesión y abre una
-nueva. `chaski doctor` muestra qué eventos quedaron registrados y la ruta de los
-scripts, por si quieres confirmarlo antes de reabrir.
-
-Desde la 0.1.0 los dos nombres de archivo anteriores a la
-homologación al inglés —`capturar.mjs` y `leer.mjs`— siguen funcionando como
-puentes, así que una configuración vieja ya no produce ese volcado de Node:
-captura e inyecta igual, y el hook de inicio de sesión imprime una línea
-recordando que conviene correr `init`. Los puentes existen para que
-actualizar no rompa nada, no para quedarse: `init` sigue siendo el paso
-correcto.
+```bash
+chaski version
+npm outdated -g @cristobalbn/chaski
+```
 
 ### Desinstalar
 
@@ -342,58 +364,27 @@ ruta. Lo que queda, y se borra a mano si quieres:
 La captura de hechos y la lectura al arrancar son automáticas. Si se agota la
 cuota antes de pedir el relevo, siguen disponibles los hechos guardados, aunque
 puede faltar la narrativa reciente. No ejecutes `chaski init` en cada cambio:
-basta al configurar el proyecto y al actualizar Chaski.
+basta al configurar el proyecto y al actualizar chaski.
 
 **El `cd` no es opcional:** el relevo vive dentro del proyecto, así que cada
 proyecto tiene el suyo y no se mezclan. Tampoco se mezclan las ramas — volver a
 una rama que dejaste hace una semana te devuelve su contexto.
-No necesitas trabajar dentro del código de Chaski para usarlo en otro proyecto.
+No necesitas trabajar dentro del código de chaski para usarlo en otro proyecto.
 
 ### La narrativa se pide sola
 
-El relevo tiene dos mitades. Los **hechos** —archivos, diff, commits, exit
-codes— los saca chaski de git y del transcript sin costo ni intervención. La
-**intención** —qué intentabas, qué quedó a medias y dónde, el siguiente paso—
-solo la puede escribir el agent que estuvo en la conversación.
+El relevo tiene **hechos** (archivos, commits, comandos: los saca chaski de git
+y de la conversación, gratis) y **narrativa** (qué intentabas, qué quedó a
+medias, el siguiente paso: solo la puede escribir el agente). A veces, al
+terminar un turno con trabajo detrás, chaski le pide al agente **un turno
+extra** para guardar ese porqué. Ese turno consume algo de cuota, pero se pide
+con poca frecuencia, mientras todavía sobra, y nunca se invoca ningún modelo por
+fuera. En Claude Code lo verás como una línea bajo «Stop hook feedback».
 
-Pedirla a mano tiene un defecto que no es de disciplina: **la narrativa
-consume cuota, porque la escribe el agent**. Quien espera a estar al límite
-descubre que el momento en que más la necesita es el único en que ya no se
-puede generar. Y el corte por cuota es abrupto: deja la tarea a medias, que es
-exactamente cuando el siguiente agent necesita saber dónde quedó.
-
-Por eso chaski la pide por su cuenta, **temprano y repartida**, mientras sobra
-cuota. Al terminar un turno con trabajo detrás, el hook puede mantener al agent
-un turno más con una instrucción: guarda la narrativa, con énfasis en lo que
-quedó en vuelo. No se invoca ningún modelo por fuera —eso lo prohíben los
-términos de los tres proveedores— sino que se le pide al agent que ya está en
-sesión.
-
-Cada petición cuesta un turno de tu conversación, así que los límites son
-conservadores, y en este orden:
-
-1. **Una narrativa escrita hace menos de 20 minutos no se vuelve a pedir**,
-   pase lo que pase. Es el corte más fuerte: lo que vuelve insufrible a esta
-   función no es pedirla de más en una sesión larga, es pedirla dos veces
-   seguidas.
-2. **12 minutos** de debounce entre peticiones.
-3. Solo si hay trabajo real detrás: archivos sin commitear, commits nuevos o
-   comandos ejecutados.
-4. Y solo si la narrativa falta, quedó **8 turnos** atrás, o hay commits
-   nuevos.
-
-| | |
-|---|---|
-| Apagarlo | `"askNarrative": false` en `chaski.json` o `chaski.local.json` |
-| Cómo se ve | Una línea bajo el rótulo **«Stop hook feedback»** (cuatro si la sesión no tiene la skill `relevo`: entonces trae la ruta y los campos que hay que escribir). Ese rótulo y el `Ran 1 stop hook` los pinta Claude Code al ejecutar cualquier hook y no se pueden suprimir; lo nuestro es el texto, y es corto a propósito porque ocupa pantalla del usuario. Se emite con `hookSpecificOutput.additionalContext`, que la documentación llama «non-error feedback»: mantiene el turno extra y las protecciones contra bucles sin rotularse como error. En una versión de Claude Code anterior a ese campo la petición no llega — no rompe nada |
-| Dónde funciona | Los tres, con el contrato de cada uno: `hookSpecificOutput.additionalContext` en Claude Code, `decision: "block"` en Codex y `decision: "continue"` en Antigravity, que trata cualquier otro valor como permiso para parar |
-| En Codex | su hook `Stop` se registra **síncrono**, porque un hook en segundo plano no puede bloquear. Esperas la captura (~220 ms) al cerrar cada turno |
-
-### La primera vez, verifica
-
-Al abrir el segundo CLI, pregúntale *«¿qué sabes del estado de este trabajo?»*.
-Si responde con los archivos tocados y qué quedó a medias, funcionó. Si no,
-`chaski doctor` te dice qué hook no quedó registrado y dónde.
+- Apagarlo: `"askNarrative": false` en `chaski.json` o `chaski.local.json`.
+- Ver cuántos turnos extra pidió: `chaski cost`.
+- Los límites exactos (20 minutos, 8 turnos) y el contrato por CLI están en la
+  [referencia técnica](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#petición-automática-de-la-narrativa).
 
 ### La misma petición en los tres agentes
 
@@ -435,7 +426,7 @@ narrativa es lo que evita que reabra decisiones ya cerradas.
 | `chaski cost` | Para revisar cuántos turnos extra pidió chaski | Reporta el gasto externo (`0 tokens · $0.00`, porque chaski nunca llama a APIs ni modelos externos) y contabiliza desde `~/.chaski/cost.json` las peticiones automáticas y narrativas escritas por cada CLI en los últimos 7 días y en total |
 | `chaski why [tema]` | Para consultar por qué se tomó o descartó una decisión pasada | Busca en `.tambo/historia/entries.jsonl` (donde `capture.mjs` archiva cada narrativa antes de que se reemplace), en las ramas activas de `.tambo/branches/` y en `decisiones/`. Si pasas `tema`, filtra por texto o nombre de rama. Muestra las 10 más recientes. |
 | `chaski share [tema] [--yes]` | Para compartir una decisión de tu relevo local con el equipo en git | Toma la narrativa de la rama actual, vuelve a pasar el filtro de secretos (`src/lib/secrets.mjs`), muestra la vista previa de `decisiones/YYYY-MM-DD-<tema>.md` y pide confirmación interactiva antes de escribir (o publica directo con `--yes`). Nunca sobrescribe un archivo existente; si ya existe, añade sufijo `-2`, `-3`, etc. Sale con código `1` si la rama no tiene narrativa o si no confirmas |
-| `chaski probe [--show \| --clean]` | Diagnóstico de payloads de hooks o creación de nuevos fixtures | `chaski probe` instala una sonda temporal en `~/.chaski/sonda.mjs`; `--show` muestra los payloads capturados en `~/.chaski/sonda.log`; `--clean` quita la sonda y deja cada config como estaba antes de `probe`. Mientras la sonda está puesta, Codex no ejecuta los hooks de chaski |
+| `chaski probe [--show \| --clean]` | Diagnóstico de payloads de hooks o creación de nuevos fixtures | Instala una sonda temporal que vuelca a disco lo que cada CLI le pasa a sus hooks. Solo para diagnóstico o contribuir: [detalle y uso](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#capturar-payloads-chaski-probe) |
 | `chaski uninstall` | Para quitar los hooks de chaski de tus CLIs | Quita los hooks de chaski de `~/.claude/settings.json`, `~/.codex/config.toml` y `~/.gemini/config/hooks.json` sin tocar el resto de cada archivo. Conserva los respaldos `.chaski-backup`, `.tambo/` y `~/.chaski/` |
 | `chaski version` (`--version`, `-v`) | Para consultar la versión instalada | Imprime `chaski X.Y.Z` desde `package.json` |
 
@@ -446,7 +437,8 @@ narrativa es lo que evita que reabra decisiones ya cerradas.
 La idea central es **separar hechos de intención**:
 
 - **Hechos** (determinísticos, gratis, instantáneos): se derivan de git y del
-  transcript. Cero tokens, cero red, y exactos por construcción.
+  transcript (el historial de la conversación que guarda cada CLI). Cero
+  tokens, cero red, y exactos por construcción.
 - **Intención** (requiere un modelo): por qué se eligió un enfoque, qué falta.
   Esto no está en el diff; está en la conversación.
 
@@ -455,7 +447,7 @@ eso el modelo es el último recurso y no el primero.
 
 | Archivo | Cuándo corre | Qué hace |
 |---|---|---|
-| `src/capture.mjs` | hook `Stop` en los tres CLIs; también `SessionEnd`, `PreCompact`, `SubagentStop` y `StopFailure` en Claude Code | Lee el transcript desde una marca de agua y git; escribe `relevo.md`, `estado.json` y `.tambo/historia/` |
+| `src/capture.mjs` | hook `Stop` en los tres CLIs; también `SessionEnd`, `PreCompact`, `SubagentStop` y `StopFailure` en Claude Code | Lee el transcript desde una marca de agua (hasta dónde ya leyó) y git; escribe `relevo.md`, `estado.json` y `.tambo/historia/` |
 | `src/inject.mjs` | hook `SessionStart` | Imprime el relevo; lo que imprime entra al contexto del agente |
 | `src/cli.mjs` | a mano | `init`, `doctor`, `next`, `cost`, `why`, `share`, `version`, `uninstall`, `probe` |
 | `skill/SKILL.md` | al pedir «relevo» | Instrucciones para que el agente escriba la narrativa |
@@ -557,7 +549,8 @@ forma nativa.
 escritura.** Eso lo convierte en un vector de inyección de prompt, así que:
 
 - Se declara como datos y no como instrucciones, entre delimitadores explícitos.
-- Se firma con HMAC contra una clave local en `~/.chaski/clave`, que nunca se
+- Se firma con HMAC (una firma con clave que detecta ediciones) contra una
+  clave local en `~/.chaski/clave`, que nunca se
   versiona. Si la firma no valida, el relevo se inyecta **rotulado como no
   verificado** en lugar de descartarse en silencio. Una narrativa guardada
   después de la última captura no dispara ese aviso mientras los hechos sigan
@@ -591,33 +584,23 @@ Para reportar una vulnerabilidad, ver [SECURITY.md](SECURITY.md).
 ## Términos de uso de los proveedores
 
 **chaski no invoca ningún CLI automáticamente.** Ni `claude -p`, ni
-`codex exec`, ni `agy -p`.
-
-Esto no es una limitación técnica, es una decisión informada. Los términos de
-consumidor de Anthropic prohíben acceder a los servicios «por medios
-automatizados o no humanos, mediante bot, script o de otro modo» salvo con una
-API key. Google respondió oficialmente que los requests automáticos y
-desatendidos no están soportados en planes de consumidor y pueden activar
-bloqueos de cuenta — y hay suspensiones documentadas en sus foros. OpenAI apunta
-a usar una API key para automatización.
-
-La narrativa la escribe **el agente que ya tienes abierto**, que es uso
-interactivo de una sesión que iniciaste tú (los términos solo permiten
-automatización externa mediante una API key propia, pero chaski no necesita
-siquiera eso porque nunca invoca un modelo por fuera).
-
-No existe una opción de configuración para invocar tu suscripción de forma
-automática. No está implementada a propósito: una configuración que pone en
-riesgo tu cuenta no debería estar a un flag de distancia.
+`codex exec`, ni `agy -p`. Los términos de consumidor de Anthropic, Google y
+OpenAI restringen la automatización de las suscripciones (Google documenta
+bloqueos de cuenta), así que la narrativa la escribe **el agente que ya tienes
+abierto**, en una sesión que iniciaste tú. No existe una opción, ni detrás de un
+flag, para invocar tu suscripción de forma automática: una configuración que
+pone en riesgo tu cuenta no debería estar a un flag de distancia. Las citas y el
+razonamiento completo están en la
+[referencia técnica](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#términos-de-uso-de-los-proveedores).
 
 ---
 
 ## Lo que chaski no hace
 
-- **No funciona en modo headless.** Verificado empíricamente en los tres:
-  `claude -p`, `codex exec` y `agy -p` no disparan los hooks `SessionStart` ni
-  `Stop`. chaski es para sesiones interactivas; si lo necesitas en CI, esta
-  herramienta no es la indicada.
+- **No funciona en modo headless** (sin interfaz interactiva). Verificado
+  empíricamente en los tres: `claude -p`, `codex exec` y `agy -p` no disparan
+  los hooks `SessionStart` ni `Stop`. chaski es para sesiones interactivas; si
+  lo necesitas en CI, esta herramienta no es la indicada.
 - **No es una base de datos vectorial ni un servicio en la nube**, no sincroniza
   estado en tiempo real entre máquinas y solo soporta tres herramientas (para
   historial local tiene `chaski why`, para decisiones puntuales `chaski share` y
@@ -632,12 +615,11 @@ riesgo tu cuenta no debería estar a un flag de distancia.
 
 | Límite | Valor | Por qué |
 |---|---|---|
-| Latencia del hook | ~220 ms (antes ~340 ms; se redujeron los subprocesos de git de 9 a 3 en árbol limpio, o 4 si hay archivos sucios) | El presupuesto de `Stop` en Claude Code es de 1,5 s **compartido** entre todos los hooks del evento. Hay margen de casi 7x, pero si tienes muchos hooks ahí, mide |
-| Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
 | Narrativa | puede atrasarse unos turnos | Los hechos están siempre al día; el porqué depende de cuándo pediste «relevo» |
 | Hooks de Codex | requieren conceder confianza | La primera vez que abres Codex con hooks instalados pide confiar en ellos. Hasta que aceptes, no se ejecuta ninguno, y el permiso se aplica desde la sesión siguiente |
-| Un turno con miles de archivos modificados | el relevo sale **incompleto, y lo dice** | El hook tiene un presupuesto de tiempo propio y sacrifica lo caro y poco informativo antes de agotarlo: primero el detalle de líneas `+/-` por archivo, después el log de commits. La rama, el `HEAD`, la lista de archivos y su total siempre sobreviven. Lo que se omitió aparece declarado en el relevo, porque un relevo incompleto que se presenta como completo es peor que uno recortado. Medido: 5.000 archivos modificados pasaban de 2.000 ms —y perdían el relevo entero— y ahora el hook completo tarda ~220-340 ms |
+| Un turno con miles de archivos modificados | el relevo sale **incompleto, y lo dice** | El hook sacrifica detalle caro (líneas `+/-`, log de commits) antes de agotar su presupuesto de tiempo; la rama, el `HEAD`, la lista de archivos y su total siempre sobreviven, y lo omitido aparece declarado en el relevo |
 | Ruta del proyecto de más de ~240 caracteres | los subprocesos de git fallan | En Windows, una ruta así de larga hace que el subproceso de git falle. Desde la 0.1.1, si existe `.git` el relevo no afirma «Sin repositorio git»: declara la rama sin leer como recorte, pero sale sin rama ni los datos que dependen de git. No hay arreglo barato conocido: evita rutas tan largas para este proyecto |
+| Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
 
 Si un administrador fijó `allowManagedHooksOnly` o `disableAllHooks` en una
 máquina corporativa, los hooks de usuario no corren. `doctor` no lee esas claves:
@@ -650,22 +632,17 @@ persona, no una verificación para encadenar en un script o en CI — si
 necesitas eso, revisa su salida de texto, no su código de salida. (`init` sí
 termina en 1 si algún CLI falló al configurarse.)
 
-**Relevos de antes del renombre a `branches/`.** Versiones viejas de chaski
-guardaban el relevo en `.tambo/ramas/<rama>/`. Ni `inject.mjs` ni `doctor`
-migran ni mencionan esa carpeta: si tienes relevos ahí, quedaron huérfanos.
-Para recuperarlos a mano, copia el contenido de
-`.tambo/ramas/<rama>/estado.json` al campo `narrative` (y
-`narrativeAuthor`/`narrativeWrittenAt`) del `estado.json` nuevo en
-`.tambo/branches/<rama>/` — los hechos no se recuperan porque ya están
-obsoletos, pero la narrativa escrita a mano sí vale la pena rescatarla.
-Después puedes borrar `.tambo/ramas/`.
-
 **Falsa alarma de firma con clientes de sincronización.** Si OneDrive, Dropbox
 o similar bloquean `estado.json` justo cuando `capture.mjs` está escribiendo,
 puede quedar un `relevo.md` nuevo firmado junto a un `estado.json` que todavía
 tiene la firma anterior. La sesión siguiente ve la firma desajustada y avisa
 de una posible manipulación aunque no haya pasado nada malintencionado — es un
 falso positivo del mecanismo de integridad, no una vulnerabilidad.
+
+Las mediciones (latencia del hook, 5.000 archivos modificados), el tamaño
+exacto del recorte y los relevos guardados por versiones viejas en
+`.tambo/ramas/` (cómo rescatarlos a mano) están en la
+[referencia técnica](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#límites-conocidos-detalle-y-mediciones).
 
 ---
 
@@ -680,7 +657,33 @@ sola en cada turno, así que un árbol de npm sería superficie de ataque.
 
 Agregar soporte para otro CLI implica añadir su entrada e instalador en `CLIS`
 (`src/cli.mjs`), su extractor en `src/lib/facts.mjs`, su formato de petición en
-`src/lib/ask.mjs` y su fixture en `test/fixtures/`.
+`src/lib/ask.mjs` y su fixture en `test/fixtures/`. Para capturar los payloads
+reales de los hooks, usa `chaski probe`
+([cómo](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#capturar-payloads-chaski-probe)).
+
+### Para contribuir o auditar el código
+
+**No es necesario para usar chaski**: para eso basta [npm](#con-npm). El clon
+trae lo que el paquete de npm deja fuera a propósito —historial, `test/`,
+`docs/`, `scripts/`, CI y `CONTRIBUTING.md`—.
+
+Clónalo si vas a contribuir, o si prefieres leer lo que vas a ejecutar antes de
+instalarlo, algo razonable en una herramienta que corre sola en cada turno. Son
+~3.800 líneas de JavaScript sin dependencias:
+
+```bash
+git clone https://github.com/cristobalbn/chaski.git
+cd chaski
+npm run check          # verifica la sintaxis; no hay build
+npm test               # node:test, sin dependencias
+cd ../tu-proyecto
+node ../chaski/src/cli.mjs init
+```
+
+Ojo con este último paso: un `init` corrido desde el clon registra hooks que
+apuntan **al clon**. Si después lo mueves o lo borras, los hooks quedan
+apuntando a un archivo inexistente. Para auditar y luego usar, instala con npm
+y deja el clon solo para leer.
 
 ## Soporte
 
