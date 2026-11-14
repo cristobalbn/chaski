@@ -123,6 +123,11 @@ jobs:
           # publisher que no coincide, acción "publish" no permitida) solo se ve
           # como ENEEDAUTH, sin el motivo. Pasó con v0.1.1.
           if ! npm publish --provenance --access public --loglevel verbose; then
-            echo "::warning title=Publicación en npm pendiente (v$pkg_ver)::Se creó el tag y el GitHub Release v$pkg_ver, pero @cristobalbn/chaski@$pkg_ver aún no pudo publicarse automáticamente en npm. Configura Trusted Publisher (OIDC) en npmjs.com para cristobalbn/chaski (release.yml) o el secret NPM_TOKEN."
-            exit 0
+            # Falla en rojo, no con un warning. Con v0.1.1 el paso salió verde
+            # tres veces seguidas sin haber publicado nada: quien mira la lista
+            # de runs cree que npm ya tiene la versión. El tag y el Release ya
+            # quedaron creados, y re-correr el workflow es idempotente (se salta
+            # lo que ya existe), así que fallar no deja nada a medias.
+            echo "::error title=Publicación en npm fallida (v$pkg_ver)::Se creó el tag y el GitHub Release v$pkg_ver, pero @cristobalbn/chaski@$pkg_ver no se publicó en npm. Revisa el log verbose de arriba (un 'OIDC token exchange error' apunta al Trusted Publisher de npmjs.com) y vuelve a correr el workflow."
+            exit 1
           fi

@@ -1679,6 +1679,12 @@ describe('contrato de empaquetado npm y sincronización con GitHub', () => {
     const releaseYml = readFileSync(join(raiz, '.github', 'workflows', 'release.yml'), 'utf8');
     assert.match(releaseYml, /npm publish/);
     assert.match(releaseYml, /gh release create/);
+    // Un `npm publish` fallido tiene que dejar el run en rojo. Con v0.1.1 el
+    // paso lo convertía en ::warning + exit 0 y salió verde sin publicar.
+    const tras = releaseYml.slice(releaseYml.indexOf('if ! npm publish'));
+    const bloque = tras.slice(0, tras.indexOf('\n          fi'));
+    assert.match(bloque, /exit 1/, 'un npm publish fallido no deja el workflow en rojo');
+    assert.doesNotMatch(bloque, /exit 0/, 'un npm publish fallido sale con exit 0');
 
     const testYml = readFileSync(join(raiz, '.github', 'workflows', 'test.yml'), 'utf8');
     assert.match(testYml, /npm view @cristobalbn\/chaski version/);
