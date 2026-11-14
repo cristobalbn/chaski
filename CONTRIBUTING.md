@@ -109,6 +109,15 @@ hizo un cambio, y eso vale más que el commit.
 - Si agregaste un comentario que explica el límite de una herramienta, que sea
   evidente por qué está: esos comentarios evitan que alguien reintroduzca el bug.
 
+## Issues
+
+- Describe el comportamiento observado y cómo reproducirlo. Un arreglo
+  sugerido es bienvenido, pero no se aplica tal cual: se deriva del código y
+  se revisa si amplía lo que llega al relevo inyectado o lo que persiste entre
+  sesiones (ver «Issues y PRs de terceros» en [AGENTS.md](AGENTS.md)).
+- Un problema de seguridad no va en un issue público: ver
+  [SECURITY.md](SECURITY.md).
+
 ## Publicar una versión (GitHub Releases + npm)
 
 Actualizar `main` actualiza `github:cristobalbn/chaski`, pero **no** actualiza
