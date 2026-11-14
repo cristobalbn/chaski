@@ -362,6 +362,23 @@ function finalSummary({ configurados, yaEstaban, fallidos }) {
   console.log(L.join('\n'));
 }
 
+/**
+ * ¿Este grupo de hooks de Claude Code lo registró chaski?
+ *
+ * Antes bastaba con que el JSON del grupo contuviera «chaski», y eso borraba
+ * también hooks del usuario que solo compartían la palabra (una ruta como
+ * `~/chaski-tools/lint.mjs`). Ahora se reconoce la forma exacta que escribe
+ * `cmd()` en todas sus versiones —el script de entrada (o su puente con
+ * nombre viejo) seguido del evento y del agente— o un wrapper de `~/.chaski/`.
+ * Es una declaración de función, no un const, porque el despacho de comandos
+ * corre arriba del archivo antes de que un const de más abajo exista.
+ */
+function isChaskiHookGroup(grupo) {
+  const firma = /(?:capture|inject|capturar|leer)\.mjs"?\s+[A-Za-z]+\s+\S|[\\/]\.chaski[\\/][\w.-]+\.(?:cmd|sh)\b/;
+  const comandos = [grupo?.command, ...(Array.isArray(grupo?.hooks) ? grupo.hooks.map((h) => h?.command) : [])];
+  return comandos.some((c) => typeof c === 'string' && firma.test(c));
+}
+
 function installClaude(ruta) {
   const s = readJsonForWrite(ruta);
   s.hooks = s.hooks ?? {};
@@ -369,7 +386,7 @@ function installClaude(ruta) {
     const comando = cmd(script, event, 'claude code');
     s.hooks[event] = [
       // Se conservan los hooks de otras herramientas; solo se quitan los nuestros.
-      ...(s.hooks[event] ?? []).filter((g) => !JSON.stringify(g).includes('chaski')),
+      ...(s.hooks[event] ?? []).filter((g) => !isChaskiHookGroup(g)),
       { hooks: [{ type: 'command', command: comando, timeout: 10 }] },
     ];
   };
@@ -787,7 +804,8 @@ function uninstall() {
           if (cli.formato === 'json-agy') delete s.chaski;
           else if (s.hooks) {
             for (const ev of Object.keys(s.hooks)) {
-              s.hooks[ev] = (s.hooks[ev] ?? []).filter((g) => !JSON.stringify(g).includes('chaski'));
+              // La sonda de `probe` también es nuestra: desinstalar la quita.
+              s.hooks[ev] = (s.hooks[ev] ?? []).filter((g) => !isChaskiHookGroup(g) && !isProbeHookGroup(g));
               if (!s.hooks[ev].length) delete s.hooks[ev];
             }
             if (!Object.keys(s.hooks).length) delete s.hooks;
@@ -821,6 +839,17 @@ function uninstall() {
 
 // Funciones y no constantes: el bloque de despacho corre antes de que se
 // evalúen las declaraciones de abajo (temporal dead zone de const en ESM).
+/**
+ * ¿Este grupo de hooks es la sonda de `chaski probe`? Mismo criterio que
+ * isChaskiHookGroup: la ruta de la sonda en ~/.chaski/ (o su wrapper), no la
+ * palabra «sonda» en cualquier parte, que también borraba hooks ajenos.
+ */
+function isProbeHookGroup(grupo) {
+  const firma = /[\\/]\.chaski[\\/][\w.-]*sonda[\w.-]*\.(?:mjs|cmd|sh)\b/;
+  const comandos = [grupo?.command, ...(Array.isArray(grupo?.hooks) ? grupo.hooks.map((h) => h?.command) : [])];
+  return comandos.some((c) => typeof c === 'string' && firma.test(c));
+}
+
 function probePath() { return join(globalDir(), 'sonda.mjs'); }
 function probeLogPath() { return join(globalDir(), 'sonda.log'); }
 
@@ -849,7 +878,7 @@ function probe(sub) {
         const s = readJsonForWrite(cli.config);
         s.hooks = s.hooks ?? {};
         for (const ev of eventos) {
-          s.hooks[ev] = [...(s.hooks[ev] ?? []).filter((g) => !JSON.stringify(g).includes('sonda')),
+          s.hooks[ev] = [...(s.hooks[ev] ?? []).filter((g) => !isProbeHookGroup(g)),
             { hooks: [{ type: 'command', command: probeCmd(ev, name), timeout: 15 }] }];
         }
         writeAtomic(cli.config, JSON.stringify(s, null, 2));
@@ -915,7 +944,7 @@ function probeClean() {
           const s = readJsonForWrite(cli.config);
           delete s.chaskiProbe;
           if (s.hooks) for (const ev of Object.keys(s.hooks)) {
-            s.hooks[ev] = (s.hooks[ev] ?? []).filter((g) => !JSON.stringify(g).includes('sonda'));
+            s.hooks[ev] = (s.hooks[ev] ?? []).filter((g) => !isProbeHookGroup(g));
             if (!s.hooks[ev].length) delete s.hooks[ev];
           }
           writeAtomic(cli.config, JSON.stringify(s, null, 2));

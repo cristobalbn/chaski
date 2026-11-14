@@ -404,6 +404,40 @@ describe('uninstall no pisa lo que el usuario cambió después de init', () => {
     }
   });
 
+  test('Claude Code: un hook ajeno con «chaski» en la ruta sobrevive a init y uninstall', () => {
+    const m = montar('chaski-uninst-ajeno-');
+    try {
+      const dir = join(m.casa, '.claude');
+      mkdirSync(dir, { recursive: true });
+      const config = join(dir, 'settings.json');
+      // Antes se borraba todo grupo cuyo JSON contuviera «chaski».
+      const ajeno = { hooks: [{ type: 'command', command: 'node /home/u/chaski-tools/lint.mjs' }] };
+      writeFileSync(config, JSON.stringify({ hooks: { Stop: [ajeno] } }, null, 2));
+
+      m.correr('init');
+      m.correr('init'); // la segunda pasada es la que filtraba los grupos existentes
+      const trasInit = readFileSync(config, 'utf8');
+      // Prueba positiva: el hook propio quedó registrado, una sola vez.
+      assert.equal(trasInit.match(/capture\.mjs\\" Stop claude-code/g)?.length, 1, 'init no registró (o duplicó) su hook Stop');
+      assert.ok(trasInit.includes('chaski-tools/lint.mjs'), 'init borró un hook ajeno');
+
+      // La sonda de probe también se quita al desinstalar.
+      const s = JSON.parse(trasInit);
+      s.hooks.Stop.push({ hooks: [{ type: 'command', command: `node "${join(m.casa, '.chaski', 'sonda.mjs')}" Stop claude-code` }] });
+      writeFileSync(config, JSON.stringify(s, null, 2));
+      assert.ok(readFileSync(config, 'utf8').includes('sonda.mjs'), 'no se agregó la sonda de prueba');
+
+      m.correr('uninstall');
+      const tras = readFileSync(config, 'utf8');
+      assert.ok(tras.includes('chaski-tools/lint.mjs'), 'uninstall borró un hook ajeno');
+      assert.ok(!tras.includes('capture.mjs'), 'uninstall dejó el hook de captura');
+      assert.ok(!tras.includes('inject.mjs'), 'uninstall dejó el hook de inyección');
+      assert.ok(!tras.includes('sonda.mjs'), 'uninstall dejó la sonda');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   test('Codex: lo que el usuario escribió fuera del bloque sobrevive', () => {
     const m = montar('chaski-uninst-codex-');
     try {
