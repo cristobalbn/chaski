@@ -40,6 +40,11 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Un relevo ya no afirma «Sin repositorio git» cuando `git rev-parse` no
   responde dentro del presupuesto de tiempo (#56): si existe `.git`, sigue
   siendo un repo y la rama sin leer se declara como recorte.
+- Cuando el agente no tiene la skill `relevo`, la petición automática de
+  narrativa trae la ruta absoluta real de `estado.json` en vez de la plantilla
+  `.tambo/branches/<rama>/estado.json` «en la raíz del repositorio» (#48).
+  Ahora funciona sin git (`sin-rama`), con el repo en una carpeta hija y con
+  ramas cuyo slug lleva hash.
 
 ## [0.1.0] - 2026-11-07
 
