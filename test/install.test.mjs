@@ -14,6 +14,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync,
+  realpathSync,
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -951,27 +952,31 @@ describe('skill del relevo', () => {
     try {
       const desde = (cwd, ...args) => execFileSync(process.execPath, [join(SRC, 'cli.mjs'), ...args],
         { cwd, env: m.entorno, encoding: 'utf8' });
+      // La ruta real, no la del fixture: en macOS el temporal /var/folders es
+      // un enlace a /private/var/folders, y el proceso reporta la real. Lo
+      // encontró el CI de macOS en la primera versión de este test.
+      const proyecto = realpathSync(m.proyecto);
 
       // Caso normal, en la raíz del repo: ni nota de redirección ni de sin git.
       // Es el contraste que hace que la ausencia de abajo signifique algo.
       const normal = desde(m.proyecto, 'init');
-      assert.ok(normal.includes(m.proyecto), 'init no dice la carpeta del proyecto');
+      assert.ok(normal.includes(proyecto), 'init no dice la carpeta del proyecto');
       assert.doesNotMatch(normal, /único repo hijo|no es un repo git/);
 
       const salida = desde(m.raiz, 'init');
-      assert.match(salida, new RegExp(`proyecto\\s+${m.proyecto.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}`),
+      assert.match(salida, new RegExp(`proyecto\\s+${proyecto.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}`),
         'no dice en qué repo instaló');
       assert.match(salida, /único repo hijo/, 'no avisa de la redirección al repo hijo');
       // Cada archivo, con su ruta absoluta dentro del repo hijo.
       for (const ruta of [
-        join(m.proyecto, '.gitignore'),
-        join(m.proyecto, '.claude', 'skills', 'relevo'),
-        join(m.proyecto, '.agents', 'skills', 'relevo'),
-        join(m.proyecto, 'AGENTS.md'),
+        join(proyecto, '.gitignore'),
+        join(proyecto, '.claude', 'skills', 'relevo'),
+        join(proyecto, '.agents', 'skills', 'relevo'),
+        join(proyecto, 'AGENTS.md'),
       ]) assert.ok(salida.includes(ruta), `init no muestra la ruta ${ruta}`);
       // El cierre ya no dice "EN ESTA MISMA CARPETA" sin decir cuál.
       assert.doesNotMatch(salida, /EN ESTA MISMA/);
-      assert.ok(salida.includes(`carpeta del proyecto: ${m.proyecto}`));
+      assert.ok(salida.includes(`carpeta del proyecto: ${proyecto}`));
 
       assert.match(desde(m.raiz, 'doctor'), /único repo hijo/, 'doctor no explica la redirección');
     } finally {
