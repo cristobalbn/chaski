@@ -9,7 +9,7 @@ Corre en cada push a `main`, en cada pull request y bajo `workflow_dispatch`, co
 - **Matriz multiplataforma:** ejecuta en Ubuntu (`ubuntu-latest`), Windows (`windows-latest`) y macOS (`macos-latest`) sobre Node 20, 22 y `lts/*`. Verifica tanto los scripts `.cmd` de Windows como los `.sh` de Unix que genera el envoltorio de hooks.
 - **Invariante cero dependencias:** falla inmediatamente si `package.json` declara alguna dependencia en `dependencies` o `devDependencies`.
 - **Chequeo de sintaxis y tests:** ejecuta `npm run check` (los 11 módulos `.mjs`) y `npm test` (la suite completa con `node:test`).
-- **Sincronización con npm y tags:** en Ubuntu con Node 22, valida si un PR tocó archivos distribuidos (`src/`, `skill/`) sin incrementar `version` en `package.json` o sin sección en `CHANGELOG.md`, y emite advertencias si `@cristobalbn/chaski` en npm quedó desfasado respecto a `main`.
+- **Sincronización con npm y tags:** en Ubuntu con Node 22, en un PR emite un `::notice::` si tocó `src/` o `skill/` sin incrementar `version` en `package.json` (no revisa `CHANGELOG.md`, eso lo hace `release.yml`); en `main` emite `::warning::` si npm está en otra versión o hay commits en `src/`/`skill/` posteriores al último tag. No hace fallar el CI.
 
 ## `release.yml` (Publicación Automática y Segura)
 

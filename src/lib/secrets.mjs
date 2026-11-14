@@ -1,7 +1,7 @@
 // Filtro de secretos.
 //
 // Corre ANTES de escribir, no solo antes de enviar: un token en
-// .tambo/relevo.md ya es una fuga aunque nunca salga de la máquina.
+// .tambo/branches/<slug>/relevo.md ya es una fuga aunque nunca salga de la máquina.
 //
 // Lo redactado deja marca visible para que nadie confunda una redacción con
 // un dato ausente.
@@ -27,7 +27,7 @@ const PATTERNS = [
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, 'jwt'],
   [/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g, 'clave-privada'],
 
-  // Asignaciones con name sensible: TOKEN=..., api_secret: "...", PASSWORD = '...'
+  // Asignaciones con nombre sensible: TOKEN=..., api_secret: "...", PASSWORD = '...'
   [/\b([A-Za-z_][A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY|CREDENTIAL|ACCESS_KEY)[A-Za-z0-9_]*)\s*[:=]\s*["']?([^\s"',;]{8,})["']?/gi, 'asignacion'],
 
   // URL con credenciales embebidas

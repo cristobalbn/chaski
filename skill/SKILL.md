@@ -25,7 +25,7 @@ En Claude Code, Codex y agy:
 3. **Actualiza únicamente los tres campos de narrativa** en ese JSON (codificación UTF-8):
    - `"narrative"`: texto con las cuatro secciones de abajo.
    - `"narrativeAuthor"`: tu identificador canónico (`"claude code"`, `"codex"` o `"agy"`).
-   - `"narrativeWrittenAt"`: marca ISO 8601 UTC actual (`new Date().toISOString()`), posterior al `"writtenAt"` del archivo para que la siguiente captura la archive en `.tambo/historia/entries.jsonl`.
+   - `"narrativeWrittenAt"`: marca ISO 8601 UTC actual (`new Date().toISOString()`). La siguiente captura detecta la marca nueva y archiva la narrativa en `.tambo/historia/entries.jsonl`.
 4. **No toques ningún otro campo.** `facts`, `commands`, `offset`, `turns`, `subagents` y `signature` los calcula y firma chaski.
 5. **Confirma al usuario en una línea** qué quedó anotado como siguiente paso.
 

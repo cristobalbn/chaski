@@ -25,7 +25,7 @@ la lista es explícita porque `node --test test/` no funciona y el glob
 
 ## Los tests de contrato son lo que sostiene el proyecto
 
-`test/fixtures/` tiene un payload y un transcript por CLI. **Los tres formatos
+`test/fixtures/` tiene un payload y al menos un transcript por CLI. **Los tres formatos
 de transcript son distintos entre sí y ninguno prometió estabilidad entre
 versiones** — ese es el riesgo que más probablemente mate el proyecto, y estos
 tests lo convierten en una build roja en lugar de un fallo silencioso en la
@@ -144,15 +144,9 @@ npm no se entera hasta que se sube `version` en `package.json`.**
   modificaron archivos en `src/` o `skill/`, compara `package.json`, el último
   tag `vX.Y.Z` y la versión publicada en npm, y emite un aviso (`::notice::` en
   PR, `::warning::` en `main`) si quedaron desfasados.
-- Para publicar una versión nueva en GitHub Releases y en npm al mismo tiempo:
-  1. En tu PR, pasa los cambios de `## [No publicado]` a `## [X.Y.Z] - YYYY-MM-DD`
-     en `CHANGELOG.md` y sube `version` en `package.json`.
-  2. Al mergear ese PR a `main`, el workflow
-     [`.github/workflows/release.yml`](.github/workflows/release.yml) se dispara
-     solo: verifica que `package.json` y `CHANGELOG.md` coincidan, corre toda la
-     suite, crea y empuja el tag `vX.Y.Z` si no existe, crea el GitHub Release y
-     publica `@cristobalbn/chaski@X.Y.Z` en npm (mediante Trusted Publishing
-     OIDC en npmjs.com o `NPM_TOKEN`).
+- Para publicar una versión nueva, sigue «Publicar una versión» en
+  [`CONTRIBUTING.md`](CONTRIBUTING.md); lo hace
+  [`.github/workflows/release.yml`](.github/workflows/release.yml) al mergear.
 
 ## Invariantes
 
@@ -281,7 +275,7 @@ skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo»
 - **En el proyecto (`.tambo/`, en `.gitignore`):**
   - `.tambo/branches/<slug>/estado.json` — hechos, narrativa, marca de agua y firma HMAC.
     - **Regla de `<slug>` (`branchSlug` en `src/lib/paths.mjs`)**: si el nombre de la rama (`git rev-parse --abbrev-ref HEAD`) solo tiene `[a-zA-Z0-9._-]` y hasta 60 caracteres (ej. `main`), `<slug>` es la rama tal cual. Si tiene `/` u otros caracteres o pasa de 60 letras (ej. `feat/pagos`), reemplaza fuera de `[a-zA-Z0-9._-]` por `-`, recorta a 60 caracteres y añade un sufijo FNV-1a de 6 caracteres en base 36 (`feat-pagos-<hash6>`). Para obtener la ruta exacta desde Node: `node -e "import('./src/lib/paths.mjs').then(m=>console.log(m.statePath(process.cwd())))"`.
-    - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy"`), `session`, `transcript`, `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ estado, ruta, mas, menos }], dirtyTotal, commits, upstream: { ref, ahead, behind, collisions } | null, trimmed }`), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ kind, reason, conclusion, at }]`, máx. 6, vencen a las 72 h), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre `relevo.md`), `askedAt`, `askedReason`, `turnsAtNarrative`, `narrativeStamp`.
+    - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy"`), `session`, `transcript`, `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ ruta, mas, menos, nuevo }] (máx. 50), dirtyTotal, dirtyUnknown (opcional), commits, upstream: { ref, ahead, collisions } | null, trimmed }`; `ahead` = commits del upstream que no tienes), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ kind, reason, conclusion, at }]`, máx. 6, vencen a las 72 h), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre `relevo.md`), `askedAt`, `askedReason`, `turnsAtNarrative`, `narrativeStamp`.
     - **Campos exclusivos del agente (al guardar narrativa)**: `narrative` (string Markdown), `narrativeAuthor` (`"claude code" | "codex" | "agy"`), `narrativeWrittenAt` (ISO 8601 UTC actual, posterior a `writtenAt`).
   - `.tambo/branches/<slug>/relevo.md` — Markdown renderizado desde `estado.json` por `render()` (`src/lib/relay.mjs`), firmado con HMAC e inyectado por `inject.mjs`. Nunca se edita a mano.
   - `.tambo/historia/entries.jsonl` — histórico append-only de narrativas redactadas (consultado por `chaski why`). Cada línea es `{ at, author, branch, head, narrative }`.
@@ -301,7 +295,7 @@ skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo»
 - `src/capture.mjs` y `src/inject.mjs`: **siempre `0`** (invariante 4; cualquier fallo interno escribe una línea en `stderr` y sale con `0`).
 - `chaski doctor`, `next`, `cost`, `why`, `uninstall`, `probe`, `version`: **siempre `0`**.
 - `chaski init`: devuelve **`1`** si algún CLI instalado falló al configurarse, si se ejecuta desde el caché temporal de `npx` o si `AGENTS.md` tiene marcadores `<!-- chaski:requests:... -->` corruptos; `0` en caso contrario.
-- `chaski share`: devuelve **`1`** si la rama actual no tiene narrativa en `estado.json`; `0` si publica o si el usuario cancela en la confirmación interactiva.
+- `chaski share`: devuelve **`1`** si la rama actual no tiene narrativa en `estado.json` o si el usuario no confirma (cualquier respuesta distinta de `s`/`si`/`sí`/`y`/`yes`, incluido stdin vacío); `0` solo si publica.
 
 ## Al escribir código aquí
 

@@ -6,8 +6,8 @@
 //     hook que revienta le arruina la sesión al usuario.
 //   - Nunca llama a un modelo. Cero tokens, cero red, cero términos de uso.
 //   - Nunca tarda. El presupuesto del hook Stop de Claude Code es de 1,5 s
-//     COMPARTIDO con los demás hooks del event. El caso normal usa unos
-//     260-340 ms; con miles de archivos modificados a la vez, el reloj de
+//     COMPARTIDO con los demás hooks del evento. El caso normal mide ~220 ms
+//     de mediana (ver Presupuestos en AGENTS.md); con miles de archivos modificados a la vez, el reloj de
 //     lib/budget.mjs corta trabajo caro antes de llegar ahí (ver gitFacts en
 //     lib/facts.mjs) en vez de dejar que el hook se cancele y se pierda el
 //     relevo entero.
@@ -69,7 +69,7 @@ function main() {
     // cualquiera de los dos, se lee desde el principio: arrastrar el offset
     // de ayer a un transcript nuevo haría que se saltee todo el trabajo de
     // hoy hasta ese byte. El caso aparece al volver a trabajar al día
-    // siguiente, que es justo at el relevo importa.
+    // siguiente, que es justo cuando el relevo importa.
     const mismaSesion = previo.session && ev.session_id && previo.session === ev.session_id;
     const mismoTranscript = previo.transcript && ev.transcript_path
       && previo.transcript === ev.transcript_path;
@@ -454,7 +454,7 @@ function occasionalPrune(cwd, config) {
 /**
  * Latido por CLI: doctor avisa si alguno dejó de ejecutar su hook.
  *
- * El name llega normalizado porque un mismo CLI entraba por dos vías con dos
+ * El nombre llega normalizado porque un mismo CLI entraba por dos vías con dos
  * grafías: `cmd()` de cli.mjs pasa `claude-code` como argumento —con guión,
  * porque el shell parte los argumentos por espacio— y `detectAgent()`, que es
  * el camino de respaldo cuando no hay argumento, devuelve `claude code`. El
