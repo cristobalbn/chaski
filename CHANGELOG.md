@@ -5,6 +5,32 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Seguridad
+- El render del relevo ya no se deja romper por texto ajeno (#53). Los bloques
+  de código usan una valla más larga que cualquier corrida de comillas del
+  contenido (un archivo llamado ```` ``` ```` cerraba el bloque de archivos
+  sin commitear y lo siguiente se leía como Markdown). El código en línea
+  (`lastFile`, refs, colisiones) tampoco se puede cerrar desde dentro. El tipo
+  y el motivo de parada de un subagente se muestran en una sola línea y sin
+  marcas de formato.
+- La narrativa y las conclusiones de subagentes se redactan al renderizar,
+  con los patrones propios de `redact` (#53). Antes la narrativa, que el agente
+  escribe directo en `estado.json`, solo se redactaba al archivarla, y un
+  patrón agregado después no alcanzaba lo ya guardado.
+
+### Cambiado
+- `chaski init` muestra en qué carpeta vive el relevo y por qué, cuando no es
+  la carpeta actual (repo hijo único, raíz del repo desde una subcarpeta) o no
+  hay repo (#47). Reporta cada archivo de proyecto con su ruta absoluta, y el
+  resumen final nombra la carpeta. `chaski doctor` muestra la misma
+  explicación.
+- El preámbulo del relevo avisa cuando la narrativa es bastante más vieja que
+  los hechos, porque `writtenAt` se renueva en cada captura (#53).
+- README: para usar chaski basta npm; clonar es solo para contribuir o
+  auditar (#46). Explica cómo se resuelve la carpeta del relevo (#47).
+- `release.yml`: un `npm publish` fallido deja el workflow en rojo en vez de
+  un aviso en verde, y publica con log verbose para diagnosticar OIDC.
+
 ## [0.1.1] - 2026-11-13
 
 ### Seguridad

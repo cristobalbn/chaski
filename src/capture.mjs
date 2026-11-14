@@ -14,7 +14,7 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo } from './lib/paths.mjs';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
@@ -143,7 +143,7 @@ function main() {
     const { redactions } = redact(JSON.stringify(estado.commands), config);
     estado.redactions = redactions;
 
-    const md = render(estado);
+    const md = render(estado, config);
     estado.signature = sign(md);
 
     // ¿Toca pedirle la narrativa al agent? Se decide ANTES de escribir, para
@@ -295,7 +295,7 @@ function promote(ev, cwd, config) {
     estado.subagents = [...previas, entrada].slice(-6);
     estado.writtenAt = new Date().toISOString();
 
-    const md = render(estado);
+    const md = render(estado, config);
     estado.signature = sign(md);
     writeAtomic(rutaRelevo, md);
     writeAtomic(rutaEstado, JSON.stringify(estado, null, 2));
@@ -390,19 +390,6 @@ function detectAgent(ev) {
   return 'desconocido';
 }
 
-function loadConfig(cwd) {
-  const proyecto = readJson(join(cwd, 'chaski.json'), {}) ?? {};
-  const local = readJson(join(cwd, 'chaski.local.json'), {}) ?? {};
-  const global = readJson(join(globalDir(), 'config.json'), {}) ?? {};
-  // El techo de política del repo no se puede subir desde el archivo local:
-  // una política que el individuo puede relajar no es una política.
-  const merged = { ...global, ...proyecto, ...local };
-  merged.redact = [...(global.redact ?? []), ...(proyecto.redact ?? []), ...(local.redact ?? [])];
-  merged.excludePaths = [
-    ...(global.excludePaths ?? []), ...(proyecto.excludePaths ?? []), ...(local.excludePaths ?? []),
-  ];
-  return merged;
-}
 
 function fusionar(previos, nuevos) {
   const out = [...(previos ?? []), ...(nuevos ?? [])];

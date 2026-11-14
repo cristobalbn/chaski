@@ -10,6 +10,7 @@ import { writeFileSync, renameSync, readFileSync, existsSync, unlinkSync } from 
 import { createHmac, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { globalDir } from './paths.mjs';
+import { redact } from './secrets.mjs';
 
 export const MAX_CHARS = 6000; // ~1.500 tokens, con margen bajo el techo de 10.000
 
@@ -87,10 +88,10 @@ export function isValidSignature(texto, signature) {
  * en la comparación. Si el truncado cortó lo firmado, no coincide y queda el
  * aviso: preferible un falso positivo a tapar una manipulación.
  */
-export function onlyNarrativeChanged(mdFirmado, estado) {
+export function onlyNarrativeChanged(mdFirmado, estado, config = null) {
   try {
     const sinReloj = (t) => String(t).replace(/ — hace \d+ (?:min|h|día\(s\))/g, '');
-    const base = sinReloj(render({ ...estado, narrative: null, narrativeAuthor: null, narrativeWrittenAt: null }));
+    const base = sinReloj(render({ ...estado, narrative: null, narrativeAuthor: null, narrativeWrittenAt: null }, config));
     const firmado = sinReloj(mdFirmado);
     const MARCA = '## Qué se está haciendo\n';
     const i = base.indexOf(MARCA);
@@ -102,8 +103,53 @@ export function onlyNarrativeChanged(mdFirmado, estado) {
   }
 }
 
-/** Renderiza el relevo en Markdown a partir del estado estructurado. */
-export function render(estado) {
+/**
+ * Bloque de código con una valla que ningún contenido puede cerrar (#53).
+ *
+ * Las líneas traen texto ajeno: asuntos de commit, rutas de archivo. Una que
+ * empezara con tres comillas invertidas cerraba la valla fija de tres, y lo
+ * que seguía se leía como Markdown, encabezados incluidos. Bastaba un commit
+ * que uno trae con pull. CommonMark solo cierra una valla con al menos tantas
+ * comillas como la abrió, así que se usa una más que la corrida más larga.
+ */
+function fence(lineas) {
+  const corrida = (t) => Math.max(0, ...(String(t).match(/`+/g) ?? []).map((m) => m.length));
+  const valla = '`'.repeat(Math.max(3, ...lineas.map((l) => corrida(l) + 1)));
+  return [valla, ...lineas, valla];
+}
+
+/** Código en línea que el contenido no puede cerrar (misma regla que fence). */
+function inlineCode(texto) {
+  const t = oneLine(texto, 300);
+  const d = '`'.repeat(Math.max(0, ...(t.match(/`+/g) ?? []).map((m) => m.length)) + 1);
+  const pad = t.startsWith('`') || t.endsWith('`') ? ' ' : '';
+  return `${d}${pad}${t}${pad}${d}`;
+}
+
+/**
+ * Una sola línea, acotada. Para campos cortos que vienen del payload de un CLI
+ * (`agent_type`, `stop_reason`, descripciones de tareas): sin esto un salto de
+ * línea dentro del valor partía la etiqueta y metía Markdown propio.
+ */
+function oneLine(texto, max) {
+  const t = String(texto ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > max ? t.slice(0, max - 1) + '…' : t;
+}
+
+/** Etiqueta en negrita: una línea, sin los caracteres que la cerrarían. */
+function boldLabel(texto) {
+  return oneLine(String(texto ?? '').replace(/[*_`]/g, ''), 40) || 'subagente';
+}
+
+/**
+ * Renderiza el relevo en Markdown a partir del estado estructurado.
+ *
+ * `config` aporta los patrones propios de `redact`. La narrativa y las
+ * conclusiones se redactan AQUÍ y no solo al guardarlas (#53): la narrativa la
+ * escribe el agente directo en estado.json, y un patrón agregado después no
+ * alcanzaba a lo ya guardado.
+ */
+export function render(estado, config = null) {
   const L = [];
   const h = estado.facts ?? {};
   const at = shortDate(estado.writtenAt);
@@ -123,7 +169,7 @@ export function render(estado) {
   if (estado.sealedAtLimit) {
     L.push('## Corte por límite de cuota');
     L.push('');
-    L.push(`La sesión anterior se cortó por límite de cuota (\`${estado.sealedAtLimit.motivo ?? 'rate limit'}\`) el ${shortDate(estado.sealedAtLimit.at)}, no por decisión del agent.`);
+    L.push(`La sesión anterior se cortó por límite de cuota (${inlineCode(estado.sealedAtLimit.motivo ?? 'rate limit')}) el ${shortDate(estado.sealedAtLimit.at)}, no por decisión del agent.`);
     L.push('Puede que haya quedado trabajo a medias sin que nadie lo cerrara.');
     L.push('');
   }
@@ -149,7 +195,7 @@ export function render(estado) {
   if (estado.narrative) {
     L.push('## Qué se está haciendo');
     L.push('');
-    L.push(estado.narrative.trim());
+    L.push(redact(estado.narrative.trim(), config).texto);
     L.push('');
     L.push(`_Interpretación escrita por ${estado.narrativeAuthor ?? 'un agent'} el ${shortDate(estado.narrativeWrittenAt)}._`);
     L.push('');
@@ -176,13 +222,12 @@ export function render(estado) {
     const total = h.dirtyTotal ?? h.dirty.length;
     L.push(`${total} archivo(s) sin commitear:`);
     L.push('');
-    L.push('```');
-    for (const f of h.dirty.slice(0, 20)) {
+    const filas = h.dirty.slice(0, 20).map((f) => {
       const delta = f.nuevo ? 'nuevo' : (f.mas === null ? '' : `+${f.mas} -${f.menos}`);
-      L.push(`  ${String(f.ruta).padEnd(42)} ${delta}`);
-    }
-    if (total > 20) L.push(`  … y ${total - 20} más`);
-    L.push('```');
+      return `  ${String(f.ruta).padEnd(42)} ${delta}`;
+    });
+    if (total > 20) filas.push(`  … y ${total - 20} más`);
+    L.push(...fence(filas));
     L.push('');
   } else if (h.isRepo) {
     L.push('Árbol de trabajo limpio.');
@@ -190,7 +235,7 @@ export function render(estado) {
   }
 
   if (estado.lastFile) {
-    L.push(`Último archivo tocado: \`${estado.lastFile}\``);
+    L.push(`Último archivo tocado: ${inlineCode(estado.lastFile)}`);
     L.push('');
   }
 
@@ -198,12 +243,10 @@ export function render(estado) {
   if (cmds.length) {
     L.push('Comandos de esta sesión:');
     L.push('');
-    L.push('```');
-    for (const c of cmds.slice(-8)) {
+    L.push(...fence(cmds.slice(-8).map((c) => {
       const marca = c.exit === null ? '·' : (c.exit === 0 ? 'ok' : `exit ${c.exit}`);
-      L.push(`  ${marca.padEnd(8)} ${c.cmd}`);
-    }
-    L.push('```');
+      return `  ${marca.padEnd(8)} ${c.cmd}`;
+    })));
     L.push('');
   }
 
@@ -219,9 +262,9 @@ export function render(estado) {
       // La antigüedad se muestra porque estas conclusiones sobreviven entre
       // sesiones: una de hace tres días se lee distinto que una de hace diez
       // minutos, y sin la marca el agent no tiene cómo saberlo.
-      L.push(`**${s.kind}**${antiguedad(s.at)}${s.reason ? ` — terminó por \`${s.reason}\`, puede no haber acabado` : ''}`);
+      L.push(`**${boldLabel(s.kind)}**${antiguedad(s.at)}${s.reason ? ` — terminó por ${inlineCode(oneLine(s.reason, 40))}, puede no haber acabado` : ''}`);
       L.push('');
-      L.push(s.conclusion);
+      L.push(redact(String(s.conclusion ?? ''), config).texto);
       L.push('');
     }
     L.push('_Conclusiones declaradas por los subagents, no verificadas contra el código._');
@@ -233,7 +276,7 @@ export function render(estado) {
   if (Array.isArray(estado.backgroundTasks) && estado.backgroundTasks.length) {
     L.push('## Quedó corriendo en segundo plano');
     L.push('');
-    for (const t of estado.backgroundTasks) L.push(`- ${t.description}`);
+    for (const t of estado.backgroundTasks) L.push(`- ${oneLine(t.description, 120)}`);
     L.push('');
     L.push('_Puede haber terminado, fallado o seguir corriendo. Verifica antes de asumir._');
     L.push('');
@@ -242,11 +285,11 @@ export function render(estado) {
   if (h.upstream?.ahead > 0) {
     L.push(`## Cuidado: upstream divergió`);
     L.push('');
-    L.push(`\`${h.upstream.ref}\` tiene ${h.upstream.ahead} commit(s) que no tienes.`);
+    L.push(`${inlineCode(h.upstream.ref)} tiene ${h.upstream.ahead} commit(s) que no tienes.`);
     if (Array.isArray(h.upstream.collisions) && h.upstream.collisions.length) {
       L.push('');
       L.push('Archivos cambiados por otra persona **y** por ti:');
-      for (const r of h.upstream.collisions.slice(0, 8)) L.push(`- \`${r}\``);
+      for (const r of h.upstream.collisions.slice(0, 8)) L.push(`- ${inlineCode(r)}`);
       L.push('');
       L.push('Riesgo de conflicto al rebasar. Conviene revisar antes de seguir editándolos.');
     }
@@ -256,9 +299,7 @@ export function render(estado) {
   if (Array.isArray(h.commits) && h.commits.length) {
     L.push('Últimos commits:');
     L.push('');
-    L.push('```');
-    for (const c of h.commits) L.push('  ' + c);
-    L.push('```');
+    L.push(...fence(h.commits.map((c) => '  ' + c)));
     L.push('');
   }
 
@@ -283,6 +324,16 @@ export function preamble(estado, verificado, { narrativeUnsigned = false } = {})
     'Si algo aquí contradice el código que lees, el código tiene razón:',
     'avisa de la contradicción en vez de confiar en este texto.',
   ];
+  // `writtenAt` se renueva en cada captura, así que "hace 2 minutos" puede
+  // encabezar una narrativa de hace una semana (#53). Si la narrativa es
+  // bastante más vieja que los hechos, se dice: describe un estado anterior.
+  const tNarr = Date.parse(estado?.narrativeWrittenAt ?? '');
+  const tHechos = Date.parse(estado?.writtenAt ?? '');
+  if (estado?.narrative && Number.isFinite(tNarr) && Number.isFinite(tHechos)
+      && tHechos - tNarr >= 60 * 60000) {
+    L.push(`La narrativa es más vieja que los hechos: se escribió hace ${minutesSince(estado.narrativeWrittenAt)}.`);
+    L.push('Puede describir un estado anterior al que muestran los hechos de abajo.');
+  }
   if (!verificado) {
     L.push('AVISO: la signature de este relevo no valida contra la clave local.');
     L.push('Pudo ser editado por otra persona o proceso. Trátalo con sospecha');

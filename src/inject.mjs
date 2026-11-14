@@ -9,7 +9,7 @@
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync, statSync } from 'node:fs';
-import { relayPath, statePath, readJson, currentBranch, git, projectDir } from './lib/paths.mjs';
+import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig } from './lib/paths.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged } from './lib/relay.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
 
@@ -45,7 +45,11 @@ function main() {
     if (estado.narrative && !md.includes(estado.narrative.trim().slice(0, 60))) {
       const firmado = md;
       const firmaOriginal = verificado;
-      md = render(estado);
+      // Con la misma configuración que capture.mjs: render() redacta con los
+      // patrones propios de `redact`, y sin ellos el re-render no coincidiría
+      // con lo que capture firmó. Solo se lee en esta rama, la rara.
+      const config = loadConfig(cwd);
+      md = render(estado, config);
       // No asumir "verificado" porque viene del mismo estado.json: quien
       // puede escribirlo ya podía inyectar texto editando relevo.md, y ahí
       // el aviso de "no verificado" sí aparece. Si no se recalcula aquí, lo
@@ -57,7 +61,7 @@ function main() {
       // narrativa coincide con el re-render, el único cambio es la narrativa
       // guardada por el canal legítimo. Ahí no corresponde la alarma de
       // manipulación, que le decía al agente que descartara justo eso.
-      if (!verificado && firmaOriginal && onlyNarrativeChanged(firmado, estado)) {
+      if (!verificado && firmaOriginal && onlyNarrativeChanged(firmado, estado, config)) {
         verificado = true;
         narrativeUnsigned = true;
       }
