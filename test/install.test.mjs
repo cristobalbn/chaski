@@ -232,6 +232,38 @@ describe('uninstall revierte lo que init tocó', () => {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  test('doctor no declara hooks que solo aparecen en comentarios o en otras claves (#51)', () => {
+    const m = montar('chaski-doc-coment-');
+    try {
+      // Caso positivo: tras init, los tres formatos se reconocen con sus eventos.
+      m.correr('init');
+      const sana = m.correr('doctor');
+      assert.match(sana, /claude code\s+registrado \(SessionStart, Stop, SessionEnd, PreCompact, SubagentStop, StopFailure\)/);
+      assert.match(sana, /codex\s+registrado \(SessionStart, Stop\)/);
+      assert.match(sana, /agy\s+registrado \(SessionStart, Stop\)/);
+
+      // Mismo texto "chaski", eventos y nombres de script, pero sin un hook real.
+      writeFileSync(join(m.casa, '.codex', 'config.toml'),
+        '# Este archivo no contiene hooks.\n# Solo menciona chaski, SessionStart y Stop en comentarios.\n' +
+        '# command = "C:/x/.chaski/codex-capture-Stop.cmd"\n[hooks]\nnota = "chaski SessionStart Stop"\n');
+      writeFileSync(join(m.casa, '.claude', 'settings.json'), JSON.stringify({
+        description: 'chaski SessionStart Stop capture.mjs',
+        hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo otra-herramienta' }] }] },
+      }));
+      writeFileSync(join(m.casa, '.gemini', 'config', 'hooks.json'), JSON.stringify({
+        chaski: { nota: 'SessionStart Stop inject.mjs' },
+      }));
+      const falsa = m.correr('doctor');
+      assert.match(falsa, /claude code\s+hooks NO registrados/, 'claude code: falso positivo');
+      assert.match(falsa, /codex\s+hooks NO registrados/, 'codex: falso positivo por comentarios');
+      assert.match(falsa, /agy\s+hooks NO registrados/, 'agy: falso positivo');
+      assert.doesNotMatch(falsa, /hooks registrados pero nunca ejecutados/,
+        'mandó a conceder confianza a hooks que no existen');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });
 
 describe('probe', () => {
