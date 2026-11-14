@@ -5,6 +5,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.3] - 2026-11-14
+
 ### Corregido
 - `uninstall` ya no restaura el respaldo `.chaski-backup` encima de la config
   actual: eso borraba todo lo que el usuario había cambiado después del primer
