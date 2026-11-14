@@ -5,6 +5,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.2] - 2026-11-13
+
 ### Seguridad
 - El render del relevo ya no se deja romper por texto ajeno (#53). Los bloques
   de código usan una valla más larga que cualquier corrida de comillas del
