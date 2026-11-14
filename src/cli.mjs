@@ -6,7 +6,7 @@
 //     quedan inertes hasta que alguien acepta el diálogo de workspace trust,
 //     y eso es una dependencia silenciosa inaceptable.
 //   - Las rutas se registran NATIVAS y citadas. Una ruta POSIX de Git Bash
-//     (/tmp/...) no resuelve at el hook se ejecuta en Windows, y el
+//     (/tmp/...) no resuelve cuando el hook se ejecuta en Windows, y el
 //     proyecto puede vivir en una carpeta con espacios.
 //   - Cada config se respalda antes de tocarla y uninstall revierte desde ahí.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, unlinkSync, statSync, readdirSync } from 'node:fs';
@@ -42,7 +42,7 @@ const MARCA_FIN = '# <<< chaski <<<';
 /**
  * Comando de shell, con rutas nativas y citadas.
  *
- * El name del agent va sin espacios: el shell parte los argumentos por
+ * El nombre del agent va sin espacios: el shell parte los argumentos por
  * espacio, así que "claude code" llegaba al script como dos argumentos y la
  * atribución del relevo quedaba truncada en "claude".
  *
@@ -73,7 +73,7 @@ function cmd(script, event, agent, viaEnvoltorio = false) {
  * cortos suele estar deshabilitada en volúmenes modernos y falla en silencio.
  */
 function wrapper(script, event, agent) {
-  // El name incluye el script destino: si no, el wrapper de la sonda y
+  // El nombre incluye el script destino: si no, el wrapper de la sonda y
   // el del hook normal colisionan y el último en instalarse pisa al otro.
   const destino = String(script).split(/[\\/]/).pop().replace(/\.mjs$/, '');
   const base = `${agent.replace(/ /g, '-')}-${destino}-${event}`;
@@ -421,8 +421,8 @@ function installCodex(ruta) {
     // en Codex — y Codex es donde más falta, porque es a donde se pasa cuando
     // se agota la cuota del CLI principal.
     //
-    // El costo es la espera de la captura al cerrar cada turno: ~340 ms
-    // medidos, con el presupuesto de `budget.mjs` recortando trabajo antes de
+    // El costo es la espera de la captura al cerrar cada turno: ~220 ms de
+    // mediana (ver AGENTS.md), con el presupuesto de `budget.mjs` recortando trabajo antes de
     // pasarse, así que el techo real lo pone chaski y no el CLI.
     //
     // No se declara un timeout en el TOML a propósito: el de un hook síncrono

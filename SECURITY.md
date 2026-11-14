@@ -76,17 +76,20 @@ escapa, es un reporte de seguridad válido y lo agradecemos.
 **ReDoS en los patrones de `chaski.json`.** `redact` y `excludePaths` son
 expresiones regulares que el filtro de secretos ejecuta en cada turno. Un
 patrón con retroceso catastrófico (por ejemplo algo con grupos anidados y
-cuantificadores superpuestos) puede colgar el hook indefinidamente en vez de
-terminar en milisegundos. **`chaski.json` se versiona**, así que sus patrones
+cuantificadores superpuestos) puede bloquear el hook hasta que el CLI lo cancele por timeout (10 s en Claude
+Code y agy; en Codex no hay uno declarado), y se pierde el relevo de ese turno.
+chaski rechaza en `redact` la forma más común (`(a+)+`), pero no revisa
+`excludePaths`. **`chaski.json` se versiona**, así que sus patrones
 pueden venir de un tercero — un colaborador, un PR, una plantilla copiada de
 otro repo — y no son menos código que un script: revísalos en el PR como
 revisarías cualquier otro cambio antes de aceptarlo.
 
 **chaski como vector de cadena de suministro.** Instalarlo significa registrar
 un comando que tus CLIs van a ejecutar solos. Para que puedas verificarlo:
-`chaski doctor` imprime el comando exacto registrado en cada configuración —
-son unas diez líneas. Revísalo después de instalar y después de cada
-actualización. Si prefieres no confiar en un paquete publicado, clona el
+revisa el comando registrado en `~/.claude/settings.json`,
+`~/.codex/config.toml` y `~/.gemini/config/hooks.json` (Codex y agy invocan un
+wrapper en `~/.chaski/`; ábrelo también) después de instalar y de cada
+actualización. `chaski doctor` solo dice en qué eventos hay un hook de chaski. Si prefieres no confiar en un paquete publicado, clona el
 repositorio y ejecuta desde el código fuente: son ~3.800 líneas sin dependencias.
 
 ## Versiones soportadas

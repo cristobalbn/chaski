@@ -56,9 +56,9 @@ export function tambo(cwd) {
 }
 
 /**
- * Slug seguro para name de carpeta a partir de una rama git.
+ * Slug seguro para nombre de carpeta a partir de una rama git.
  *
- * Lleva un sufijo con un hash corto del name original porque el slug solo
+ * Lleva un sufijo con un hash corto del nombre original porque el slug solo
  * no es único: `feat/a-b` y `feat-a-b` producían el mismo texto y compartían
  * el relevo, igual que dos ramas largas que difirieran después del carácter
  * 80. El sufijo mantiene la carpeta legible y la hace inequívoca.
@@ -70,14 +70,14 @@ export function branchSlug(rama) {
     .replace(/^-+|-+$/g, '')
     .slice(0, 60) || 'sin-rama';
 
-  // El sufijo solo va at hubo transformación, que es at puede haber
+  // El sufijo solo va cuando hubo transformación, que es cuando puede haber
   // ambigüedad. Así `main` sigue siendo `main` —la carpeta queda legible en
   // el caso habitual— y únicamente los nombres con barras, caracteres raros
   // o más de 60 letras reciben el desambiguador.
   return base === name ? base : `${base}-${fingerprint(name)}`;
 }
 
-/** Hash corto y estable de un name, para desambiguar slugs. */
+/** Hash corto y estable de un nombre, para desambiguar slugs. */
 function fingerprint(texto) {
   // FNV-1a de 32 bits: suficiente para distinguir nombres de rama, y no
   // requiere importar node:crypto en el camino caliente de cada captura.
@@ -332,8 +332,9 @@ export function loadConfig(cwd) {
   const proyecto = readJson(join(cwd, 'chaski.json'), {}) ?? {};
   const local = readJson(join(cwd, 'chaski.local.json'), {}) ?? {};
   const global = readJson(join(globalDir(), 'config.json'), {}) ?? {};
-  // El techo de política del repo no se puede subir desde el archivo local:
-  // una política que el individuo puede relajar no es una política.
+  // `redact` y `excludePaths` se concatenan: el archivo local puede sumar
+  // patrones, nunca quitar los del repo. Las claves escalares las pisa el
+  // nivel más específico.
   const merged = { ...global, ...proyecto, ...local };
   merged.redact = [...(global.redact ?? []), ...(proyecto.redact ?? []), ...(local.redact ?? [])];
   merged.excludePaths = [

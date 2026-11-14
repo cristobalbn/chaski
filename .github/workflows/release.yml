@@ -10,7 +10,7 @@ name: release
 #   2. Ejecuta las mismas validaciones que test.yml (cero dependencias, check, tests).
 #   3. Si el tag vX.Y.Z aún no existe, lo crea y lo empuja a origin.
 #   4. Crea el GitHub Release con las notas de esa versión (si no existe).
-#   5. Si chaski@X.Y.Z aún no está en npm, lo publica con provenance.
+#   5. Si @cristobalbn/chaski@X.Y.Z aún no está en npm, lo publica con provenance.
 
 on:
   push:

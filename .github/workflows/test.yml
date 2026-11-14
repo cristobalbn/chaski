@@ -58,7 +58,7 @@ jobs:
         run: git --version
 
       # En cada PR y en cada push a main, verifica si se tocó código distribuido
-      # en npm (src/, skill/, package.json) y avisa si falta subir versión o
+      # en npm (src/, skill/) y avisa si falta subir versión o
       # publicar en npm para que GitHub y npm no queden desfasados.
       - name: Estado de sincronización con npm y tags
         if: matrix.os == 'ubuntu-latest' && matrix.node == '22'

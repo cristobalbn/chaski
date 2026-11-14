@@ -550,13 +550,13 @@ function meaningfulLine(comando) {
 }
 
 /**
- * El archivo de destino, at git informa un renombre.
+ * El archivo de destino, cuando git informa un renombre.
  *
  * `--numstat` usa `viejo.txt => nuevo.txt`, y con prefijo común
  * `src/{viejo.txt => nuevo.txt}`. Sin desarmarlo, el relevo mostraba el
  * renombre como un archivo llamado "viejo.txt => nuevo.txt" **y además**
  * el destino por separado: dos entradas para un solo archivo, una con un
- * name que no existe.
+ * nombre que no existe.
  */
 function renameTarget(bruto) {
   if (!bruto) return null;

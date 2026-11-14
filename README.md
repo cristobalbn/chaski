@@ -18,14 +18,23 @@ Compatible con **Claude Code**, **Codex CLI** y **Antigravity CLI (`agy`)**. Con
 uno solo ya sirve: el relevo entre sesiones de la misma herramienta tiene valor
 propio.
 
+Necesitas Node.js 20 o superior: compruébalo con `node --version` y, si no lo
+tienes, descárgalo de [nodejs.org](https://nodejs.org).
+
 ```bash
 npm install -g "@cristobalbn/chaski"
-cd tu-proyecto
+cd tu-proyecto          # la raíz del repositorio git; init se corre una vez por proyecto
 chaski init
+chaski doctor           # verifica qué quedó conectado
 ```
 
-Eso es todo para usarlo: **no hace falta clonar este repositorio.** Clonar es
-solo para contribuir o auditar el código ([ver abajo](#para-contribuir-o-auditar-el-código)).
+Después **cierra y vuelve a abrir tu CLI**: los hooks se leen al arrancar. Si
+usas Codex, además tiene que aceptar los hooks (ver
+[Dos pasos después de instalar](#dos-pasos-después-de-instalar)). Si la
+terminal no reconoce `chaski`, ábrela de nuevo.
+
+No hace falta clonar este repositorio: clonar es solo para contribuir o auditar
+el código ([ver abajo](#para-contribuir-o-auditar-el-código)).
 
 ---
 
@@ -59,7 +68,9 @@ un resumen a mano funciona exactamente hasta el día en que te olvidas.
 - [Equipos y repositorios compartidos](#equipos-y-repositorios-compartidos)
 - [Arquitectura](#arquitectura)
 - [Seguridad y términos de uso](#seguridad)
+- [Lo que chaski no hace](#lo-que-chaski-no-hace)
 - [Límites conocidos](#límites-conocidos)
+- [Contribuir](#contribuir)
 
 ---
 
@@ -74,7 +85,7 @@ sigue exactamente esto y no hace falta que leas el resto del README.
 
 ```bash
 node --version                      # debe ser >= 20; si no, detente y avisa
-npm install -g @cristobalbn/chaski  # o: npm install -g github:cristobalbn/chaski
+npm install -g "@cristobalbn/chaski"  # o: npm install -g github:cristobalbn/chaski
 cd <el proyecto del usuario>
 chaski init
 chaski doctor
@@ -86,8 +97,8 @@ Después:
    quedó instalado, qué tiene que hacer y qué comandos tiene. No lo
    parafrasees ni lo resumas: ya está escrito para que lo lea una persona.
 2. **Pega también la salida de `chaski doctor`**, que dice qué CLIs quedaron
-   conectados y qué comando exacto se registró en cada configuración. El
-   usuario debería poder auditarlo.
+   conectados, en qué eventos hay un hook de chaski y qué scripts ejecuta esta
+   instalación. El usuario debería poder auditarlo.
 3. **Avísale de los dos pasos que solo él puede hacer**, o va a creer que la
    herramienta está rota:
    - **reiniciar las sesiones abiertas**, porque los hooks se cargan al abrir
@@ -119,7 +130,7 @@ cd tu-proyecto
 chaski init
 ```
 
-*(Las comillas alrededor de `"@cristobalbn/chaski"` evitan que PowerShell interprete `@` como operador de splatting; en bash/zsh funcionan con o sin comillas).*
+*(Las comillas son opcionales: el comando funciona igual en PowerShell, cmd y bash/zsh.)*
 
 Instalado así, los hooks apuntan a la copia global de npm (la ruta exacta la
 muestra `chaski doctor`), no a ningún clon. Un clon local de este repositorio
@@ -132,7 +143,7 @@ También se puede instalar directo desde GitHub:
 npm install -g github:cristobalbn/chaski
 ```
 
-> **No uses `npx chaski init`.** Los hooks guardan una ruta absoluta a los
+> **No uses `npx "@cristobalbn/chaski" init`** (ni `npx github:cristobalbn/chaski init`). Los hooks guardan una ruta absoluta a los
 > scripts, y el caché de `npx` es temporal: la ruta desaparece y los hooks
 > fallan en silencio. `init` detecta ese caso y aborta con una explicación.
 
@@ -140,7 +151,7 @@ npm install -g github:cristobalbn/chaski
 
 **No es necesario para usar chaski**: para eso basta [npm](#con-npm). El clon
 trae lo que el paquete de npm deja fuera a propósito —historial, `test/`,
-`docs/`, `scripts/`, CI y reglas de contribución—.
+`docs/`, `scripts/`, CI y `CONTRIBUTING.md`—.
 
 Clónalo si vas a contribuir, o si prefieres leer lo que vas a ejecutar antes de
 instalarlo, algo razonable en una herramienta que corre sola en cada turno. Son
@@ -206,6 +217,8 @@ migrarse.
 4. Agrega una sección de relevo a tu `AGENTS.md`. Si ya existe, añade o actualiza
    un bloque delimitado con las peticiones comunes y conserva el resto del texto.
 
+Si no encuentra ningún CLI en el PATH, no toca nada y sale con 0.
+
 ### Dos pasos después de instalar
 
 Hay dos cosas que `init` no puede hacer por ti, y sin ellas parece que la
@@ -236,9 +249,10 @@ qué falta:
 chaski doctor
 ```
 
-Imprime el comando exacto que quedó registrado en cada configuración, el último
-latido de cada CLI, el estado del relevo y **qué sale de tu máquina**. Revisa esa
-salida antes de confiar en la herramienta: son unas diez líneas.
+Imprime en qué eventos de cada configuración hay un hook de chaski, las rutas de
+`capture.mjs` e `inject.mjs` de esta instalación, el último latido de cada CLI,
+el estado del relevo y **qué sale de tu máquina**. Para ver el comando textual,
+abre la config del CLI.
 
 ### Capturar payloads (`chaski probe`)
 
@@ -279,8 +293,8 @@ Si ya estás viendo ese error, corre `chaski init`. Pero **la sesión que ya lo
 tiene abierto no lo va a ver desaparecer**: los CLIs leen su configuración de
 hooks una sola vez, al arrancar, así que `init` corrige la ruta para la
 próxima sesión, no para la que está corriendo. Cierra esa sesión y abre una
-nueva. `chaski doctor` muestra el comando que quedó registrado, por si quieres
-confirmarlo antes de reabrir.
+nueva. `chaski doctor` muestra qué eventos quedaron registrados y la ruta de los
+scripts, por si quieres confirmarlo antes de reabrir.
 
 Desde la 0.1.0 los dos nombres de archivo anteriores a la
 homologación al inglés —`capturar.mjs` y `leer.mjs`— siguen funcionando como
@@ -292,12 +306,26 @@ correcto.
 
 ### Desinstalar
 
+En este orden: primero `uninstall`, que necesita el binario, y después el
+paquete.
+
 ```bash
 chaski uninstall
+npm uninstall -g "@cristobalbn/chaski"
 ```
 
-Revierte cada configuración desde su respaldo. Tus relevos en `.tambo/` quedan
-en disco porque son tuyos; bórralos a mano si quieres.
+`uninstall` restaura cada configuración desde el respaldo que hizo el primer
+`init` (o, sin respaldo, quita solo los hooks de chaski). Lo que queda, y se
+borra a mano si quieres:
+
+- En cada proyecto: `.tambo/` (tus relevos), las skills
+  `.claude/skills/relevo/` y `.agents/skills/relevo/`, y el bloque entre
+  `<!-- chaski:requests:start -->` y `<!-- chaski:requests:end -->` de
+  `AGENTS.md`. Quita ese bloque: si no, el agente sigue leyendo instrucciones
+  sobre un relevo que ya no existe.
+- Las líneas de chaski en `.gitignore`, que no estorban.
+- En tu usuario: `~/.chaski/` (clave local, latidos, registro de costos y
+  wrappers).
 
 ---
 
@@ -355,7 +383,7 @@ conservadores, y en este orden:
 | | |
 |---|---|
 | Apagarlo | `"askNarrative": false` en `chaski.json` o `chaski.local.json` |
-| Cómo se ve | Cuatro líneas bajo el rótulo **«Stop hook feedback»**. Ese rótulo y el `Ran 1 stop hook` los pinta Claude Code al ejecutar cualquier hook y no se pueden suprimir; lo nuestro es el texto, y es corto a propósito porque ocupa pantalla del usuario. Se emite con `hookSpecificOutput.additionalContext`, que la documentación llama «non-error feedback»: mantiene el turno extra y las protecciones contra bucles sin rotularse como error. En una versión de Claude Code anterior a ese campo la petición no llega — no rompe nada |
+| Cómo se ve | Una línea bajo el rótulo **«Stop hook feedback»** (cuatro si la sesión no tiene la skill `relevo`: entonces trae la ruta y los campos que hay que escribir). Ese rótulo y el `Ran 1 stop hook` los pinta Claude Code al ejecutar cualquier hook y no se pueden suprimir; lo nuestro es el texto, y es corto a propósito porque ocupa pantalla del usuario. Se emite con `hookSpecificOutput.additionalContext`, que la documentación llama «non-error feedback»: mantiene el turno extra y las protecciones contra bucles sin rotularse como error. En una versión de Claude Code anterior a ese campo la petición no llega — no rompe nada |
 | Dónde funciona | Los tres, con el contrato de cada uno: `hookSpecificOutput.additionalContext` en Claude Code, `decision: "block"` en Codex y `decision: "continue"` en Antigravity, que trata cualquier otro valor como permiso para parar |
 | En Codex | su hook `Stop` se registra **síncrono**, porque un hook en segundo plano no puede bloquear. Esperas la captura (~220 ms) al cerrar cada turno |
 
@@ -403,9 +431,9 @@ narrativa es lo que evita que reabra decisiones ya cerradas.
 | `chaski doctor` | Para verificar la instalación o diagnosticar si algo no captura | Muestra la versión instalada, los hooks registrados por CLI, el último latido en `~/.chaski/latidos.json`, si `.tambo/` está ignorado en git, el estado y firma del relevo de la rama actual y qué sale de tu máquina. Siempre sale con código `0` |
 | `chaski next` | Al agotarse la cuota de un CLI o antes de retomar | Lee `~/.chaski/quota.json` (alimentado cuando un hook detecta un corte por `rate_limit`) y `.tambo/branches/<slug>/estado.json` para indicar qué CLI está disponible (`→`), cuántos archivos hay sin commitear y cuál es el paso pendiente |
 | `chaski cost` | Para revisar cuántos turnos extra pidió chaski | Reporta el gasto externo (`0 tokens · $0.00`, porque chaski nunca llama a APIs ni modelos externos) y contabiliza desde `~/.chaski/cost.json` las peticiones automáticas y narrativas escritas por cada CLI en los últimos 7 días y en total |
-| `chaski why [tema]` | Para consultar por qué se tomó o descartó una decisión pasada | Busca en `.tambo/historia/entries.jsonl` (donde `capture.mjs` archiva cada narrativa antes de que se reemplace), en las ramas activas de `.tambo/branches/` y en `decisiones/`. Si pasas `tema`, filtra por texto o nombre de rama |
-| `chaski share [tema] [--yes]` | Para compartir una decisión de tu relevo local con el equipo en git | Toma la narrativa de la rama actual, vuelve a pasar el filtro de secretos (`src/lib/secrets.mjs`), muestra la vista previa de `decisiones/YYYY-MM-DD-<tema>.md` y pide confirmación interactiva antes de escribir (o publica directo con `--yes`). Nunca sobrescribe un archivo existente; si ya existe, añade sufijo `-2`, `-3`, etc. Sale con código `1` si la rama no tiene narrativa |
-| `chaski probe [--show \| --clean]` | Diagnóstico de payloads de hooks o creación de nuevos fixtures | `chaski probe` instala una sonda temporal en `~/.chaski/sonda.mjs`; `--show` muestra los payloads capturados en `~/.chaski/sonda.log`; `--clean` restaura los hooks normales de chaski |
+| `chaski why [tema]` | Para consultar por qué se tomó o descartó una decisión pasada | Busca en `.tambo/historia/entries.jsonl` (donde `capture.mjs` archiva cada narrativa antes de que se reemplace), en las ramas activas de `.tambo/branches/` y en `decisiones/`. Si pasas `tema`, filtra por texto o nombre de rama. Muestra las 10 más recientes. |
+| `chaski share [tema] [--yes]` | Para compartir una decisión de tu relevo local con el equipo en git | Toma la narrativa de la rama actual, vuelve a pasar el filtro de secretos (`src/lib/secrets.mjs`), muestra la vista previa de `decisiones/YYYY-MM-DD-<tema>.md` y pide confirmación interactiva antes de escribir (o publica directo con `--yes`). Nunca sobrescribe un archivo existente; si ya existe, añade sufijo `-2`, `-3`, etc. Sale con código `1` si la rama no tiene narrativa o si no confirmas |
+| `chaski probe [--show \| --clean]` | Diagnóstico de payloads de hooks o creación de nuevos fixtures | `chaski probe` instala una sonda temporal en `~/.chaski/sonda.mjs`; `--show` muestra los payloads capturados en `~/.chaski/sonda.log`; `--clean` quita la sonda y deja cada config como estaba antes de `probe`. Mientras la sonda está puesta, Codex no ejecuta los hooks de chaski |
 | `chaski uninstall` | Para quitar los hooks de chaski de tus CLIs | Restaura `~/.claude/settings.json`, `~/.codex/config.toml` y `~/.gemini/config/hooks.json` desde sus respaldos `.chaski-backup` (o resta el bloque de chaski). Conserva `.tambo/` y `~/.chaski/` |
 | `chaski version` (`--version`, `-v`) | Para consultar la versión instalada | Imprime `chaski X.Y.Z` desde `package.json` |
 
@@ -437,7 +465,7 @@ Archivos que genera en tu proyecto:
   branches/
     main/relevo.md          ← lo que se inyecta
     main/estado.json        ← hechos, marca de agua, firma
-    feat-pagos/relevo.md    ← otra rama, otro contexto
+    feat-pagos-<hash6>/relevo.md  ← rama feat/pagos: otra rama, otro contexto
   historia/
     entries.jsonl           ← narrativas históricas (append-only, para chaski why)
 ```
@@ -475,7 +503,7 @@ Todo tiene valores por defecto razonables. No hace falta configurar nada.
 | `redact` | Expresiones regulares extra para redactar antes de escribir |
 | `excludePaths` | Rutas que nunca aparecen en el relevo |
 | `pruneAfterDays` | Días antes de borrar el relevo de una rama que ya no existe. Por defecto 30; `0` desactiva la limpieza |
-| `pruneNarrativeAfterDays` | Lo mismo para los relevos que tienen narrativa. Por defecto 90 |
+| `pruneNarrativeAfterDays` | Días antes de borrar el relevo huérfano que tiene narrativa. Por defecto, el triple de `pruneAfterDays`, con un mínimo de 90. `pruneAfterDays: 0` desactiva también esta limpieza; `pruneNarrativeAfterDays: 0` **no** la desactiva: borra en la próxima poda |
 | `askNarrative` | Si es `false`, desactiva las peticiones automáticas de narrativa en el hook `Stop` |
 
 Los relevos con narrativa viven el triple a propósito: los hechos se
@@ -511,7 +539,7 @@ Hay una regla que gobierna este escenario: **un archivo que se reescribe
 automáticamente nunca va en git.** Versionar el relevo produciría conflictos de
 merge permanentes sobre contenido que nadie quiere resolver.
 
-Por eso `.tambo/` entra al `.gitignore` y `doctor` avisa si alguien lo trackea.
+Por eso `.tambo/` entra al `.gitignore` y `doctor` avisa si no está ignorado.
 Cada persona tiene su propio relevo, local. Lo que el equipo sí comparte son las
 convenciones estables, y esas van en `AGENTS.md`, que los tres CLIs ya leen de
 forma nativa.
@@ -542,7 +570,7 @@ escritura.** Eso lo convierte en un vector de inyección de prompt, así que:
   contexto de trabajo.
 
 **El filtro de secretos corre antes de escribir**, no solo antes de enviar: un
-token en `.tambo/relevo.md` ya es una fuga aunque nunca salga de la máquina.
+token en `.tambo/branches/<slug>/relevo.md` ya es una fuga aunque nunca salga de la máquina.
 Cubre ~20 formatos de credencial, cadenas de alta entropía, asignaciones con
 nombre sensible, URLs con credenciales y cabeceras `Authorization`. Las rutas
 tipo `.env`, `*.pem` o `id_rsa` nunca aparecen en el relevo. Lo redactado deja
@@ -610,8 +638,9 @@ riesgo tu cuenta no debería estar a un flag de distancia.
 | Ruta del proyecto de más de ~240 caracteres | los subprocesos de git fallan | En Windows, una ruta así de larga hace que el subproceso de git falle. Desde la 0.1.1, si existe `.git` el relevo no afirma «Sin repositorio git»: declara la rama sin leer como recorte, pero sale sin rama ni los datos que dependen de git. No hay arreglo barato conocido: evita rutas tan largas para este proyecto |
 
 Si un administrador fijó `allowManagedHooksOnly` o `disableAllHooks` en una
-máquina corporativa, los hooks de usuario no corren. `doctor` lo detecta y lo
-informa en vez de dejarte creyendo que funciona.
+máquina corporativa, los hooks de usuario no corren. `doctor` no lee esas claves:
+lo verás como «hooks registrados pero nunca ejecutados» o como un latido que
+dejó de actualizarse. Consulta a quien administra la máquina.
 
 **`doctor` siempre termina con código de salida 0**, incluso cuando ningún CLI
 tiene los hooks registrados. Es un comando de diagnóstico para que lo lea una

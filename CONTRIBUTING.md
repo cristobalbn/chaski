@@ -89,7 +89,7 @@ npm run check                       # sintaxis; no hay build
 npm test                            # node:test, sin dependencias
 ```
 
-Y prueba el cambio a mano según la sección de abajo.
+Y prueba el cambio a mano según [Probar los cambios a mano](#probar-los-cambios-a-mano).
 
 El CI corre la suite en Linux, Windows y macOS por tres versiones de Node, y
 falla si `package.json` declara alguna dependencia. Si tocas un adaptador,
