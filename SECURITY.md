@@ -49,6 +49,25 @@ local que nunca se versiona, y un relevo cuya firma no valida se inyecta
 rotulado como no verificado en lugar de pasar por legítimo. Además `.tambo/`
 está en `.gitignore`, así que no viaja entre máquinas.
 
+El texto que no escribe chaski —narrativa, conclusiones de subagentes,
+mensajes de commit, nombres de rama y de archivo— tampoco puede salirse del
+bloque:
+
+- `inject.mjs` neutraliza toda corrida de tres o más `<` o `>`, así que nada
+  dentro del relevo puede cerrar el marco `<<<FIN-RELEVO-CHASKI>>>` (0.1.1).
+- `render()` usa vallas de código más largas que cualquier corrida de comillas
+  invertidas del contenido, y muestra en una sola línea y sin marcas de
+  formato lo que viene de un subagente (0.1.2).
+- La narrativa y las conclusiones de subagentes se redactan con los patrones de
+  `redact` al renderizar, no solo al archivar (0.1.2).
+- Las conclusiones de subagentes vencen a las 72 h: texto de modelo no
+  verificado no se reinyecta indefinidamente (0.1.1).
+
+Una narrativa guardada después de la última captura se inyecta sin el aviso de
+manipulación solo si lo firmado valida y todo lo que no es narrativa coincide
+con `estado.json`. Un `relevo.md` editado o hechos alterados siguen disparando
+el aviso.
+
 **Captura accidental de secretos.** El transcript contiene todo lo que pasó por
 la sesión. El filtro de `src/lib/secrets.mjs` corre antes de escribir a disco,
 no solo antes de enviar algo. Si encuentras un formato de credencial que se nos
@@ -68,7 +87,7 @@ un comando que tus CLIs van a ejecutar solos. Para que puedas verificarlo:
 `chaski doctor` imprime el comando exacto registrado en cada configuración —
 son unas diez líneas. Revísalo después de instalar y después de cada
 actualización. Si prefieres no confiar en un paquete publicado, clona el
-repositorio y ejecuta desde el código fuente: son ~3.100 líneas sin dependencias.
+repositorio y ejecuta desde el código fuente: son ~3.800 líneas sin dependencias.
 
 ## Versiones soportadas
 

@@ -262,13 +262,13 @@ herramienta existe para evitar.
 ## Estructura
 
 ```
-src/cli.mjs          ~1.050 lín. — init / doctor / next / cost / why / share / probe / uninstall / version
+src/cli.mjs          ~1.200 lín. — init / doctor / next / cost / why / share / probe / uninstall / version
 src/capture.mjs      ~550 lín.   — hook de captura (Stop, SubagentStop): orquesta git, transcripts, cuota, costos e historia
-src/inject.mjs       ~200 lín.   — hook de inyección (SessionStart): camino crítico, detecta deriva de commits y archivos
+src/inject.mjs       ~220 lín.   — hook de inyección (SessionStart): camino crítico, detecta deriva y neutraliza marcas <<< >>>
 src/lib/facts.mjs    ~570 lín.   — extracción defensiva de hechos desde git (status, log, diff, upstream) y transcripts
-src/lib/paths.mjs    ~320 lín.   — rutas, slugs de ramas (branchSlug), lock por mkdir, detección de entorno
-src/lib/relay.mjs    ~300 lín.   — render de Markdown, firma HMAC SHA-256 y escritura atómica (writeAtomic)
-src/lib/ask.mjs      ~190 lín.   — petición proactiva de narrativa (shouldAsk), debounces y payloads por CLI
+src/lib/paths.mjs    ~340 lín.   — rutas, slugs de ramas (branchSlug), lock por mkdir, loadConfig, detección de entorno
+src/lib/relay.mjs    ~410 lín.   — render de Markdown endurecido (vallas, código en línea), preámbulo, firma HMAC SHA-256 y writeAtomic
+src/lib/ask.mjs      ~200 lín.   — petición proactiva de narrativa (shouldAsk), debounces y payloads por CLI
 src/lib/secrets.mjs  ~150 lín.   — filtro de secretos y rutas excluidas antes de escribir a disco
 src/lib/budget.mjs   ~65 lín.    — reloj global y timeouts derivados por subproceso (STOP_HOOK_BUDGET_MS = 1100)
 src/capturar.mjs     ~25 lín.    — puente de compatibilidad hacia capture.mjs
@@ -281,7 +281,7 @@ skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo»
 - **En el proyecto (`.tambo/`, en `.gitignore`):**
   - `.tambo/branches/<slug>/estado.json` — hechos, narrativa, marca de agua y firma HMAC.
     - **Regla de `<slug>` (`branchSlug` en `src/lib/paths.mjs`)**: si el nombre de la rama (`git rev-parse --abbrev-ref HEAD`) solo tiene `[a-zA-Z0-9._-]` y hasta 60 caracteres (ej. `main`), `<slug>` es la rama tal cual. Si tiene `/` u otros caracteres o pasa de 60 letras (ej. `feat/pagos`), reemplaza fuera de `[a-zA-Z0-9._-]` por `-`, recorta a 60 caracteres y añade un sufijo FNV-1a de 6 caracteres en base 36 (`feat-pagos-<hash6>`). Para obtener la ruta exacta desde Node: `node -e "import('./src/lib/paths.mjs').then(m=>console.log(m.statePath(process.cwd())))"`.
-    - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy"`), `session`, `transcript`, `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ estado, ruta, mas, menos }], dirtyTotal, commits, upstream: { ref, ahead, behind, collisions } | null, trimmed }`), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ id, kind, reason, conclusion, at }]`, máx. 8), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre `relevo.md`), `askedAt`, `askedReason`, `turnsAtNarrative`, `narrativeStamp`.
+    - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy"`), `session`, `transcript`, `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ estado, ruta, mas, menos }], dirtyTotal, commits, upstream: { ref, ahead, behind, collisions } | null, trimmed }`), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ kind, reason, conclusion, at }]`, máx. 6, vencen a las 72 h), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre `relevo.md`), `askedAt`, `askedReason`, `turnsAtNarrative`, `narrativeStamp`.
     - **Campos exclusivos del agente (al guardar narrativa)**: `narrative` (string Markdown), `narrativeAuthor` (`"claude code" | "codex" | "agy"`), `narrativeWrittenAt` (ISO 8601 UTC actual, posterior a `writtenAt`).
   - `.tambo/branches/<slug>/relevo.md` — Markdown renderizado desde `estado.json` por `render()` (`src/lib/relay.mjs`), firmado con HMAC e inyectado por `inject.mjs`. Nunca se edita a mano.
   - `.tambo/historia/entries.jsonl` — histórico append-only de narrativas redactadas (consultado por `chaski why`). Cada línea es `{ at, author, branch, head, narrative }`.
