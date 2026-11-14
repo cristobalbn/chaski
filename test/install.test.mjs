@@ -264,6 +264,61 @@ describe('uninstall revierte lo que init tocó', () => {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  test('init no anuncia éxito si todos los instaladores fallan (#50)', () => {
+    const m = montar('chaski-init-falla-');
+    try {
+      // Caso positivo: una instalación normal sí lo anuncia.
+      const sana = montar('chaski-init-sana-');
+      try {
+        assert.match(sana.correr('init'), /chaski quedó instalado/);
+      } finally {
+        rmSync(sana.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      }
+
+      // Cada ruta de configuración es un directorio: ningún instalador puede escribir.
+      for (const r of [['.claude', 'settings.json'], ['.codex', 'config.toml'], ['.gemini', 'config', 'hooks.json']]) {
+        mkdirSync(join(m.casa, ...r), { recursive: true });
+      }
+      const r = spawnSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'],
+        { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      assert.equal(r.status, 1, 'init con todos los CLIs fallidos salió con 0');
+      assert.match(r.stdout, /FALLÓ/);
+      assert.match(r.stdout, /chaski NO quedó instalado/);
+      assert.doesNotMatch(r.stdout, /chaski quedó instalado/, 'anunció éxito con todo fallado');
+      assert.doesNotMatch(r.stdout, /CONECTADOS|CONFIGURADOS AHORA/, 'listó como conectados CLIs que fallaron');
+      assert.match(r.stdout, /NO SE PUDIERON CONFIGURAR: claude code, codex, agy/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('un init repetido sobre una instalación sana no escribe nada (#50)', () => {
+    const m = montar('chaski-init-idem-');
+    try {
+      assert.match(m.correr('init'), /hooks registrados/);
+      const configs = [
+        join(m.casa, '.claude', 'settings.json'),
+        join(m.casa, '.codex', 'config.toml'),
+        join(m.casa, '.gemini', 'config', 'hooks.json'),
+      ];
+      // Sin respaldo, un init que reescribiera crearía uno nuevo: es la huella.
+      for (const c of configs) rmSync(c + '.chaski-backup', { force: true });
+      const antes = configs.map((c) => readFileSync(c, 'utf8'));
+
+      const salida = m.correr('init');
+      assert.match(salida, /claude code\s+ya configurado/);
+      assert.match(salida, /codex\s+ya configurado/);
+      assert.match(salida, /agy\s+ya configurado/);
+      assert.match(salida, /YA ESTABAN CONFIGURADOS: claude code, codex, agy/);
+      configs.forEach((c, i) => {
+        assert.equal(readFileSync(c, 'utf8'), antes[i], `${c} cambió`);
+        assert.ok(!existsSync(c + '.chaski-backup'), `${c}: init reescribió una config idéntica`);
+      });
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });
 
 describe('probe', () => {
