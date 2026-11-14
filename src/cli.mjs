@@ -10,7 +10,7 @@
 //     proyecto puede vivir en una carpeta con espacios.
 //   - Cada config se respalda antes de tocarla y uninstall revierte desde ahí.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, unlinkSync, statSync, readdirSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -142,6 +142,39 @@ try {
 
 // ---------------------------------------------------------------- init
 
+/**
+ * Por qué el relevo vive donde vive, cuando no es la carpeta desde la que se
+ * corrió el comando o no hay repo. Líneas vacías en el caso normal (se corrió
+ * en la raíz de un repo), que no necesita explicación.
+ *
+ * Los tres casos los reportó quien usó chaski de verdad (#47): la redirección
+ * al repo hijo era invisible, cada subcarpeta sin git tenía su propio relevo
+ * sin que nada lo dijera, y crear un repo hijo a mitad de una tarea cambiaba
+ * de relevo en silencio.
+ */
+function projectRootNote() {
+  const rel = relative(CWD, WORKSPACE_CWD);
+  const esRepo = existsSync(join(CWD, '.git'));
+  if (CWD !== WORKSPACE_CWD && rel.startsWith('..')) {
+    return [
+      'La carpeta actual no es un repo git y tiene un único repo hijo: el relevo',
+      'y los archivos de proyecto van ahí, y un CLI abierto en la carpeta actual',
+      'también usará el relevo de ese repo hijo.',
+    ];
+  }
+  if (CWD !== WORKSPACE_CWD) {
+    return [`Estás en una subcarpeta: se usa la raíz del repo, ${CWD}.`];
+  }
+  if (!esRepo) {
+    return [
+      'Esta carpeta no es un repo git: el relevo vive en .tambo/branches/sin-rama/.',
+      'Cada carpeta sin git desde la que abras un CLI tiene su propio relevo, y si',
+      'después creas un único repo dentro de ella, el relevo pasa a ese repo.',
+    ];
+  }
+  return [];
+}
+
 function init() {
   console.log('\nchaski init\n');
 
@@ -157,6 +190,13 @@ function init() {
     process.exitCode = 1;
     throw new Error('instalación efímera: abortado');
   }
+
+  // Dónde va a vivir el relevo, antes de tocar nada (#47). Desde una carpeta
+  // contenedora con un solo repo hijo, projectDir() redirige a ese hijo, y
+  // init escribía ahí sin decirlo: el usuario buscaba .tambo/ en la carpeta
+  // equivocada y no sabía que había tocado otro proyecto.
+  console.log(`  ${pad('proyecto')} ${CWD}`);
+  for (const l of projectRootNote()) console.log(`  ${pad('')} ${l}`);
 
   const detectados = [];
   for (const [name, cli] of Object.entries(CLIS)) {
@@ -276,8 +316,9 @@ function finalSummary({ configurados, yaEstaban, fallidos }) {
     ' DESPUÉS, QUÉ TIENES QUE HACER',
     '   Trabaja normal. Antes de cambiar de agente, puedes escribir:',
     '   relevo',
-    '   Cuando se te agote la cuota de un CLI, abre otro EN ESTA MISMA',
-    '   CARPETA. Para retomar, escribe: continúa desde el relevo.',
+    '   Cuando se te agote la cuota de un CLI, abre otro en la misma',
+    `   carpeta del proyecto: ${CWD}`,
+    '   Para retomar, escribe: continúa desde el relevo.',
     '',
     ' OPCIONAL: la skill "relevo"',
     '   Los hechos se guardan solos. Para agregar el "por qué", escribe',
@@ -430,12 +471,12 @@ function ensureGitignore(cwd) {
   const linea = TAMBO + '/';
   let txt = existsSync(ruta) ? readFileSync(ruta, 'utf8') : '';
   if (txt.split(/\r?\n/).some((l) => l.trim() === linea || l.trim() === TAMBO)) {
-    console.log(`  ${pad('.gitignore')} ya ignora ${linea}`);
+    console.log(`  ${pad('.gitignore')} ya ignora ${linea}  →  ${ruta}`);
     return;
   }
   txt = txt.trimEnd() + (txt.trim() ? '\n\n' : '') + `# chaski: relevo local, nunca se versiona\n${linea}\nchaski.local.json\n`;
   writeAtomic(ruta, txt);
-  console.log(`  ${pad('.gitignore')} agregado ${linea}`);
+  console.log(`  ${pad('.gitignore')} agregado ${linea}  →  ${ruta}`);
 }
 
 /**
@@ -464,7 +505,7 @@ function installSkill(cwd) {
     const dir = join(cwd, ...base, 'relevo');
     mkdirSync(dir, { recursive: true });
     copyFileSync(origen, join(dir, 'SKILL.md'));
-    console.log(`  ${pad('skill')} relevo instalado en ${base.join('/')}/relevo/ (${quienes})`);
+    console.log(`  ${pad('skill')} relevo (${quienes})  →  ${dir}`);
   }
 }
 
@@ -533,9 +574,14 @@ function ensureAgentsMd(cwd) {
     ].join(eol);
     actualizado = txt + (txt ? eol + eol : '') + bloque;
   }
-  if (actualizado === txt) return;
+  if (actualizado === txt) {
+    // Se reporta igual: init lista cada archivo de proyecto con su ruta, y
+    // uno que falta en la lista parece no haberse revisado (#47).
+    console.log(`  ${pad('AGENTS.md')} ya tiene las instrucciones de relevo  →  ${ruta}`);
+    return;
+  }
   writeAtomic(ruta, actualizado);
-  console.log(`  ${pad('AGENTS.md')} actualizadas las instrucciones de relevo`);
+  console.log(`  ${pad('AGENTS.md')} actualizadas las instrucciones de relevo  →  ${ruta}`);
 }
 
 // -------------------------------------------------------------- doctor
@@ -584,6 +630,7 @@ function doctor() {
 
   console.log('\nProyecto');
   console.log(`  ${pad('directorio')} ${CWD}`);
+  for (const l of projectRootNote()) console.log(`  ${pad('')} ${l}`);
   const sync = syncedFolder(CWD);
   console.log(`  ${pad('sincronizada')} ${sync ? `sí (${sync}) — se usa escritura atómica` : 'no'}`);
   console.log(`  ${pad('.tambo en git')} ${tamboIsIgnored(CWD) ? 'ignorado, correcto' : 'NO IGNORADO — ejecuta init'}`);

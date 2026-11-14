@@ -945,6 +945,54 @@ describe('skill del relevo', () => {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  test('init y doctor dicen en qué repo hijo instalaron y con qué rutas (#47)', () => {
+    const m = montar('chaski-hijo-visible-');
+    try {
+      const desde = (cwd, ...args) => execFileSync(process.execPath, [join(SRC, 'cli.mjs'), ...args],
+        { cwd, env: m.entorno, encoding: 'utf8' });
+
+      // Caso normal, en la raíz del repo: ni nota de redirección ni de sin git.
+      // Es el contraste que hace que la ausencia de abajo signifique algo.
+      const normal = desde(m.proyecto, 'init');
+      assert.ok(normal.includes(m.proyecto), 'init no dice la carpeta del proyecto');
+      assert.doesNotMatch(normal, /único repo hijo|no es un repo git/);
+
+      const salida = desde(m.raiz, 'init');
+      assert.match(salida, new RegExp(`proyecto\\s+${m.proyecto.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}`),
+        'no dice en qué repo instaló');
+      assert.match(salida, /único repo hijo/, 'no avisa de la redirección al repo hijo');
+      // Cada archivo, con su ruta absoluta dentro del repo hijo.
+      for (const ruta of [
+        join(m.proyecto, '.gitignore'),
+        join(m.proyecto, '.claude', 'skills', 'relevo'),
+        join(m.proyecto, '.agents', 'skills', 'relevo'),
+        join(m.proyecto, 'AGENTS.md'),
+      ]) assert.ok(salida.includes(ruta), `init no muestra la ruta ${ruta}`);
+      // El cierre ya no dice "EN ESTA MISMA CARPETA" sin decir cuál.
+      assert.doesNotMatch(salida, /EN ESTA MISMA/);
+      assert.ok(salida.includes(`carpeta del proyecto: ${m.proyecto}`));
+
+      assert.match(desde(m.raiz, 'doctor'), /único repo hijo/, 'doctor no explica la redirección');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('init en una carpeta sin git avisa que cada carpeta tiene su propio relevo (#47)', () => {
+    const m = montar('chaski-sin-git-');
+    try {
+      const suelta = join(m.raiz, 'suelta');
+      mkdirSync(suelta, { recursive: true });
+      const salida = execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'],
+        { cwd: suelta, env: m.entorno, encoding: 'utf8' });
+      assert.match(salida, /no es un repo git/);
+      assert.match(salida, /sin-rama/);
+      assert.match(salida, /su propio relevo/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });
 
 // ------------------------- la conclusión de un subagente sobrevive
