@@ -10,7 +10,7 @@
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { relayPath, statePath, readJson, currentBranch, git, projectDir } from './lib/paths.mjs';
-import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks } from './lib/relay.mjs';
+import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged } from './lib/relay.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
 
 main();
@@ -41,7 +41,10 @@ function main() {
     // después —con /relevo— no aparece hasta la captura siguiente. Si la
     // sesión se corta justo ahí, se perdería lo más valioso del relevo. Si el
     // estado trae una narrative que el Markdown no tiene, se re-renderiza.
+    let narrativeUnsigned = false;
     if (estado.narrative && !md.includes(estado.narrative.trim().slice(0, 60))) {
+      const firmado = md;
+      const firmaOriginal = verificado;
       md = render(estado);
       // No asumir "verificado" porque viene del mismo estado.json: quien
       // puede escribirlo ya podía inyectar texto editando relevo.md, y ahí
@@ -50,11 +53,19 @@ function main() {
       // comparten .tambo/ con claves distintas — el caso para el que existe
       // la firma.
       verificado = estado.signature ? isValidSignature(md, estado.signature) : false;
+      // Excepción acotada (#49): si lo firmado validaba y todo lo que no es
+      // narrativa coincide con el re-render, el único cambio es la narrativa
+      // guardada por el canal legítimo. Ahí no corresponde la alarma de
+      // manipulación, que le decía al agente que descartara justo eso.
+      if (!verificado && firmaOriginal && onlyNarrativeChanged(firmado, estado)) {
+        verificado = true;
+        narrativeUnsigned = true;
+      }
     }
 
     // Se neutraliza aquí, en la salida, y no al renderizar: así cubre también
     // un relevo.md editado a mano (con firma inválida) y no altera la firma.
-    const partes = [preamble(estado, verificado), '', neutralizeMarks(md)];
+    const partes = [preamble(estado, verificado, { narrativeUnsigned }), '', neutralizeMarks(md)];
 
     // Si el repo se movió desde que se escribió el relevo, hay que decirlo:
     // un relevo desactualizado presentado como verdad es peor que nada.

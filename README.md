@@ -490,7 +490,10 @@ escritura.** Eso lo convierte en un vector de inyección de prompt, así que:
 - Se declara como datos y no como instrucciones, entre delimitadores explícitos.
 - Se firma con HMAC contra una clave local en `~/.chaski/clave`, que nunca se
   versiona. Si la firma no valida, el relevo se inyecta **rotulado como no
-  verificado** en lugar de descartarse en silencio.
+  verificado** en lugar de descartarse en silencio. Una narrativa guardada
+  después de la última captura no dispara ese aviso mientras los hechos sigan
+  coincidiendo con lo firmado: se inyecta con una nota de que se firma en el
+  próximo turno.
 - `.tambo/` va en `.gitignore`: no viaja entre máquinas por git.
 - Tiene techo de tamaño, así que un relevo inflado no puede desplazar tu
   contexto de trabajo.

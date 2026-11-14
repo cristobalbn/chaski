@@ -18,6 +18,13 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - `estado.head` se valida como SHA antes de pasarlo a git (defensa en
   profundidad: hoy `git cat-file -e` ya rechaza un valor con forma de opción).
 
+### Corregido
+- Guardar la narrativa ya no hace que el relevo siguiente llegue con el aviso
+  de posible manipulación (#49). Si lo firmado valida y todo lo que no es
+  narrativa coincide con el estado actual, se inyecta con una nota de que la
+  narrativa se firma en el próximo turno. Un relevo.md editado o hechos
+  alterados en estado.json siguen disparando el aviso.
+
 ## [0.1.0] - 2026-11-07
 
 ### Comandos y herramientas de sesión
