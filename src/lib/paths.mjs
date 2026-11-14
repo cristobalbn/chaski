@@ -180,6 +180,21 @@ export const DAYS_FACTS_ONLY = 30;
 export const DAYS_WITH_NARRATIVE = 90;
 
 /**
+ * Plazos efectivos de la poda, en días. Una sola fuente de verdad para la
+ * poda y para `doctor`, que antes tenía «90 en vez de 30» escrito a mano.
+ * `0` desactiva: en `facts` apaga toda la poda; en `narrative`, solo la de
+ * relevos con narrativa (los demás siguen su plazo). Antes `0` en narrative
+ * daba plazo cero y borraba en la próxima poda, al revés que `pruneAfterDays`.
+ */
+export function effectivePruneDays(opciones = {}) {
+  // Compatibilidad: un número suelto se interpreta como los días base.
+  const o = typeof opciones === 'number' ? { factsOnly: opciones } : (opciones ?? {});
+  const facts = o.factsOnly ?? DAYS_FACTS_ONLY;
+  const narrative = o.withNarrative ?? Math.max(facts * 3, DAYS_WITH_NARRATIVE);
+  return { facts, narrative };
+}
+
+/**
  * Borra los relevos de ramas que ya no existen en git.
  *
  * El criterio no es la antigüedad a secas, porque el costo de equivocarse es
@@ -201,10 +216,7 @@ export const DAYS_WITH_NARRATIVE = 90;
  * Devuelve los nombres borrados.
  */
 export function pruneOrphanRelays(cwd, opciones = {}) {
-  // Compatibilidad: un número suelto se interpreta como los días base.
-  const o = typeof opciones === 'number' ? { factsOnly: opciones } : opciones;
-  const diasHechos = o.factsOnly ?? DAYS_FACTS_ONLY;
-  const diasNarrativa = o.withNarrative ?? Math.max(diasHechos * 3, DAYS_WITH_NARRATIVE);
+  const { facts: diasHechos, narrative: diasNarrativa } = effectivePruneDays(opciones);
 
   const borrados = [];
   if (diasHechos === 0) return borrados; // limpieza desactivada
@@ -223,6 +235,7 @@ export function pruneOrphanRelays(cwd, opciones = {}) {
       try {
         const tieneNarrativa = !!(readJson(join(ruta, 'estado.json'), {}) ?? {}).narrative;
         const plazo = tieneNarrativa ? diasNarrativa : diasHechos;
+        if (plazo === 0) continue; // limpieza de relevos con narrativa desactivada
         if (statSync(ruta).mtimeMs > Date.now() - plazo * 86_400_000) continue;
         rmSync(ruta, { recursive: true, force: true });
         borrados.push(entrada.name);

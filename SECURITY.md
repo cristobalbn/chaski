@@ -78,8 +78,8 @@ expresiones regulares que el filtro de secretos ejecuta en cada turno. Un
 patrón con retroceso catastrófico (por ejemplo algo con grupos anidados y
 cuantificadores superpuestos) puede bloquear el hook hasta que el CLI lo cancele por timeout (10 s en Claude
 Code y agy; en Codex no hay uno declarado), y se pierde el relevo de ese turno.
-chaski rechaza en `redact` la forma más común (`(a+)+`), pero no revisa
-`excludePaths`. **`chaski.json` se versiona**, así que sus patrones
+chaski rechaza la forma más común (`(a+)+`) y los patrones de más de 200
+caracteres, tanto en `redact` como en `excludePaths`. **`chaski.json` se versiona**, así que sus patrones
 pueden venir de un tercero — un colaborador, un PR, una plantilla copiada de
 otro repo — y no son menos código que un script: revísalos en el PR como
 revisarías cualquier otro cambio antes de aceptarlo.

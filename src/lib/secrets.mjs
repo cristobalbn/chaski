@@ -67,18 +67,34 @@ function isCatastrophicShape(source) {
   return /\([^()]*[+*|][^()]*\)(?:[*+]|\{\d+,\})/.test(source);
 }
 
-/** Patrones extra del usuario, desde chaski.json → redact: ["..."] */
-function userPatterns(config) {
-  const extra = [];
-  for (const p of (config?.redact ?? [])) {
+/**
+ * Compila patrones del usuario descartando los demasiado largos, los de forma
+ * catastrófica y los que no compilan. Lo comparten `redact` y `excludePaths`.
+ */
+const avisados = new Set();
+
+function safeUserRegexes(lista, flags, clave) {
+  const out = [];
+  for (const p of (lista ?? [])) {
     if (typeof p !== 'string' || !p || p.length > MAX_USER_PATTERN_LEN) continue;
     if (isCatastrophicShape(p)) {
-      process.stderr.write(`chaski: patrón de redact ignorado, puede colgar el hook: ${p}\n`);
+      // Un aviso por patrón y proceso: isExcludedPath corre una vez por
+      // archivo, y repetirlo llenaría stderr del hook en cada turno.
+      const k = `${clave}\0${p}`;
+      if (!avisados.has(k)) {
+        avisados.add(k);
+        process.stderr.write(`chaski: patrón de ${clave} ignorado, puede colgar el hook: ${p}\n`);
+      }
       continue;
     }
-    try { extra.push([new RegExp(p, 'g'), 'patron-usuario']); } catch {}
+    try { out.push(new RegExp(p, flags)); } catch {}
   }
-  return extra;
+  return out;
+}
+
+/** Patrones extra del usuario, desde chaski.json → redact: ["..."] */
+function userPatterns(config) {
+  return safeUserRegexes(config?.redact, 'g', 'redact').map((re) => [re, 'patron-usuario']);
 }
 
 /**
@@ -140,9 +156,9 @@ export function isExcludedPath(ruta, config = null) {
     /(^|[\\/])\.npmrc$/i,
     /(^|[\\/])\.aws[\\/]/i,
   ];
-  const extra = (config?.excludePaths ?? []).map((p) => {
-    try { return new RegExp(p, 'i'); } catch { return null; }
-  }).filter(Boolean);
+  // Mismo control que `redact`: una `excludePaths` con retroceso catastrófico
+  // también corre en cada turno y puede colgar el hook.
+  const extra = safeUserRegexes(config?.excludePaths, 'i', 'excludePaths');
 
   return [...defecto, ...extra].some((re) => re.test(ruta));
 }
