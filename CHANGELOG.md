@@ -5,6 +5,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.1] - 2026-11-13
+
 ### Seguridad
 - El relevo inyectado ya no puede cerrar su propio marco de datos: `inject.mjs`
   neutraliza toda corrida de tres o más `<` o `>` en el cuerpo y en el aviso de
