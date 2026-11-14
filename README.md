@@ -177,6 +177,22 @@ Si abres un agente en la carpeta contenedora, el relevo se inyecta igual
 automática de la narrativa trae las instrucciones completas para escribirla sin
 la skill. Lo que no tendrás ahí es el atajo `/relevo`.
 
+`init` y `doctor` muestran en la línea `proyecto` / `directorio` la carpeta
+donde vive el relevo, y explican cuándo no es la carpeta actual. Hay que
+saber cómo se resuelve:
+
+| Abres el CLI en… | El relevo vive en… |
+|---|---|
+| la raíz de un repo o una subcarpeta suya | la raíz del repo, `.tambo/branches/<slug-de-la-rama>/` |
+| una carpeta sin git con **un único** repo hijo | ese repo hijo |
+| una carpeta sin git con cero o varios repos hijos | esa misma carpeta, `.tambo/branches/sin-rama/` |
+
+En carpetas sin git, **cada carpeta desde la que abras un CLI tiene su propio
+relevo**: el de la carpeta padre no lo ve quien abre una subcarpeta, y al revés.
+Y si a mitad de una tarea creas el único repo dentro de una carpeta sin git, el
+relevo pasa a ese repo y el anterior (`sin-rama`) queda en la carpeta padre sin
+migrarse.
+
 ### Qué hace `init`
 
 1. Detecta cuáles de los tres CLIs tienes instalados y registra los hooks **a
