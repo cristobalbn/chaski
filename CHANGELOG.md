@@ -10,6 +10,11 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   actual: eso borraba todo lo que el usuario había cambiado después del primer
   `init` (y la confianza de hooks de Codex). Ahora siempre quita solo lo de
   chaski, deja el respaldo en su sitio e imprime su ruta.
+- `init` y `uninstall` reconocen sus hooks de Claude Code por la forma exacta
+  del comando (script de entrada, evento y agente, o un wrapper de
+  `~/.chaski/`), no porque el grupo contenga la palabra «chaski»: antes también
+  borraban hooks del usuario con esa palabra en la ruta. `probe` hace lo mismo
+  con la sonda, y `uninstall` ahora la quita también.
 - Las notas del GitHub Release se cortaban en la primera «z»: la regex de
   `release.yml` usaba `\z`, que en JavaScript es una «z» literal. Ahora usa un
   fin de texto real.
