@@ -29,6 +29,17 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   dentro de la clave de hooks que ese CLI lee, hay un comando que apunta a un
   script o wrapper de chaski. Un archivo que no se puede parsear se reporta como
   ilegible en vez de como registrado.
+- `chaski init` ya no anuncia «quedó instalado / CLIs CONECTADOS» cuando los
+  instaladores fallan (#50). El titular dice «NO quedó instalado» o
+  «instalación incompleta», y el resumen separa los CLIs configurados ahora,
+  los que ya estaban y los que no se pudieron configurar.
+- `chaski init` es idempotente de verdad: si la configuración de un CLI (o un
+  wrapper de `~/.chaski/`) ya es idéntica a la que escribiría, no la toca ni la
+  respalda, y lo reporta como «ya configurado». Funciona aunque la
+  configuración esté en solo lectura.
+- Un relevo ya no afirma «Sin repositorio git» cuando `git rev-parse` no
+  responde dentro del presupuesto de tiempo (#56): si existe `.git`, sigue
+  siendo un repo y la rama sin leer se declara como recorte.
 
 ## [0.1.0] - 2026-11-07
 
