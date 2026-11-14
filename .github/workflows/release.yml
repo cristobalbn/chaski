@@ -95,7 +95,7 @@ jobs:
             const ver = process.argv[1];
             const txt = fs.readFileSync("CHANGELOG.md", "utf8");
             const esc = ver.replace(/\./g, "\\.");
-            const re = new RegExp(`^## \\[${esc}\\][^\\n]*\\n([\\s\\S]*?)(?=^## \\[|\\z)`, "m");
+            const re = new RegExp(`^## \\[${esc}\\][^\\n]*\\n([\\s\\S]*?)(?=^## \\[|(?![\\s\\S]))`, "m");
             const m = txt.match(re);
             fs.writeFileSync("/tmp/release-notes.md", (m ? m[1].trim() : `Release v${ver}`) + "\n");
           ' "$pkg_ver"

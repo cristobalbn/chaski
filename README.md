@@ -314,9 +314,11 @@ chaski uninstall
 npm uninstall -g "@cristobalbn/chaski"
 ```
 
-`uninstall` restaura cada configuración desde el respaldo que hizo el primer
-`init` (o, sin respaldo, quita solo los hooks de chaski). Lo que queda, y se
-borra a mano si quieres:
+`uninstall` quita solo los hooks de chaski de la configuración actual de cada
+CLI, así que conserva todo lo que cambiaste después del primer `init` (incluida
+la confianza de hooks que Codex guarda). El respaldo `.chaski-backup` que hizo
+`init` no se borra ni se restaura: queda en su sitio y `uninstall` imprime su
+ruta. Lo que queda, y se borra a mano si quieres:
 
 - En cada proyecto: `.tambo/` (tus relevos), las skills
   `.claude/skills/relevo/` y `.agents/skills/relevo/`, y el bloque entre
@@ -434,7 +436,7 @@ narrativa es lo que evita que reabra decisiones ya cerradas.
 | `chaski why [tema]` | Para consultar por qué se tomó o descartó una decisión pasada | Busca en `.tambo/historia/entries.jsonl` (donde `capture.mjs` archiva cada narrativa antes de que se reemplace), en las ramas activas de `.tambo/branches/` y en `decisiones/`. Si pasas `tema`, filtra por texto o nombre de rama. Muestra las 10 más recientes. |
 | `chaski share [tema] [--yes]` | Para compartir una decisión de tu relevo local con el equipo en git | Toma la narrativa de la rama actual, vuelve a pasar el filtro de secretos (`src/lib/secrets.mjs`), muestra la vista previa de `decisiones/YYYY-MM-DD-<tema>.md` y pide confirmación interactiva antes de escribir (o publica directo con `--yes`). Nunca sobrescribe un archivo existente; si ya existe, añade sufijo `-2`, `-3`, etc. Sale con código `1` si la rama no tiene narrativa o si no confirmas |
 | `chaski probe [--show \| --clean]` | Diagnóstico de payloads de hooks o creación de nuevos fixtures | `chaski probe` instala una sonda temporal en `~/.chaski/sonda.mjs`; `--show` muestra los payloads capturados en `~/.chaski/sonda.log`; `--clean` quita la sonda y deja cada config como estaba antes de `probe`. Mientras la sonda está puesta, Codex no ejecuta los hooks de chaski |
-| `chaski uninstall` | Para quitar los hooks de chaski de tus CLIs | Restaura `~/.claude/settings.json`, `~/.codex/config.toml` y `~/.gemini/config/hooks.json` desde sus respaldos `.chaski-backup` (o resta el bloque de chaski). Conserva `.tambo/` y `~/.chaski/` |
+| `chaski uninstall` | Para quitar los hooks de chaski de tus CLIs | Quita los hooks de chaski de `~/.claude/settings.json`, `~/.codex/config.toml` y `~/.gemini/config/hooks.json` sin tocar el resto de cada archivo. Conserva los respaldos `.chaski-backup`, `.tambo/` y `~/.chaski/` |
 | `chaski version` (`--version`, `-v`) | Para consultar la versión instalada | Imprime `chaski X.Y.Z` desde `package.json` |
 
 ---
@@ -503,7 +505,7 @@ Todo tiene valores por defecto razonables. No hace falta configurar nada.
 | `redact` | Expresiones regulares extra para redactar antes de escribir |
 | `excludePaths` | Rutas que nunca aparecen en el relevo |
 | `pruneAfterDays` | Días antes de borrar el relevo de una rama que ya no existe. Por defecto 30; `0` desactiva la limpieza |
-| `pruneNarrativeAfterDays` | Días antes de borrar el relevo huérfano que tiene narrativa. Por defecto, el triple de `pruneAfterDays`, con un mínimo de 90. `pruneAfterDays: 0` desactiva también esta limpieza; `pruneNarrativeAfterDays: 0` **no** la desactiva: borra en la próxima poda |
+| `pruneNarrativeAfterDays` | Días antes de borrar el relevo huérfano que tiene narrativa. Por defecto, el triple de `pruneAfterDays`, con un mínimo de 90. `pruneAfterDays: 0` desactiva también esta limpieza; `pruneNarrativeAfterDays: 0` desactiva solo la de relevos con narrativa (los demás siguen su plazo) |
 | `askNarrative` | Si es `false`, desactiva las peticiones automáticas de narrativa en el hook `Stop` |
 
 Los relevos con narrativa viven el triple a propósito: los hechos se

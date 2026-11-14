@@ -5,6 +5,36 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Corregido
+- `uninstall` ya no restaura el respaldo `.chaski-backup` encima de la config
+  actual: eso borraba todo lo que el usuario había cambiado después del primer
+  `init` (y la confianza de hooks de Codex). Ahora siempre quita solo lo de
+  chaski, deja el respaldo en su sitio e imprime su ruta.
+- Las notas del GitHub Release se cortaban en la primera «z»: la regex de
+  `release.yml` usaba `\z`, que en JavaScript es una «z» literal. Ahora usa un
+  fin de texto real.
+- `pruneNarrativeAfterDays: 0` desactiva la poda de relevos con narrativa, como
+  `pruneAfterDays: 0` desactiva la de los demás. Antes daba plazo cero y
+  borraba en la próxima poda. `chaski doctor` muestra los plazos efectivos de la
+  config en vez de «90 días en vez de 30» fijo.
+- `init` agrega `chaski.local.json` al `.gitignore` aunque `.tambo/` ya
+  estuviera ignorado; cada línea se comprueba por separado.
+- `chaski next` muestra el total real de archivos sin commitear
+  (`dirtyTotal`) en vez del tope de 50 de la lista.
+- Los wrappers de `~/.chaski/` y `sonda.mjs` se escriben con `writeAtomic`
+  (invariante 7); los `.sh` conservan el modo 0755.
+- Textos con restos del renombre al inglés («writtenAt hace», «con narrative»,
+  «sin signature», «usa el agent», «los facts»): ahora dicen «escrito hace»,
+  «con narrativa», «sin firma», «usa el agente», «los hechos».
+- `chaski --help`, `-h` y `help` salen con código 0 (un subcomando desconocido
+  sigue saliendo con 1). El uso menciona `--version`/`-v` e incluye `init`,
+  `doctor` y `uninstall`.
+
+### Seguridad
+- `excludePaths` pasa por el mismo control que `redact`: los patrones de forma
+  catastrófica (`(a+)+`) o de más de 200 caracteres se descartan en vez de
+  ejecutarse en cada turno.
+
 ## [0.1.2] - 2026-11-13
 
 ### Seguridad

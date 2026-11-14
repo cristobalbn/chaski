@@ -8,13 +8,14 @@
 //   - Las rutas se registran NATIVAS y citadas. Una ruta POSIX de Git Bash
 //     (/tmp/...) no resuelve cuando el hook se ejecuta en Windows, y el
 //     proyecto puede vivir en una carpeta con espacios.
-//   - Cada config se respalda antes de tocarla y uninstall revierte desde ahí.
-import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, unlinkSync, statSync, readdirSync } from 'node:fs';
+//   - Cada config se respalda antes de tocarla; uninstall quita solo lo de
+//     chaski de la config actual y deja el respaldo (ver uninstall()).
+import { readFileSync, existsSync, mkdirSync, copyFileSync, unlinkSync, statSync, readdirSync, chmodSync } from 'node:fs';
 import { join, resolve, dirname, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, TAMBO, projectDir, tambo, currentBranch } from './lib/paths.mjs';
+import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch } from './lib/paths.mjs';
 import { writeAtomic, isValidSignature } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
 
@@ -89,7 +90,13 @@ function wrapper(script, event, agent) {
   // instalación sana no debe escribir nada (#50), ni siquiera los wrappers.
   let actual = null;
   try { actual = readFileSync(ruta, 'utf8'); } catch {}
-  if (actual !== cuerpo) writeFileSync(ruta, cuerpo, win ? undefined : { mode: 0o755 });
+  if (actual !== cuerpo) {
+    // Atómico (invariante 7): el hook ejecuta este archivo en cada turno y no
+    // debe encontrarlo a medio escribir. writeAtomic no preserva el modo, así
+    // que el 0755 del .sh se aplica después del rename.
+    writeAtomic(ruta, cuerpo);
+    if (!win) chmodSync(ruta, 0o755);
+  }
   return ruta.replace(/\//g, win ? '\\' : '/');
 }
 
@@ -126,14 +133,18 @@ try {
   else if (accion === 'share') share(process.argv.slice(3));
   else if (accion === 'version' || accion === '--version' || accion === '-v') version();
   else {
-    console.log('uso: chaski [init|doctor|uninstall|probe|next|cost|why|share|version]');
+    console.log('uso: chaski [init|doctor|uninstall|probe|next|cost|why|share|version|help]  (--version, -v, --help, -h)');
+    console.log('  init      registra los hooks en los CLIs instalados, ignora .tambo/ en git e instala la skill');
+    console.log('  doctor    verifica qué quedó instalado y si los hooks están corriendo');
+    console.log('  uninstall quita los hooks de chaski de la configuración de cada CLI (conserva .tambo/)');
     console.log('  next     muestra qué CLI está disponible y qué quedó pendiente');
     console.log('  cost     muestra el gasto externo ($0) y los turnos extra de chaski');
     console.log('  why      busca decisiones pasadas en .tambo/historia/ y decisiones/');
     console.log('  share    publica una decisión del relevo en decisiones/ (con confirmación)');
     console.log('  probe    captura el payload real de los hooks de cada CLI');
     console.log('  version  imprime la versión instalada de chaski');
-    process.exitCode = 1;
+    // Pedir ayuda no es un error; un subcomando que no existe sí.
+    process.exitCode = ['help', '--help', '-h'].includes(accion) ? 0 : 1;
   }
 } catch (e) {
   console.error(`\nchaski: ${e?.message ?? e}`);
@@ -293,8 +304,8 @@ function finalSummary({ configurados, yaEstaban, fallidos }) {
     '',
     ' QUÉ HACE',
     '   Al terminar cada turno guarda el estado del trabajo (archivos',
-    '   tocados, diff, resultado de los commands, commits) en .tambo/.',
-    '   Al abrir cualquiera de tus CLIs, se lo entrega al agent nuevo.',
+    '   tocados, diff, resultado de los comandos, commits) en .tambo/.',
+    '   Al abrir cualquiera de tus CLIs, se lo entrega al agente nuevo.',
     '',
     ...(configurados.length ? [` CLIs CONFIGURADOS AHORA: ${configurados.join(', ')}`] : []),
     ...(yaEstaban.length ? [` CLIs QUE YA ESTABAN CONFIGURADOS: ${yaEstaban.join(', ')}`] : []),
@@ -333,7 +344,7 @@ function finalSummary({ configurados, yaEstaban, fallidos }) {
     '   chaski cost        ver los turnos extra pedidos por chaski',
     '   chaski why [tema]  buscar decisiones anteriores en historia/',
     '   chaski share       publicar una decisión del relevo en decisiones/',
-    '   chaski uninstall   revertir todo desde el respaldo',
+    '   chaski uninstall   quitar los hooks de chaski de cada config',
     '   chaski probe       capturar el payload de los hooks (diagnóstico)',
     '',
     ' PRIVACIDAD',
@@ -470,13 +481,19 @@ function ensureGitignore(cwd) {
   const ruta = join(cwd, '.gitignore');
   const linea = TAMBO + '/';
   let txt = existsSync(ruta) ? readFileSync(ruta, 'utf8') : '';
-  if (txt.split(/\r?\n/).some((l) => l.trim() === linea || l.trim() === TAMBO)) {
+  const lineas = txt.split(/\r?\n/).map((l) => l.trim());
+  // Cada línea se comprueba por separado: un .gitignore que ya tenía `.tambo/`
+  // (de un init anterior o a mano) igual debe recibir `chaski.local.json`.
+  const faltan = [];
+  if (!lineas.includes(linea) && !lineas.includes(TAMBO)) faltan.push(linea);
+  if (!lineas.includes('chaski.local.json')) faltan.push('chaski.local.json');
+  if (!faltan.length) {
     console.log(`  ${pad('.gitignore')} ya ignora ${linea}  →  ${ruta}`);
     return;
   }
-  txt = txt.trimEnd() + (txt.trim() ? '\n\n' : '') + `# chaski: relevo local, nunca se versiona\n${linea}\nchaski.local.json\n`;
+  txt = txt.trimEnd() + (txt.trim() ? '\n\n' : '') + `# chaski: relevo local, nunca se versiona\n${faltan.join('\n')}\n`;
   writeAtomic(ruta, txt);
-  console.log(`  ${pad('.gitignore')} agregado ${linea}  →  ${ruta}`);
+  console.log(`  ${pad('.gitignore')} agregado ${faltan.join(', ')}  →  ${ruta}`);
 }
 
 /**
@@ -638,8 +655,17 @@ function doctor() {
   const huerfanos = orphanRelays(CWD);
   if (huerfanos.length) {
     const withNarrative = huerfanos.filter((h) => h.withNarrative).length;
-    console.log(`  ${pad('huérfanos')} ${huerfanos.length} relevo(s) de ramas que ya no existen` +
-      (withNarrative ? `, ${withNarrative} con narrative (viven 90 días en vez de 30)` : ''));
+    // Plazos reales de la config, no los valores por defecto: con `0` la
+    // poda se desactiva y decir «viven 90 días» sería mentir.
+    const cfg = loadConfig(CWD);
+    const dias = effectivePruneDays({ factsOnly: cfg.pruneAfterDays, withNarrative: cfg.pruneNarrativeAfterDays });
+    let nota = '';
+    if (withNarrative) {
+      nota = dias.facts === 0 || dias.narrative === 0
+        ? `, ${withNarrative} con narrativa (la poda de esos relevos está desactivada)`
+        : `, ${withNarrative} con narrativa (viven ${dias.narrative} días en vez de ${dias.facts})`;
+    }
+    console.log(`  ${pad('huérfanos')} ${huerfanos.length} relevo(s) de ramas que ya no existen` + nota);
   }
 
   const relevo = relayPath(CWD);
@@ -647,9 +673,9 @@ function doctor() {
     const estado = readJson(statePath(CWD), {}) ?? {};
     const md = readFileSync(relevo, 'utf8');
     const edad = estado.writtenAt ? Math.round((Date.now() - new Date(estado.writtenAt).getTime()) / 60000) : null;
-    console.log(`  ${pad('relevo')} ${md.length} caracteres${edad !== null ? `, writtenAt hace ${edad} min` : ''}`);
-    console.log(`  ${pad('signature')} ${estado.signature ? (isValidSignature(md, estado.signature) ? 'válida' : 'NO VALIDA — editado fuera de chaski') : 'sin signature'}`);
-    console.log(`  ${pad('narrative')} ${estado.narrative ? `sí, por ${estado.narrativeAuthor ?? '?'}` : 'no — escribe «relevo» en el chat del agente'}`);
+    console.log(`  ${pad('relevo')} ${md.length} caracteres${edad !== null ? `, escrito hace ${edad} min` : ''}`);
+    console.log(`  ${pad('firma')} ${estado.signature ? (isValidSignature(md, estado.signature) ? 'válida' : 'NO VALIDA — editado fuera de chaski') : 'sin firma'}`);
+    console.log(`  ${pad('narrativa')} ${estado.narrative ? `sí, por ${estado.narrativeAuthor ?? '?'}` : 'no — escribe «relevo» en el chat del agente'}`);
   } else {
     console.log(`  ${pad('relevo')} todavía no existe para esta rama`);
   }
@@ -657,7 +683,7 @@ function doctor() {
   console.log('\nQué sale de esta máquina');
   console.log(`  ${pad('capture')} nada: solo lee archivos locales y git`);
   console.log(`  ${pad('inject')} nada: imprime un archivo local`);
-  console.log(`  ${pad('skill relevo')} usa el agent que ya tienes abierto (uso interactivo)`);
+  console.log(`  ${pad('skill relevo')} usa el agente que ya tienes abierto (uso interactivo)`);
   console.log(`  ${pad('llamadas')} chaski NO invoca claude -p, codex exec ni agy -p\n`);
 }
 
@@ -750,12 +776,10 @@ function uninstall() {
   for (const [name, cli] of Object.entries(CLIS)) {
     const bak = cli.config + '.chaski-backup';
     try {
-      if (existsSync(bak)) {
-        copyFileSync(bak, cli.config);
-        unlinkSync(bak);
-        console.log(`  ${pad(name)} config restaurada desde el respaldo`);
-      } else if (existsSync(cli.config)) {
-        // Sin respaldo: se quita solo lo nuestro.
+      if (existsSync(cli.config)) {
+        // Siempre se quita solo lo nuestro de la config actual. Restaurar el
+        // respaldo pisaba todo lo que el usuario cambió después del primer
+        // init (y el trusted_hash que Codex escribe al conceder confianza).
         if (cli.formato === 'toml-codex') {
           writeAtomic(cli.config, removeBlock(readFileSync(cli.config, 'utf8')).trimEnd() + '\n');
         } else {
@@ -770,7 +794,8 @@ function uninstall() {
           }
           writeAtomic(cli.config, JSON.stringify(s, null, 2));
         }
-        console.log(`  ${pad(name)} hooks de chaski removidos`);
+        console.log(`  ${pad(name)} hooks de chaski removidos` +
+          (existsSync(bak) ? `; respaldo previo conservado en ${bak}` : ''));
       } else {
         console.log(`  ${pad(name)} nada que revertir`);
       }
@@ -804,7 +829,7 @@ function probe(sub) {
   if (sub === '--clean' || sub === 'clean') return probeClean();
 
   console.log('\nchaski probe — captura de payloads\n');
-  writeFileSync(probePath(), [
+  writeAtomic(probePath(), [
     "import { appendFileSync, readFileSync } from 'node:fs';",
     "let raw = ''; try { raw = readFileSync(0, 'utf8'); } catch {}",
     `appendFileSync(${JSON.stringify(probeLogPath())},`,
@@ -954,7 +979,7 @@ function next() {
   }
 
   console.log('');
-  const sucios = estado.facts?.dirty?.length ?? 0;
+  const sucios = estado.facts?.dirtyTotal ?? estado.facts?.dirty?.length ?? 0;
   console.log(`  # ${sucios ? `${sucios} archivo(s) sin commitear` : 'árbol limpio'} en ${branch}`);
   if (estado.lastFile) {
     console.log(`  # último archivo tocado: ${estado.lastFile}`);

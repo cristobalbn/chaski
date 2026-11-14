@@ -623,6 +623,19 @@ describe('rutas excluidas', () => {
     test(`no excluye ${r}`, () => assert.ok(!isExcludedPath(r), `no debería excluir ${r}`));
   }
 
+  test('excludePaths de forma catastrófica se descarta; una normal sigue excluyendo', () => {
+    // Positivo primero: un patrón normal del usuario sí excluye.
+    assert.ok(isExcludedPath('infra/secretos/x.tf', { excludePaths: ['^infra/secretos/'] }));
+    // `(a+)+` tendría que colgar con esta entrada; se descarta antes de ejecutarse.
+    const t0 = Date.now();
+    const r = isExcludedPath('a'.repeat(40) + '!', { excludePaths: ['(a+)+$'] });
+    assert.equal(r, false, 'un patrón catastrófico no debe aplicarse');
+    assert.ok(Date.now() - t0 < 1000, 'ejecutó el patrón catastrófico');
+    // Y uno pasado del tope de longitud también se descarta.
+    assert.equal(isExcludedPath('zzz', { excludePaths: ['z'.repeat(201)] }), false);
+    assert.ok(isExcludedPath('zzz', { excludePaths: ['z'.repeat(3)] }));
+  });
+
   test('acepta exclusiones extra del usuario', () => {
     assert.ok(isExcludedPath('infra/secretos/x.tf', { excludePaths: ['^infra/secretos/'] }));
   });
@@ -869,6 +882,37 @@ describe('el relevo no crece con el tiempo', () => {
 
       assert.deepEqual(pruneOrphanRelays(dir, { factsOnly: 0 }), []);
       assert.ok(existsSync(d), 'borró con la limpieza desactivada');
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('pruneNarrativeAfterDays: 0 desactiva solo la poda de relevos con narrativa', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-narr0-'));
+    const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    try {
+      g('init', '-q');
+      g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+      writeFileSync(join(dir, 'a.txt'), 'x');
+      g('add', '-A'); g('commit', '-qm', 'inicial');
+      const crear = (nombre, narrativa) => {
+        const d = join(dir, '.tambo', 'branches', nombre);
+        execFileSync(process.execPath, ['-e',
+          `const fs=require('fs');fs.mkdirSync(${JSON.stringify(d)},{recursive:true});` +
+          `fs.writeFileSync(${JSON.stringify(join(d, 'estado.json'))},${JSON.stringify(JSON.stringify(narrativa ? { narrative: 'n' } : {}))});` +
+          `const t=new Date(Date.now()-999*86400000);fs.utimesSync(${JSON.stringify(d)},t,t);`]);
+        return d;
+      };
+      const conNarr = crear('con-narrativa', true);
+      const sinNarr = crear('sin-narrativa', false);
+
+      const borrados = pruneOrphanRelays(dir, { factsOnly: 30, withNarrative: 0 });
+      assert.deepEqual(borrados, ['sin-narrativa'], 'debía borrar solo el relevo sin narrativa');
+      assert.ok(existsSync(conNarr), 'borró un relevo con narrativa con la poda desactivada');
+      assert.ok(!existsSync(sinNarr));
+
+      // Contraste: sin el 0, el de narrativa (999 días) sí se borra.
+      assert.deepEqual(pruneOrphanRelays(dir, { factsOnly: 30 }), ['con-narrativa']);
     } finally {
       rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -1726,6 +1770,7 @@ describe('render endurecido contra texto ajeno (#53)', () => {
     const vieja = { writtenAt: new Date(ahora).toISOString(), narrative: 'x',
       narrativeWrittenAt: new Date(ahora - 3 * 86400000).toISOString() };
     const fresca = { ...vieja, narrativeWrittenAt: new Date(ahora - 5 * 60000).toISOString() };
+    assert.match(preamble(fresca, true), /, escrito hace /, 'el preámbulo no dice «escrito hace»');
     assert.match(preamble(vieja, true), /narrativa es más vieja que los hechos: se escribió hace 3 día\(s\)/);
     // Contraste: una narrativa reciente no lleva el aviso.
     assert.doesNotMatch(preamble(fresca, true), /más vieja que los hechos/);

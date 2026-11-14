@@ -14,7 +14,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync,
-  realpathSync,
+  realpathSync, statSync,
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -80,7 +80,7 @@ function montar(prefijo) {
 }
 
 describe('uninstall revierte lo que init tocó', () => {
-  test('restaura la configuración de Claude Code byte a byte', () => {
+  test('quita los hooks de chaski de Claude Code y deja lo del usuario', () => {
     const m = montar('chaski-inst-');
     try {
       // Una configuración previa con cosas del usuario que no se deben perder.
@@ -103,11 +103,15 @@ describe('uninstall revierte lo que init tocó', () => {
         'init pisó un hook que no era suyo');
       assert.ok(existsSync(config + '.chaski-backup'), 'no dejó respaldo');
 
-      m.correr('uninstall');
-      assert.equal(readFileSync(config, 'utf8'), original,
-        'uninstall no devolvió la configuración a su estado original');
-      assert.ok(!existsSync(config + '.chaski-backup'),
-        'dejó el respaldo tirado después de restaurar');
+      const salida = m.correr('uninstall');
+      const tras = JSON.parse(readFileSync(config, 'utf8'));
+      assert.equal(tras.model, 'opus');
+      assert.equal(tras.theme, 'dark');
+      assert.ok(JSON.stringify(tras).includes('mi-propio-hook.sh'), 'perdió el hook del usuario');
+      assert.ok(!JSON.stringify(tras).includes('chaski'), 'quedaron hooks de chaski');
+      // El respaldo no se borra, y la salida dice dónde está.
+      assert.ok(existsSync(config + '.chaski-backup'), 'borró el respaldo');
+      assert.ok(salida.includes('respaldo previo conservado'), 'no mencionó el respaldo');
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -365,6 +369,168 @@ describe('probe', () => {
     try {
       const salida = m.correr('probe', '--show');
       assert.match(salida, /No se capturó nada/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+describe('uninstall no pisa lo que el usuario cambió después de init', () => {
+  test('Claude Code: un ajuste y un hook agregados tras el respaldo sobreviven', () => {
+    const m = montar('chaski-uninst-post-');
+    try {
+      const dir = join(m.casa, '.claude');
+      mkdirSync(dir, { recursive: true });
+      const config = join(dir, 'settings.json');
+      writeFileSync(config, JSON.stringify({ model: 'opus' }, null, 2));
+      m.correr('init');
+
+      // Prueba positiva: los hooks de chaski están antes de desinstalar.
+      const trasInit = JSON.parse(readFileSync(config, 'utf8'));
+      assert.ok(JSON.stringify(trasInit).includes('chaski'), 'init no registró hooks de chaski');
+
+      // Cambios del usuario posteriores al respaldo.
+      trasInit.theme = 'light';
+      trasInit.hooks.Notification = [{ hooks: [{ type: 'command', command: 'avisar.sh' }] }];
+      writeFileSync(config, JSON.stringify(trasInit, null, 2));
+
+      m.correr('uninstall');
+      const tras = JSON.parse(readFileSync(config, 'utf8'));
+      assert.equal(tras.theme, 'light', 'uninstall pisó un ajuste posterior al init');
+      assert.ok(JSON.stringify(tras).includes('avisar.sh'), 'uninstall perdió un hook posterior al init');
+      assert.ok(!JSON.stringify(tras).includes('chaski'), 'quedaron hooks de chaski');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('Codex: lo que el usuario escribió fuera del bloque sobrevive', () => {
+    const m = montar('chaski-uninst-codex-');
+    try {
+      m.correr('init');
+      const ruta = join(m.casa, '.codex', 'config.toml');
+      const antes = readFileSync(ruta, 'utf8');
+      assert.ok(antes.includes('>>> chaski'), 'init no escribió el bloque de chaski');
+      writeFileSync(ruta, antes + '\nmodel = "gpt-usuario"\n');
+
+      m.correr('uninstall');
+      const tras = readFileSync(ruta, 'utf8');
+      assert.ok(tras.includes('model = "gpt-usuario"'), 'perdió el ajuste del usuario');
+      assert.ok(!tras.includes('>>> chaski'), 'quedó el bloque de chaski');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+describe('ensureGitignore comprueba cada línea por separado', () => {
+  const lineas = (m) => readFileSync(join(m.proyecto, '.gitignore'), 'utf8').split(/\r?\n/);
+
+  test('con .tambo/ pero sin chaski.local.json, agrega solo el que falta', () => {
+    const m = montar('chaski-ign-a-');
+    try {
+      writeFileSync(join(m.proyecto, '.gitignore'), '.tambo/\n');
+      m.correr('init');
+      const l = lineas(m);
+      assert.equal(l.filter((x) => x === 'chaski.local.json').length, 1, 'no agregó chaski.local.json');
+      assert.equal(l.filter((x) => x === '.tambo/').length, 1, 'duplicó .tambo/');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('con ambas líneas no cambia el archivo', () => {
+    const m = montar('chaski-ign-b-');
+    try {
+      const previo = 'node_modules/\n.tambo/\nchaski.local.json\n';
+      writeFileSync(join(m.proyecto, '.gitignore'), previo);
+      m.correr('init');
+      assert.equal(readFileSync(join(m.proyecto, '.gitignore'), 'utf8'), previo);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('sin .gitignore agrega ambas', () => {
+    const m = montar('chaski-ign-c-');
+    try {
+      assert.ok(!existsSync(join(m.proyecto, '.gitignore')));
+      m.correr('init');
+      const l = lineas(m);
+      assert.ok(l.includes('.tambo/'), 'no agregó .tambo/');
+      assert.ok(l.includes('chaski.local.json'), 'no agregó chaski.local.json');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+describe('ayuda y wrappers', () => {
+  test('--help, -h y help salen con 0; un subcomando desconocido sale con 1', () => {
+    const m = montar('chaski-help-');
+    try {
+      for (const a of ['--help', '-h', 'help']) {
+        const r = spawnSync(process.execPath, [join(SRC, 'cli.mjs'), a],
+          { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+        assert.equal(r.status, 0, `${a} salió con ${r.status}`);
+        assert.match(r.stdout, /--version/, 'el uso no menciona --version');
+        assert.match(r.stdout, /uninstall/);
+      }
+      const malo = spawnSync(process.execPath, [join(SRC, 'cli.mjs'), 'nada'],
+        { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      assert.equal(malo.status, 1, 'un subcomando desconocido debe salir con 1');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('los wrappers se escriben de forma atómica: sin temporales y con modo 0755', () => {
+    const m = montar('chaski-wrap-');
+    try {
+      m.correr('init');
+      const dir = join(m.casa, '.chaski');
+      const archivos = readdirSync(dir);
+      const wrappers = archivos.filter((f) => /\.(cmd|sh)$/.test(f));
+      assert.ok(wrappers.length > 0, 'init no generó wrappers');
+      assert.deepEqual(archivos.filter((f) => f.endsWith('.tmp')), [], 'quedó un temporal');
+      if (process.platform !== 'win32') {
+        for (const w of wrappers.filter((f) => f.endsWith('.sh'))) {
+          assert.equal(statSync(join(dir, w)).mode & 0o777, 0o755, `${w} no es ejecutable`);
+        }
+      }
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+describe('doctor usa los plazos efectivos de la poda', () => {
+  const montarHuerfano = (m, config) => {
+    const d = join(m.proyecto, '.tambo', 'branches', 'rama-borrada');
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, 'estado.json'), JSON.stringify({ narrative: 'algo' }));
+    if (config) writeFileSync(join(m.proyecto, 'chaski.json'), JSON.stringify(config));
+  };
+
+  test('por defecto dice 90 en vez de 30; con pruneAfterDays: 40 dice 120 en vez de 40', () => {
+    const m = montar('chaski-doc-prune-');
+    try {
+      montarHuerfano(m);
+      assert.match(m.correr('doctor'), /viven 90 días en vez de 30/);
+      writeFileSync(join(m.proyecto, 'chaski.json'), JSON.stringify({ pruneAfterDays: 40 }));
+      assert.match(m.correr('doctor'), /viven 120 días en vez de 40/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('con pruneNarrativeAfterDays: 0 avisa que esa poda está desactivada', () => {
+    const m = montar('chaski-doc-prune0-');
+    try {
+      montarHuerfano(m, { pruneNarrativeAfterDays: 0 });
+      const salida = m.correr('doctor');
+      assert.match(salida, /poda de esos relevos está desactivada/);
+      assert.doesNotMatch(salida, /viven 90 días/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -1550,6 +1716,15 @@ describe('comandos next, cost, why y share', () => {
       assert.match(salida, /claude code\s+agotado/, 'no marcó claude code como agotado');
       assert.match(salida, /→\s+codex\s+disponible/, 'no sugirió codex como siguiente CLI disponible');
       assert.match(salida, /1 archivo\(s\) sin commitear/, 'no mostró los archivos sucios');
+
+      // Con más de 50 archivos sucios, `dirty` se recorta pero `dirtyTotal` no:
+      // `next` debe mostrar el total real, no el tope de la lista.
+      const conTotal = JSON.parse(readFileSync(rutaEstado, 'utf8'));
+      conTotal.facts.dirtyTotal = 80;
+      writeFileSync(rutaEstado, JSON.stringify(conTotal, null, 2));
+      assert.match(m.correr('next'), /80 archivo\(s\) sin commitear/, 'next ignoró dirtyTotal');
+      delete conTotal.facts.dirtyTotal;
+      writeFileSync(rutaEstado, JSON.stringify(conTotal, null, 2));
       assert.match(salida, /Terminar refresh\.ts:41/, 'no mostró el paso pendiente de la narrativa');
 
       // Cuando Claude Code vuelve a completar un Stop normal, sale de agotados.
