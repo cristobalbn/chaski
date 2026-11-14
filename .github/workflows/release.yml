@@ -119,7 +119,10 @@ jobs:
             npm install -g npm@latest
             rm -f ~/.npmrc "$NPM_CONFIG_USERCONFIG"
           fi
-          if ! npm publish --provenance --access public; then
+          # --loglevel verbose: sin él, un rechazo del intercambio OIDC (trusted
+          # publisher que no coincide, acción "publish" no permitida) solo se ve
+          # como ENEEDAUTH, sin el motivo. Pasó con v0.1.1.
+          if ! npm publish --provenance --access public --loglevel verbose; then
             echo "::warning title=Publicación en npm pendiente (v$pkg_ver)::Se creó el tag y el GitHub Release v$pkg_ver, pero @cristobalbn/chaski@$pkg_ver aún no pudo publicarse automáticamente en npm. Configura Trusted Publisher (OIDC) en npmjs.com para cristobalbn/chaski (release.yml) o el secret NPM_TOKEN."
             exit 0
           fi
