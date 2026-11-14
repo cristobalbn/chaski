@@ -18,6 +18,15 @@ Compatible con **Claude Code**, **Codex CLI** y **Antigravity CLI (`agy`)**. Con
 uno solo ya sirve: el relevo entre sesiones de la misma herramienta tiene valor
 propio.
 
+```bash
+npm install -g "@cristobalbn/chaski"
+cd tu-proyecto
+chaski init
+```
+
+Eso es todo para usarlo: **no hace falta clonar este repositorio.** Clonar es
+solo para contribuir o auditar el código ([ver abajo](#para-contribuir-o-auditar-el-código)).
+
 ---
 
 ## El problema
@@ -38,8 +47,8 @@ un resumen a mano funciona exactamente hasta el día en que te olvidas.
 
 - [Instalación](#instalación)
   - [Si le pasaste este enlace a un agente](#si-le-pasaste-este-enlace-a-un-agente)
-  - [Opción 1 — npm (recomendada)](#opción-1--npm-recomendada)
-  - [Opción 2 — desde el código fuente](#opción-2--desde-el-código-fuente)
+  - [Con npm](#con-npm)
+  - [Para contribuir o auditar el código](#para-contribuir-o-auditar-el-código)
   - [Dos pasos después de instalar](#dos-pasos-después-de-instalar)
   - [Actualizar y desinstalar](#actualizar)
 - [Uso diario](#uso)
@@ -102,7 +111,7 @@ Después:
 **No agregues configuración que no te pidieron.** chaski funciona sin
 `chaski.json`; crearlo «por las dudas» solo agrega algo que mantener.
 
-### Opción 1 — npm (recomendada)
+### Con npm
 
 ```bash
 npm install -g "@cristobalbn/chaski"
@@ -111,6 +120,11 @@ chaski init
 ```
 
 *(Las comillas alrededor de `"@cristobalbn/chaski"` evitan que PowerShell interprete `@` como operador de splatting; en bash/zsh funcionan con o sin comillas).*
+
+Instalado así, los hooks apuntan a la copia global de npm (la ruta exacta la
+muestra `chaski doctor`), no a ningún clon. Un clon local de este repositorio
+es independiente de lo que ejecutan tus CLIs: puedes borrarlo o moverlo sin
+romper nada.
 
 También se puede instalar directo desde GitHub:
 
@@ -122,11 +136,15 @@ npm install -g github:cristobalbn/chaski
 > scripts, y el caché de `npx` es temporal: la ruta desaparece y los hooks
 > fallan en silencio. `init` detecta ese caso y aborta con una explicación.
 
-### Opción 2 — desde el código fuente
+### Para contribuir o auditar el código
 
-Si prefieres leer lo que vas a ejecutar antes de instalarlo —algo razonable en
-una herramienta que corre sola en cada turno— clona el repositorio. Son ~3.100
-líneas de JavaScript sin dependencias:
+**No es necesario para usar chaski**: para eso basta [npm](#con-npm). El clon
+trae lo que el paquete de npm deja fuera a propósito —historial, `test/`,
+`docs/`, `scripts/`, CI y reglas de contribución—.
+
+Clónalo si vas a contribuir, o si prefieres leer lo que vas a ejecutar antes de
+instalarlo, algo razonable en una herramienta que corre sola en cada turno. Son
+~3.100 líneas de JavaScript sin dependencias:
 
 ```bash
 git clone https://github.com/cristobalbn/chaski.git
@@ -136,6 +154,11 @@ npm test               # node:test, sin dependencias
 cd ../tu-proyecto
 node ../chaski/src/cli.mjs init
 ```
+
+Ojo con este último paso: un `init` corrido desde el clon registra hooks que
+apuntan **al clon**. Si después lo mueves o lo borras, los hooks quedan
+apuntando a un archivo inexistente. Para auditar y luego usar, instala con npm
+y deja el clon solo para leer.
 
 ### Dónde escribe `init`, y dónde no
 
