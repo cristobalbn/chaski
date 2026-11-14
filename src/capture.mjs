@@ -202,7 +202,7 @@ function main() {
       const skillBase = estado.agent === 'claude code' ? '.claude' : '.agents';
       const hasSkill = inProject
         && existsSync(join(cwd, skillBase, 'skills', 'relevo', 'SKILL.md'));
-      const salida = askPayload(estado.agent, askText(motivo, hasSkill));
+      const salida = askPayload(estado.agent, askText(motivo, hasSkill, rutaEstado));
       if (salida) process.stdout.write(JSON.stringify(salida) + '\n');
     }
 

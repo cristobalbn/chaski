@@ -1204,12 +1204,52 @@ describe('el aviso corto requiere una skill accesible para el CLI', () => {
             assert.match(texto, /narrative`, `narrativeAuthor` y `narrativeWrittenAt/);
             assert.match(texto, /estado\.json/);
             assert.doesNotMatch(texto, /Usa la skill/);
+            // #48: la ruta exacta del archivo que el hook acaba de escribir,
+            // no la plantilla. En la carpeta contenedora es la del repo hijo.
+            const ramas = readdirSync(join(m.proyecto, '.tambo', 'branches'));
+            assert.equal(ramas.length, 1, 'el fixture no dejó un solo relevo');
+            const real = join(m.proyecto, '.tambo', 'branches', ramas[0], 'estado.json');
+            assert.ok(existsSync(real));
+            assert.ok(texto.includes(real), `la petición no trae la ruta real ${real}:\n${texto}`);
+            assert.doesNotMatch(texto, /<rama>|raíz del repositorio/);
           }
         } finally {
           rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
         }
       });
     }
+  }
+});
+
+test('sin repositorio git, la petición apunta al estado.json de sin-rama (#48)', () => {
+  // Segundo caso del issue: carpeta sin git ni repos hijos. El relevo vive en
+  // .tambo/branches/sin-rama/ y la petición decía "<rama>" y "raíz del
+  // repositorio", que ahí no existen.
+  const raiz = mkdtempSync(join(tmpdir(), 'chaski-sinrepo-'));
+  const casa = join(raiz, 'casa');
+  const carpeta = join(raiz, 'trabajo');
+  mkdirSync(casa, { recursive: true });
+  mkdirSync(carpeta, { recursive: true });
+  try {
+    const r = spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+      cwd: carpeta, encoding: 'utf8',
+      env: { ...process.env, HOME: casa, USERPROFILE: casa },
+      // Sin git no hay archivos sucios ni commits: la petición se dispara por
+      // los comandos del transcript, como en la reproducción del issue.
+      input: JSON.stringify({
+        cwd: carpeta, session_id: 'sr', hook_event_name: 'Stop',
+        transcript_path: join(AQUI, 'fixtures', 'claude-code.transcript.jsonl'),
+      }),
+    });
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+    const real = join(carpeta, '.tambo', 'branches', 'sin-rama', 'estado.json');
+    assert.ok(existsSync(real), 'el fixture no escribió en sin-rama; el test no probaría nada');
+    const texto = JSON.parse(r.stdout).hookSpecificOutput?.additionalContext ?? '';
+    assert.ok(texto.includes(real), `la petición no trae la ruta real ${real}:\n${texto}`);
+    assert.doesNotMatch(texto, /<rama>|raíz del repositorio/);
+  } finally {
+    rmSync(raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 

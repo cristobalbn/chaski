@@ -130,14 +130,22 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
  * que un texto así puede activar las defensas contra inyección de prompts del
  * propio modelo.
  */
-export function askText(motivo, haySkill = true) {
+export function askText(motivo, haySkill = true, rutaEstado = null) {
   const linea = `chaski: antes de cerrar, guarda el relevo de este trabajo — ${motivo}.`;
   if (haySkill) return `${linea} Usa la skill \`relevo\`.`;
+  // La ruta va absoluta y resuelta (#48). La plantilla `<rama>` + "en la raíz
+  // del repositorio" dejaba al agent adivinando justo en los casos en que no
+  // tiene skill: sin repo (la carpeta es `sin-rama`), con el repo en una
+  // carpeta hija de la sesión, o con una rama con `/`, cuyo slug lleva hash.
+  // capture.mjs ya la calculó con statePath(); repetirla cuesta una línea.
+  const destino = rutaEstado
+    ? `\`${rutaEstado}\``
+    : '`.tambo/branches/<rama>/estado.json` en la raíz del repositorio';
   return [
     linea,
     'Anota qué quedó a medias y dónde, qué descartaste y el siguiente paso, en',
     'los campos `narrative`, `narrativeAuthor` y `narrativeWrittenAt` de',
-    '`.tambo/branches/<rama>/estado.json` en la raíz del repositorio. No edites `relevo.md`.',
+    `${destino}. No edites \`relevo.md\`.`,
   ].join('\n');
 }
 
