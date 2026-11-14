@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process';
 
 import { transcriptFacts, gitFacts } from '../src/lib/facts.mjs';
 import { redact, isExcludedPath } from '../src/lib/secrets.mjs';
-import { render, sign, isValidSignature, writeAtomic, MAX_CHARS } from '../src/lib/relay.mjs';
+import { render, sign, isValidSignature, writeAtomic, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
 import { branchSlug, pruneOrphanRelays, git, projectDir } from '../src/lib/paths.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
 import { shouldAsk, askText, askPayload } from '../src/lib/ask.mjs';
@@ -1642,5 +1642,92 @@ describe('no pedir la narrativa de más', () => {
     // El CLI la muestra con "Stop hook error:" delante, y es la única línea
     // que aparece en su resumen.
     assert.match(askText('hay commits nuevos').split('\n')[0], /^chaski: antes de cerrar, guarda el relevo/);
+  });
+});
+
+// ------------------- el render del relevo no se deja romper por texto ajeno (#53)
+
+describe('render endurecido contra texto ajeno (#53)', () => {
+  // Encabezados que quedan FUERA de un bloque de código, según las reglas de
+  // CommonMark que importan aquí: una valla se abre con 3+ comillas y solo la
+  // cierra una línea de comillas (hasta 3 espacios delante) al menos igual de
+  // larga y sin texto después.
+  const encabezadosFuera = (md) => {
+    const fuera = [];
+    let abierta = 0;
+    for (const linea of md.split('\n')) {
+      const valla = /^ {0,3}(`{3,})\s*$/.exec(linea) ?? (abierta ? null : /^ {0,3}(`{3,})/.exec(linea));
+      if (abierta) {
+        if (valla && valla[1].length >= abierta && /^ {0,3}`+\s*$/.test(linea)) abierta = 0;
+        continue;
+      }
+      if (valla) { abierta = valla[1].length; continue; }
+      if (/^ {0,3}#{1,6} /.test(linea)) fuera.push(linea.trim());
+    }
+    return fuera;
+  };
+  const base = () => ({ writtenAt: new Date().toISOString(), agent: 't', facts: { isRepo: true, branch: 'main' } });
+
+  test('el escáner de vallas detecta un encabezado colado (caso positivo)', () => {
+    // Sin esto, que los tests de abajo no encuentren encabezados no probaría
+    // nada: podría ser el escáner el que no ve.
+    const md = '```\n  ```\n  ## Colado\n```';
+    assert.deepEqual(encabezadosFuera(md), ['## Colado']);
+  });
+
+  test('un archivo llamado ``` no cierra el bloque de archivos sin commitear', () => {
+    const e = base();
+    e.facts.dirty = [
+      { ruta: '```', mas: null, menos: null, nuevo: false },
+      { ruta: '## Encabezado inyectado', mas: null, menos: null, nuevo: false },
+    ];
+    const fuera = encabezadosFuera(render(e));
+    assert.ok(!fuera.includes('## Encabezado inyectado'),
+      `una ruta de archivo salió del bloque de código: ${JSON.stringify(fuera)}`);
+  });
+
+  test('una ruta o un ref con comillas invertidas no rompe el código en línea', () => {
+    const e = base();
+    e.lastFile = 'a`b.js';
+    e.facts.upstream = { ref: 'origin/`x', ahead: 1, behind: 0, collisions: ['c`d.js'] };
+    const md = render(e);
+    assert.match(md, /Último archivo tocado: ``a`b\.js``/);
+    assert.match(md, /``origin\/`x`` tiene 1 commit/);
+    assert.match(md, /- ``c`d\.js``/);
+  });
+
+  test('kind y stop_reason de un subagente no pueden inyectar Markdown', () => {
+    const e = base();
+    e.subagents = [{
+      kind: 'revisor**\n## Inyectado por kind', at: new Date().toISOString(),
+      reason: 'max`\n## Inyectado por reason', conclusion: 'Listo.',
+    }];
+    const md = render(e);
+    const fuera = encabezadosFuera(md);
+    assert.ok(!fuera.some((l) => /Inyectado/.test(l)), `se coló un encabezado: ${JSON.stringify(fuera)}`);
+    assert.match(md, /\*\*revisor ## Inyectado por kind\*\*/, 'la etiqueta no quedó en una línea');
+  });
+
+  test('narrativa y conclusiones se redactan al renderizar, con los patrones propios', () => {
+    const token = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2';
+    const e = base();
+    e.narrative = `Usé el token ${token} para probar.`;
+    e.subagents = [{ kind: 'x', at: new Date().toISOString(), conclusion: 'La clave es CLAVE-98765.' }];
+    // Caso positivo: los valores estaban de verdad en el estado.
+    assert.ok(e.narrative.includes(token) && e.subagents[0].conclusion.includes('CLAVE-98765'));
+    const md = render(e, { redact: ['CLAVE-[0-9]+'] });
+    assert.ok(!md.includes(token), 'el token llegó al relevo');
+    assert.ok(!md.includes('CLAVE-98765'), 'un patrón propio de redact no se aplicó a la conclusión');
+    assert.match(md, /redactado/);
+  });
+
+  test('el preámbulo avisa cuando la narrativa es mucho más vieja que los hechos', () => {
+    const ahora = Date.now();
+    const vieja = { writtenAt: new Date(ahora).toISOString(), narrative: 'x',
+      narrativeWrittenAt: new Date(ahora - 3 * 86400000).toISOString() };
+    const fresca = { ...vieja, narrativeWrittenAt: new Date(ahora - 5 * 60000).toISOString() };
+    assert.match(preamble(vieja, true), /narrativa es más vieja que los hechos: se escribió hace 3 día\(s\)/);
+    // Contraste: una narrativa reciente no lleva el aviso.
+    assert.doesNotMatch(preamble(fresca, true), /más vieja que los hechos/);
   });
 });

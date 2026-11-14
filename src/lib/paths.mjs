@@ -321,3 +321,23 @@ export function readJsonForWrite(ruta) {
 }
 
 export { existsSync };
+
+/**
+ * Configuración combinada: global < proyecto < local en escalares, y
+ * concatenación en `redact` y `excludePaths`. La usan capture.mjs e
+ * inject.mjs: los dos tienen que redactar igual, o el re-render de inject no
+ * coincide con lo que capture firmó.
+ */
+export function loadConfig(cwd) {
+  const proyecto = readJson(join(cwd, 'chaski.json'), {}) ?? {};
+  const local = readJson(join(cwd, 'chaski.local.json'), {}) ?? {};
+  const global = readJson(join(globalDir(), 'config.json'), {}) ?? {};
+  // El techo de política del repo no se puede subir desde el archivo local:
+  // una política que el individuo puede relajar no es una política.
+  const merged = { ...global, ...proyecto, ...local };
+  merged.redact = [...(global.redact ?? []), ...(proyecto.redact ?? []), ...(local.redact ?? [])];
+  merged.excludePaths = [
+    ...(global.excludePaths ?? []), ...(proyecto.excludePaths ?? []), ...(local.excludePaths ?? []),
+  ];
+  return merged;
+}
