@@ -210,7 +210,12 @@ function main() {
     heartbeat(estado.agent);
     recordQuota(ev, estado);
     if (narrativaNueva && estado.narrative) recordHistory(cwd, estado, config);
-    if (motivo || (narrativaNueva && estado.narrative)) recordCost(estado, motivo, narrativaNueva);
+    // Se decide una sola vez, antes de contabilizar: una petición diferida no
+    // agrega un turno, y `chaski cost` tiene que poder distinguirla (#73).
+    // Sin id de sesión no hay cómo atar la anotación a su conversación, y
+    // shouldDeliverPending() no la entregaría nunca.
+    const diferida = Boolean(motivo && estado.session && canDefer(estado.agent));
+    if (motivo || (narrativaNueva && estado.narrative)) recordCost(estado, motivo, narrativaNueva, diferida);
     occasionalPrune(cwd, config);
 
     // La petición va por stdout y solo después de que el relevo esté escrito:
@@ -229,9 +234,7 @@ function main() {
       const skillBase = estado.agent === 'claude code' ? '.claude' : '.agents';
       const hasSkill = inProject
         && existsSync(join(cwd, skillBase, 'skills', 'relevo', 'SKILL.md'));
-      // Sin id de sesión no hay cómo atar la anotación a su conversación, y
-      // shouldDeliverPending() no la entregaría nunca.
-      if (estado.session && canDefer(estado.agent)) {
+      if (diferida) {
         // #73: no se imprime nada. Lo entrega inject.mjs con el mensaje
         // siguiente del usuario, antes de la respuesta. Ver ask.mjs.
         writeAtomic(pendingAskPath(cwd), JSON.stringify({
@@ -638,7 +641,7 @@ function recordHistory(cwd, estado, config) {
  * Contabilidad local de turnos extra pedidos por chaski y narrativas escritas,
  * en `~/.chaski/cost.json`, para `chaski cost`.
  */
-function recordCost(estado, motivo, narrativaNueva) {
+function recordCost(estado, motivo, narrativaNueva, diferida = false) {
   try {
     const ruta = join(globalDir(), 'cost.json');
     const c = readJson(ruta, { asks: [], narratives: [] }) ?? { asks: [], narratives: [] };
@@ -647,6 +650,8 @@ function recordCost(estado, motivo, narrativaNueva) {
     if (motivo) {
       c.asks = [...(Array.isArray(c.asks) ? c.asks : []), {
         at: estado.writtenAt, agent, branch, reason: motivo,
+        // Diferida: se entrega antes de la respuesta siguiente, sin turno extra.
+        ...(diferida ? { deferred: true } : {}),
       }].slice(-500);
     }
     if (narrativaNueva && estado.narrative) {

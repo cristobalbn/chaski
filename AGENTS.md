@@ -289,7 +289,7 @@ skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo»
   - `~/.chaski/ultima-limpieza` — timestamp en ms de la última poda diaria de relevos huérfanos.
   - `~/.chaski/prompt-hook.json` — `{ "<agent>": "<ISO>" }`, prueba de vida del hook de entrega por CLI (la escribe `inject.mjs`, a lo sumo cada 10 min). `capture.mjs` solo difiere la petición si es de menos de 12 h.
   - `~/.chaski/quota.json` — `{ "<agent>": { at, reason, message } }`, cortes por cuota de las últimas 12 h (leído por `chaski next`; se limpia cuando ese CLI completa un `Stop` normal).
-  - `~/.chaski/cost.json` — `{ asks: [{ at, agent, branch, reason }], narratives: [{ at, agent, branch }] }` (últimos 500 de cada uno, leído por `chaski cost`).
+  - `~/.chaski/cost.json` — `{ asks: [{ at, agent, branch, reason, deferred? }], narratives: [{ at, agent, branch }] }` (últimos 500 de cada uno, leído por `chaski cost`).
   - `~/.chaski/config.json` — configuración global opcional del usuario. Se mezcla con `chaski.json` (proyecto) y `chaski.local.json` (máquina local) con precedencia `local > proyecto > global` en claves escalares (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`, `askNarrativeAfterTurns`) y concatenación de arreglos en `redact` y `excludePaths`.
   - `~/.chaski/<cli>-<script>-<evento>.cmd` (o `.sh`) — wrappers sin espacios en la ruta generados por `init` para Codex y `agy`.
 

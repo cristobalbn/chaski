@@ -1075,16 +1075,24 @@ function cost() {
   const asks7d = asks.filter((x) => new Date(x.at).getTime() >= hace7d);
   const narr7d = narratives.filter((x) => new Date(x.at).getTime() >= hace7d);
 
-  console.log('Turnos extra en sesión (últimos 7 días / histórico)');
-  console.log(`  ${pad('peticiones')} ${asks7d.length} en 7d · ${asks.length} total`);
-  console.log(`  ${pad('narrativas')} ${narr7d.length} en 7d · ${narratives.length} total\n`);
+  // Desde #73 la mayoría de las peticiones se difieren: llegan junto con el
+  // mensaje siguiente del usuario y no agregan un turno. Contarlas como
+  // «turnos extra» exageraba el costo; se separan.
+  const enStop = (l) => l.filter((x) => !x.deferred);
+  const diferidas = (l) => l.filter((x) => x.deferred);
+
+  console.log('Peticiones de narrativa (últimos 7 días / histórico)');
+  console.log(`  ${pad('en Stop')} ${enStop(asks7d).length} en 7d · ${enStop(asks).length} total — cada una agrega un turno`);
+  console.log(`  ${pad('diferidas')} ${diferidas(asks7d).length} en 7d · ${diferidas(asks).length} total — sin turno extra, antes de la respuesta`);
+  console.log(`  ${pad('narrativas')} ${narr7d.length} en 7d · ${narratives.length} total
+`);
 
   console.log('Por CLI');
   for (const name of Object.keys(CLIS)) {
-    const a7 = asks7d.filter((x) => x.agent === name).length;
-    const n7 = narr7d.filter((x) => x.agent === name).length;
-    const nTot = narratives.filter((x) => x.agent === name).length;
-    console.log(`  ${pad(name)} ${n7} narrativa(s) en 7d (${nTot} total) · ${a7} petición(es) automática(s)`);
+    const de = (l) => l.filter((x) => x.agent === name);
+    const n7 = de(narr7d).length;
+    const nTot = de(narratives).length;
+    console.log(`  ${pad(name)} ${n7} narrativa(s) en 7d (${nTot} total) · ${enStop(de(asks7d)).length} en Stop y ${diferidas(de(asks7d)).length} diferida(s) en 7d`);
   }
   console.log('');
 }

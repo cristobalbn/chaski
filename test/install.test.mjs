@@ -1796,10 +1796,32 @@ describe('comandos next, cost, why y share', () => {
 
       const salida = m.correr('cost');
       assert.match(salida, /0 tokens · \$0\.00/);
-      assert.match(salida, /peticiones\s+1 en 7d · 1 total/);
+      assert.match(salida, /en Stop\s+1 en 7d · 1 total — cada una agrega un turno/);
+      assert.match(salida, /diferidas\s+0 en 7d · 0 total/);
       assert.match(salida, /narrativas\s+1 en 7d · 1 total/);
-      assert.match(salida, /claude code\s+0 narrativa\(s\) en 7d \(0 total\) · 1 petición\(es\)/);
+      assert.match(salida, /claude code\s+0 narrativa\(s\) en 7d \(0 total\) · 1 en Stop y 0 diferida\(s\)/);
       assert.match(salida, /codex\s+1 narrativa\(s\) en 7d \(1 total\)/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('cost separa las peticiones diferidas, que no agregan un turno (#73)', () => {
+    const m = montar('chaski-cost-dif-');
+    try {
+      // El hook de entrega corre al empezar el turno: con esa prueba de vida,
+      // la petición del Stop se difiere en vez de agregar un turno.
+      spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'UserPromptSubmit', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 's1', cwd: m.proyecto, prompt: 'x' }),
+      });
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 43;\n');
+      capturar(m, 'claude-code', { session_id: 's1', cwd: m.proyecto, hook_event_name: 'Stop' });
+      assert.ok(existsSync(join(m.proyecto, '.tambo', 'pending-ask.json')), 'no se difirió; el test no probaría nada');
+      const salida = m.correr('cost');
+      assert.match(salida, /en Stop\s+0 en 7d · 0 total/);
+      assert.match(salida, /diferidas\s+1 en 7d · 1 total — sin turno extra/);
+      assert.match(salida, /claude code\s+.*· 0 en Stop y 1 diferida\(s\) en 7d/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
