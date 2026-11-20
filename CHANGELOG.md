@@ -5,6 +5,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.7] - 2026-11-20
+
 ### Corregido
 - Al retomar una sesión (`resume`) cuyo relevo escribió ella misma, ya no se
   le repite ese relevo: el agente tiene el historial completo y el relevo solo
