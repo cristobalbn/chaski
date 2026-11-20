@@ -5,6 +5,13 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Corregido
+- La 0.1.7 seguía repitiendo el relevo al retomar una sesión en Claude Code:
+  comparaba el `session_id`, y al retomar Claude Code le da a la conversación un
+  id nuevo y sigue escribiendo en el mismo transcript. Ahora la conversación se
+  reconoce por su transcript, tanto al inyectar como al capturar. De paso, una
+  sesión retomada ya no relee su transcript entero en la primera captura.
+
 ## [0.1.7] - 2026-11-20
 
 ### Corregido

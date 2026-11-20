@@ -59,7 +59,15 @@ function main() {
     // peor, una versión vieja de algo que el agente ya sabe mejor. Solo se
     // dice lo que la conversación NO puede saber: lo que pasó en el repo o en
     // otras sesiones desde entonces. Si no pasó nada, no se imprime nada.
-    if (ev.source === 'resume' && estado.session && estado.session === sessionOf(ev)) {
+    //
+    // «Escribió ella misma» se reconoce por el transcript, no por el id: al
+    // retomar, Claude Code le da a la conversación un session_id nuevo y sigue
+    // escribiendo en el mismo archivo (ver capture.mjs). Comparando el id, la
+    // primera versión de esto (0.1.7) nunca reconocía una sesión retomada.
+    const transcriptActual = ev.transcript_path ?? ev.transcriptPath ?? null;
+    const mismaConversacion = (estado.transcript && transcriptActual && estado.transcript === transcriptActual)
+      || (estado.session && estado.session === sessionOf(ev));
+    if (ev.source === 'resume' && mismaConversacion) {
       const avisos = [
         detectDrift(cwd, estado, budget, ramaActual),
         interruptedTurns(cwd, estado, sessionOf(ev)),

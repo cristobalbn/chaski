@@ -88,10 +88,19 @@ function main() {
     // de ayer a un transcript nuevo haría que se saltee todo el trabajo de
     // hoy hasta ese byte. El caso aparece al volver a trabajar al día
     // siguiente, que es justo cuando el relevo importa.
-    const mismaSesion = previo.session && ev.session_id && previo.session === ev.session_id;
-    const mismoTranscript = previo.transcript && ev.transcript_path
-      && previo.transcript === ev.transcript_path;
-    const desde = (mismaSesion && mismoTranscript) ? (previo.offset ?? 0) : 0;
+    //
+    // Pero «la misma sesión» no es «el mismo session_id»: al retomar
+    // (`--resume`, `/resume`), Claude Code le da a la conversación un id nuevo
+    // y sigue escribiendo en el MISMO transcript. Comparando solo el id, cada
+    // reinicio parecía una sesión nueva: se releía el transcript entero (6 MB
+    // en una sesión larga) y los turnos de toda la conversación quedaban
+    // contados como posteriores a la narrativa. El transcript compartido es lo
+    // que identifica la conversación; el id solo, cuando no hay transcript.
+    const mismoTranscript = Boolean(previo.transcript && ev.transcript_path
+      && previo.transcript === ev.transcript_path);
+    const mismaSesion = mismoTranscript
+      || Boolean(previo.session && ev.session_id && previo.session === ev.session_id && !ev.transcript_path);
+    const desde = mismoTranscript ? (previo.offset ?? 0) : 0;
 
     const t = transcriptFacts(ev.transcript_path, desde, config, budget);
     const g = gitFacts(cwd, config, budget, branch);

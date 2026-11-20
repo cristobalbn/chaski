@@ -2861,6 +2861,29 @@ describe('sesión retomada y cambio de sesión', () => {
     }
   });
 
+  test('al retomar con un session_id nuevo y el mismo transcript tampoco se repite', () => {
+    // Así retoma Claude Code de verdad (visto el 2026-11-20): id nuevo, mismo
+    // archivo de transcript. La 0.1.7 comparaba el id y repetía el relevo.
+    const m = montar('chaski-resume-id-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 94;\n');
+      stop(m, 'A');
+      narrar(m);
+      const retomar = (session, transcriptPath) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'SessionStart', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'SessionStart',
+          source: 'resume', transcript_path: transcriptPath }),
+      });
+      // Caso positivo: otra conversación retomada (otro transcript) lo recibe.
+      assert.match(retomar('Z', join(m.raiz, 'otra.jsonl')).stdout, /Migrando auth/);
+      const r = retomar('A-retomada', transcript);
+      assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+      assert.equal(r.stdout, '', 'repitió el relevo de su propia conversación');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   test('al retomar, sí avisa lo que la conversación no puede saber', () => {
     const m = montar('chaski-resume-deriva-');
     try {
