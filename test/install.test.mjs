@@ -2462,7 +2462,8 @@ test('share anonimiza la carpeta personal y los correos antes de publicar', () =
     assert.ok(!texto.includes(m.casa), 'publicó la carpeta personal');
     assert.ok(!texto.includes(m.casa.split(/[\\/]/).at(-2)), 'publicó el nombre de la carpeta temporal');
     assert.ok(!texto.includes('ana.perez@ejemplo.cl'), 'publicó un correo');
-    assert.match(texto, /Falta cerrar \S*auth\.ts:41|Falta cerrar \S*\.ts:41/);
+    // En Linux la redacción mete un espacio («[redactado: cadena-…]»).
+    assert.match(texto, /Falta cerrar .*\.ts:41\. Dudas/);
     assert.match(texto, /Dudas a \[correo\]/);
     assert.match(texto, /paquete@1\.2\.3/, 'tomó una versión por un correo');
   } finally {
