@@ -172,3 +172,37 @@ export function isExcludedPath(ruta, config = null) {
 
   return [...defecto, ...extra].some((re) => re.test(ruta));
 }
+
+/**
+ * Quita datos personales de un texto que se va a publicar (`chaski share`
+ * escribe en `decisiones/`, que se versiona). No es redacción de secretos —
+ * eso ya lo hizo redact()—: es lo que no es secreto pero tampoco tiene por
+ * qué quedar en la historia de git de un repo ajeno: la carpeta personal con
+ * el nombre de usuario adentro y los correos.
+ *
+ * Solo para lo que se publica. El relevo local no se anonimiza: ahí una ruta
+ * absoluta es información útil para el agente siguiente y no sale de la
+ * máquina.
+ */
+export function anonymize(texto, { home = '' } = {}) {
+  if (!texto) return { texto: '', anonymized: 0 };
+  let out = String(texto);
+  let n = 0;
+  const contar = (reemplazo) => () => { n++; return reemplazo; };
+
+  // La carpeta personal exacta primero, con cualquiera de los dos separadores
+  // (en Windows una narrativa puede traer `C:\Users\x` o `C:/Users/x`).
+  if (home && home.length > 3) {
+    const SEP = String.raw`[\\/]`;
+    const partes = home.split(/[\\/]+/).filter(Boolean)
+      .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const prefijo = /^[\\/]/.test(home) ? SEP : '';
+    const re = new RegExp(prefijo + partes.join(SEP + '+') + String.raw`(?=[\\/]|\b|$)`, 'gi');
+    out = out.replace(re, contar('~'));
+  }
+  // Carpetas personales de cualquier otro usuario o máquina.
+  out = out.replace(/(?:\b[A-Za-z]:)?[\\/](?:Users|home)[\\/][^\\/\s`'"<>]+/gi, contar('~'));
+  // El dominio termina en letras: `paquete@1.2.3` es una versión, no un correo.
+  out = out.replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b/g, contar('[correo]'));
+  return { texto: out, anonymized: n };
+}

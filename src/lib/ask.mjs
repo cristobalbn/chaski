@@ -306,3 +306,17 @@ export function promptPayload(agent, texto) {
   if (!evento) return null;
   return { hookSpecificOutput: { hookEventName: evento, additionalContext: texto } };
 }
+
+/**
+ * Instrucción para el resumen de compactación de Claude Code (hook
+ * PreCompact). Pide lo mismo que la narrativa porque cumple el mismo papel:
+ * después de compactar, el agente sigue con el resumen y nada más. Los hechos
+ * no se piden: chaski los guarda solo y los vuelve a inyectar en el
+ * SessionStart que sigue a la compactación.
+ */
+export const COMPACT_HINT = [
+  'chaski: al resumir, conserva lo que un relevo necesita y no se deduce de git:',
+  'qué se está intentando lograr; qué se decidió y qué se descartó, con su porqué;',
+  'qué quedó a medias, con rutas y líneas; y el siguiente paso concreto.',
+  'Los archivos tocados, los commits y los comandos los guarda chaski y no hace falta repetirlos.',
+].join(' ');

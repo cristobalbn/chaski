@@ -11,6 +11,7 @@ falta leerlo.
 - [Capturar payloads (`chaski probe`)](#capturar-payloads-chaski-probe)
 - [Actualizar: por qué `init` no es opcional](#actualizar-por-qué-init-no-es-opcional)
 - [Puentes de compatibilidad (`capturar.mjs`, `leer.mjs`)](#puentes-de-compatibilidad-capturarmjs-leermjs)
+- [Compactación (Claude Code)](#compactación-claude-code)
 - [Turnos cortados](#turnos-cortados)
 - [Límites conocidos: detalle y mediciones](#límites-conocidos-detalle-y-mediciones)
 - [Términos de uso de los proveedores](#términos-de-uso-de-los-proveedores)
@@ -112,6 +113,18 @@ por stderr a propósito: corre en cada turno y sería ruido inapagable.
 
 El [CHANGELOG](https://github.com/cristobalbn/chaski/blob/main/CHANGELOG.md)
 cuenta la versión en que volvieron.
+
+## Compactación (Claude Code)
+
+Al compactar, Claude Code reemplaza la conversación por un resumen, y lo que el
+resumen no conserve se pierde igual que al cambiar de agente. Lo que imprime
+el hook `PreCompact` «becomes instructions for the compaction summary», así que
+`capture.mjs` pide ahí lo mismo que una narrativa: tarea, decisiones y
+descartes con su porqué, lo que quedó a medias con rutas y el siguiente paso.
+Los hechos no se piden: chaski los guarda solo y los vuelve a inyectar en el
+`SessionStart` que sigue a la compactación. La instrucción sale antes del lock
+y no depende del estado. Codex y agy no la reciben: Codex no documenta qué hace
+con esa salida y agy no tiene el evento.
 
 ## Turnos cortados
 
