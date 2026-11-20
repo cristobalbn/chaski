@@ -2454,9 +2454,15 @@ test('share anonimiza la carpeta personal y los correos antes de publicar', () =
     assert.match(salida, /dato\(s\) personal\(es\) anonimizado\(s\)/);
     const dec = readdirSync(join(m.proyecto, 'decisiones'));
     const texto = readFileSync(join(m.proyecto, 'decisiones', dec[0]), 'utf8');
+    // Lo que importa: ni la carpeta personal ni el nombre de su directorio
+    // llegan al archivo. No se exige la forma `~/...` porque en Linux y macOS
+    // la ruta temporal del test es larga y aleatoria, y el filtro de secretos
+    // —que corre ANTES, a propósito— ya la redacta como alta entropía. El
+    // reemplazo por `~` lo prueban los tests unitarios de anonymize().
     assert.ok(!texto.includes(m.casa), 'publicó la carpeta personal');
+    assert.ok(!texto.includes(m.casa.split(/[\\/]/).at(-2)), 'publicó el nombre de la carpeta temporal');
     assert.ok(!texto.includes('ana.perez@ejemplo.cl'), 'publicó un correo');
-    assert.match(texto, /Falta cerrar ~[\\/]proyectos[\\/]app[\\/]auth\.ts:41/);
+    assert.match(texto, /Falta cerrar \S*auth\.ts:41|Falta cerrar \S*\.ts:41/);
     assert.match(texto, /Dudas a \[correo\]/);
     assert.match(texto, /paquete@1\.2\.3/, 'tomó una versión por un correo');
   } finally {
