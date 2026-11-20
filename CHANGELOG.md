@@ -5,6 +5,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.6] - 2026-11-20
+
 ### Agregado
 - **La narrativa se pide antes de que se acabe la cuota** (#82, Claude Code,
   planes Pro, Max y Ultra). `chaski init --statusline` instala una statusline
