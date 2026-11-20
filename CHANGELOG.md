@@ -5,6 +5,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.8] - 2026-11-20
+
 ### Corregido
 - La 0.1.7 seguía repitiendo el relevo al retomar una sesión en Claude Code:
   comparaba el `session_id`, y al retomar Claude Code le da a la conversación un

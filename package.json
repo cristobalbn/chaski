@@ -1,6 +1,6 @@
 {
   "name": "@cristobalbn/chaski",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Relevo de contexto entre agentes de codigo (Claude Code, Codex, agy)",
   "type": "module",
   "license": "MIT",
