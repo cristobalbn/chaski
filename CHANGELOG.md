@@ -5,6 +5,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.9] - 2026-11-20
+
 ### Corregido
 - Después de retomar una conversación en Claude Code, chaski no leía nada del
   transcript (ni comandos, ni turnos, ni la última respuesta) y seguía
