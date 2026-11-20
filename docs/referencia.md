@@ -46,13 +46,16 @@ conservadores, y en este orden:
 2. **12 minutos** de debounce (espera mínima) entre peticiones.
 3. Solo si hay trabajo real detrás: archivos sin commitear, commits nuevos o
    comandos ejecutados.
-4. Y solo si la narrativa falta, quedó **8 turnos** atrás, o hay commits
-   nuevos.
+4. Y solo si la narrativa falta, quedó **8 turnos** atrás (`askNarrativeAfterTurns`
+   lo cambia), o hay commits nuevos.
 
 | | |
 |---|---|
 | Apagarlo | `"askNarrative": false` en `chaski.json` o `chaski.local.json` |
-| Cómo se ve | Una línea bajo el rótulo **«Stop hook feedback»** (cuatro si la sesión no tiene la skill `relevo`: entonces trae la ruta y los campos que hay que escribir). Ese rótulo y el `Ran 1 stop hook` los pinta Claude Code al ejecutar cualquier hook y no se pueden suprimir; lo nuestro es el texto, y es corto a propósito porque ocupa pantalla del usuario. Se emite con `hookSpecificOutput.additionalContext`, que la documentación llama «non-error feedback»: mantiene el turno extra y las protecciones contra bucles sin rotularse como error. En una versión de Claude Code anterior a ese campo la petición no llega — no rompe nada |
+| Cuándo se entrega en Claude Code (#73) | En `Stop` solo se anota en `.tambo/pending-ask.json`. El hook `UserPromptSubmit` (`inject.mjs`) la entrega con el mensaje siguiente de la misma sesión, como `additionalContext`, que no se pinta en la conversación: el agente guarda el relevo **antes** de responder y la respuesta queda al final. Pedirla en `Stop` dejaba las llamadas del guardado debajo de la respuesta, y no hay forma de ocultarlas: `suppressOutput` no tiene efecto en `Stop`, y `SessionEnd` no puede hacer actuar al modelo. No se entrega en otra sesión (el agente no tendría la conversación), ni si ya hay una narrativa posterior, ni pasadas 12 h. Mide ~51 ms por mensaje, contra ~39 ms de un `node` vacío |
+| Si no llega otro mensaje | `capture.mjs` guarda la última respuesta del agente (`lastReply`: redactada, ~700 caracteres, vence a las 72 h) y el relevo la muestra como «Última respuesta del agente» cuando hubo trabajo después de la narrativa. No pasa por ningún modelo |
+| Instalación anterior sin `UserPromptSubmit` | Se sigue pidiendo en `Stop`, con el formato de abajo, hasta volver a correr `chaski init`. Diferir sin un hook que la entregue dejaría el relevo sin narrativa sin que nadie se entere |
+| Cómo se ve (petición en `Stop`) | Una línea bajo el rótulo **«Stop hook feedback»** (cuatro si la sesión no tiene la skill `relevo`: entonces trae la ruta y los campos que hay que escribir). Ese rótulo y el `Ran 1 stop hook` los pinta Claude Code al ejecutar cualquier hook y no se pueden suprimir; lo nuestro es el texto, y es corto a propósito porque ocupa pantalla del usuario. Se emite con `hookSpecificOutput.additionalContext`, que la documentación llama «non-error feedback»: mantiene el turno extra y las protecciones contra bucles sin rotularse como error. En una versión de Claude Code anterior a ese campo la petición no llega — no rompe nada |
 | Dónde funciona | Los tres, con el contrato de cada uno: `hookSpecificOutput.additionalContext` en Claude Code, `decision: "block"` en Codex y `decision: "continue"` en Antigravity, que trata cualquier otro valor como permiso para parar |
 | En Codex | su hook `Stop` se registra **síncrono**, porque un hook en segundo plano no puede bloquear. Esperas la captura (~220 ms) al cerrar cada turno |
 

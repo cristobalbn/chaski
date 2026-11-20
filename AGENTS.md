@@ -258,7 +258,7 @@ herramienta existe para evitar.
 ```
 src/cli.mjs          ~1.200 lín. — init / doctor / next / cost / why / share / probe / uninstall / version
 src/capture.mjs      ~550 lín.   — hook de captura (Stop, SubagentStop): orquesta git, transcripts, cuota, costos e historia
-src/inject.mjs       ~220 lín.   — hook de inyección (SessionStart): camino crítico, detecta deriva y neutraliza marcas <<< >>>
+src/inject.mjs       ~260 lín.   — hook de inyección (SessionStart; en Claude Code también UserPromptSubmit, que entrega la petición de narrativa anotada): camino crítico, detecta deriva y neutraliza marcas <<< >>>
 src/lib/facts.mjs    ~570 lín.   — extracción defensiva de hechos desde git (status, log, diff, upstream) y transcripts
 src/lib/paths.mjs    ~340 lín.   — rutas, slugs de ramas (branchSlug), lock por mkdir, loadConfig, detección de entorno
 src/lib/relay.mjs    ~410 lín.   — render de Markdown endurecido (vallas, código en línea), preámbulo, firma HMAC SHA-256 y writeAtomic
@@ -275,9 +275,10 @@ skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo»
 - **En el proyecto (`.tambo/`, en `.gitignore`):**
   - `.tambo/branches/<slug>/estado.json` — hechos, narrativa, marca de agua y firma HMAC.
     - **Regla de `<slug>` (`branchSlug` en `src/lib/paths.mjs`)**: si el nombre de la rama (`git rev-parse --abbrev-ref HEAD`) solo tiene `[a-zA-Z0-9._-]` y hasta 60 caracteres (ej. `main`), `<slug>` es la rama tal cual. Si tiene `/` u otros caracteres o pasa de 60 letras (ej. `feat/pagos`), reemplaza fuera de `[a-zA-Z0-9._-]` por `-`, recorta a 60 caracteres y añade un sufijo FNV-1a de 6 caracteres en base 36 (`feat-pagos-<hash6>`). Para obtener la ruta exacta desde Node: `node -e "import('./src/lib/paths.mjs').then(m=>console.log(m.statePath(process.cwd())))"`.
-    - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy"`), `session`, `transcript`, `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ ruta, mas, menos, nuevo }] (máx. 50), dirtyTotal, dirtyUnknown (opcional), commits, upstream: { ref, ahead, collisions } | null, trimmed }`; `ahead` = commits del upstream que no tienes), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ kind, reason, conclusion, at }]`, máx. 6, vencen a las 72 h), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre `relevo.md`), `askedAt`, `askedReason`, `turnsAtNarrative`, `narrativeStamp`.
+    - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy"`), `session`, `transcript`, `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ ruta, mas, menos, nuevo }] (máx. 50), dirtyTotal, dirtyUnknown (opcional), commits, upstream: { ref, ahead, collisions } | null, trimmed }`; `ahead` = commits del upstream que no tienes), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ kind, reason, conclusion, at }]`, máx. 6, vencen a las 72 h), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre `relevo.md`), `askedAt`, `askedReason`, `turnsAtNarrative`, `narrativeStamp`, `lastReply` (`{ text, at }`: última respuesta del agente tomada del transcript, redactada, máx. ~700 caracteres, vence a las 72 h; se renderiza solo si hubo turnos después de la narrativa).
     - **Campos exclusivos del agente (al guardar narrativa)**: `narrative` (string Markdown), `narrativeAuthor` (`"claude code" | "codex" | "agy"`), `narrativeWrittenAt` (ISO 8601 UTC actual, posterior a `writtenAt`).
   - `.tambo/branches/<slug>/relevo.md` — Markdown renderizado desde `estado.json` por `render()` (`src/lib/relay.mjs`), firmado con HMAC e inyectado por `inject.mjs`. Nunca se edita a mano.
+  - `.tambo/pending-ask.json` — petición de narrativa anotada por `Stop` en Claude Code (`{ session, at, reason, statePath, hasSkill }`). La consume `inject.mjs` en el `UserPromptSubmit` siguiente de la misma sesión y la borra. Ver `src/lib/ask.mjs`.
   - `.tambo/historia/entries.jsonl` — histórico append-only de narrativas redactadas (consultado por `chaski why`). Cada línea es `{ at, author, branch, head, narrative }`.
 - **En el repositorio (versionado en git, opt-in):**
   - `decisiones/<YYYY-MM-DD>-<tema>.md` — decisiones publicadas explícitamente con `chaski share [tema] [--yes]`.
@@ -287,7 +288,7 @@ skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo»
   - `~/.chaski/ultima-limpieza` — timestamp en ms de la última poda diaria de relevos huérfanos.
   - `~/.chaski/quota.json` — `{ "<agent>": { at, reason, message } }`, cortes por cuota de las últimas 12 h (leído por `chaski next`; se limpia cuando ese CLI completa un `Stop` normal).
   - `~/.chaski/cost.json` — `{ asks: [{ at, agent, branch, reason }], narratives: [{ at, agent, branch }] }` (últimos 500 de cada uno, leído por `chaski cost`).
-  - `~/.chaski/config.json` — configuración global opcional del usuario. Se mezcla con `chaski.json` (proyecto) y `chaski.local.json` (máquina local) con precedencia `local > proyecto > global` en claves escalares (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`) y concatenación de arreglos en `redact` y `excludePaths`.
+  - `~/.chaski/config.json` — configuración global opcional del usuario. Se mezcla con `chaski.json` (proyecto) y `chaski.local.json` (máquina local) con precedencia `local > proyecto > global` en claves escalares (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`, `askNarrativeAfterTurns`) y concatenación de arreglos en `redact` y `excludePaths`.
   - `~/.chaski/<cli>-<script>-<evento>.cmd` (o `.sh`) — wrappers sin espacios en la ruta generados por `init` para Codex y `agy`.
 
 ### Códigos de salida de CLI y hooks
@@ -350,12 +351,12 @@ No son intercambiables. Lo que funciona en uno falla en silencio en otro.
 |---|---|---|---|
 | Config | `~/.claude/settings.json` | `~/.codex/config.toml` | `~/.gemini/config/hooks.json` |
 | Organización | JSON por evento (`hooks.<Evento>`) | Bloque TOML delimitado (`[[hooks.<Evento>]]` + `[hooks.state]`) | JSON por propietario (`chaski.<Evento>`) |
-| Eventos que registra `init` | `SessionStart`, `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | `SessionStart`, `Stop` | `SessionStart`, `Stop` |
+| Eventos que registra `init` | `SessionStart`, `UserPromptSubmit`, `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | `SessionStart`, `Stop` | `SessionStart`, `Stop` |
 | Campos del payload | snake_case | snake_case | **camelCase** |
 | Directorio | `cwd` | `cwd` | `workspacePaths` (array) |
 | Transcript | `transcript_path` | `transcript_path` | `transcriptPath` |
 | Salida en `SessionStart` | texto plano | texto plano | **JSON con `injectSteps`** |
-| Salida al pedir narrativa en `Stop` | `hookSpecificOutput.additionalContext` | `{ decision: "block", reason }` | **`{ decision: "continue", reason }`** |
+| Salida al pedir narrativa | Ninguna en `Stop`: la anota y la entrega `UserPromptSubmit` con `hookSpecificOutput.additionalContext` (#73). Si ese hook no está registrado, `additionalContext` en `Stop` | `{ decision: "block", reason }` | **`{ decision: "continue", reason }`** |
 
 La diferencia de salida es la trampa. A `agy` hay que devolverle:
 

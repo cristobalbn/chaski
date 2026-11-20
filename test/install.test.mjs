@@ -244,7 +244,7 @@ describe('uninstall revierte lo que init tocó', () => {
       // Caso positivo: tras init, los tres formatos se reconocen con sus eventos.
       m.correr('init');
       const sana = m.correr('doctor');
-      assert.match(sana, /claude code\s+registrado \(SessionStart, Stop, SessionEnd, PreCompact, SubagentStop, StopFailure\)/);
+      assert.match(sana, /claude code\s+registrado \(SessionStart, UserPromptSubmit, Stop, SessionEnd, PreCompact, SubagentStop, StopFailure\)/);
       assert.match(sana, /codex\s+registrado \(SessionStart, Stop\)/);
       assert.match(sana, /agy\s+registrado \(SessionStart, Stop\)/);
 
@@ -2046,6 +2046,139 @@ describe('narrativa guardada después de la última captura', () => {
       const salida = inject(m);
       assert.match(salida, /npm test/, 'el hecho alterado no llegó al render; el test no probaría nada');
       assert.match(salida, ALARMA, 'hechos alterados pasaron como narrativa sin firmar');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+describe('#73: la petición de narrativa se entrega antes de la respuesta', () => {
+  // En Stop, la petición llegaba después de la respuesta y el guardado la
+  // empujaba fuera de la pantalla. Con el hook de UserPromptSubmit registrado,
+  // Stop solo la anota y la entrega inject.mjs con el mensaje siguiente.
+  const transcript = join(AQUI, 'fixtures', 'claude-code.transcript.jsonl');
+  const capturar = (m, session) => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: transcript }),
+  });
+  const mensaje = (m, session) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'UserPromptSubmit', 'claude-code'], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'UserPromptSubmit', prompt: 'sigue' }),
+  });
+  const pendiente = (m) => join(m.proyecto, '.tambo', 'pending-ask.json');
+
+  test('init registra UserPromptSubmit con inject.mjs y uninstall lo quita', () => {
+    const m = montar('chaski-73-init-');
+    try {
+      m.correr('init');
+      const s = JSON.parse(readFileSync(join(m.casa, '.claude', 'settings.json'), 'utf8'));
+      const cmds = (s.hooks.UserPromptSubmit ?? []).flatMap((g) => g.hooks.map((h) => h.command));
+      assert.ok(cmds.some((c) => /inject\.mjs"? UserPromptSubmit claude-code$/.test(c)), cmds.join('\n'));
+      m.correr('uninstall');
+      const tras = JSON.parse(readFileSync(join(m.casa, '.claude', 'settings.json'), 'utf8'));
+      assert.ok(!JSON.stringify(tras.hooks?.UserPromptSubmit ?? []).includes('inject.mjs'),
+        'uninstall dejó el hook de UserPromptSubmit');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('Stop no imprime nada y el mensaje siguiente recibe la petición, una sola vez', () => {
+    const m = montar('chaski-73-flujo-');
+    try {
+      m.correr('init');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 73;\n');
+      const r = capturar(m, 's73');
+      assert.equal(r.status, 0);
+      assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+      assert.equal(r.stdout, '', 'Stop volvió a pedir la narrativa debajo de la respuesta');
+      assert.ok(existsSync(pendiente(m)), 'no anotó la petición');
+
+      const e = mensaje(m, 's73');
+      assert.equal(e.status, 0);
+      assert.equal(e.stderr, '', 'el hook ocultó un error propio');
+      const o = JSON.parse(e.stdout);
+      assert.equal(o.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+      assert.match(o.hookSpecificOutput.additionalContext, /antes de responder este mensaje/);
+      assert.match(o.hookSpecificOutput.additionalContext, /todavía no tiene narrativa/);
+      assert.ok(!existsSync(pendiente(m)), 'la anotación quedó y se entregaría de nuevo');
+
+      assert.equal(mensaje(m, 's73').stdout, '', 'entregó la misma petición dos veces');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('otra sesión no recibe la petición ni la borra', () => {
+    const m = montar('chaski-73-sesion-');
+    try {
+      m.correr('init');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 74;\n');
+      capturar(m, 'la-de-antes');
+      assert.ok(existsSync(pendiente(m)), 'el fixture no anotó nada; el test no probaría nada');
+      assert.equal(mensaje(m, 'otra').stdout, '');
+      assert.ok(existsSync(pendiente(m)), 'borró la anotación de otra sesión');
+      assert.match(mensaje(m, 'la-de-antes').stdout, /antes de responder/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('si la narrativa se escribió entre medio, no se pide', () => {
+    const m = montar('chaski-73-narrada-');
+    try {
+      m.correr('init');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 75;\n');
+      capturar(m, 's');
+      const p = JSON.parse(readFileSync(pendiente(m), 'utf8'));
+      const estado = JSON.parse(readFileSync(p.statePath, 'utf8'));
+      estado.narrative = 'escrita a mano';
+      estado.narrativeWrittenAt = new Date(Date.parse(p.at) + 1000).toISOString();
+      writeFileSync(p.statePath, JSON.stringify(estado));
+      assert.equal(mensaje(m, 's').stdout, '');
+      assert.ok(!existsSync(pendiente(m)), 'la anotación cubierta quedó en disco');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('sin el hook registrado (instalación vieja) sigue pidiendo en Stop', () => {
+    // Diferir sin quien entregue sería quedarse sin narrativa en silencio.
+    const m = montar('chaski-73-viejo-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 76;\n');
+      const r = capturar(m, 's');
+      assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /antes de cerrar/);
+      assert.ok(!existsSync(pendiente(m)));
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('sin anotación, el hook de cada mensaje no imprime nada ni crea .tambo', () => {
+    const m = montar('chaski-73-vacio-');
+    try {
+      const e = mensaje(m, 's');
+      assert.equal(e.status, 0);
+      assert.equal(e.stdout, '');
+      assert.equal(e.stderr, '');
+      assert.ok(!existsSync(join(m.proyecto, '.tambo')));
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('la última respuesta del agente queda en el estado y en el relevo', () => {
+    const m = montar('chaski-73-reply-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 77;\n');
+      capturar(m, 's');
+      const ramas = readdirSync(join(m.proyecto, '.tambo', 'branches'));
+      const dir = join(m.proyecto, '.tambo', 'branches', ramas[0]);
+      const estado = JSON.parse(readFileSync(join(dir, 'estado.json'), 'utf8'));
+      assert.ok(estado.lastReply?.text, 'no guardó la última respuesta');
+      assert.ok(estado.lastReply.text.length <= 720, 'no se acotó');
+      assert.match(readFileSync(join(dir, 'relevo.md'), 'utf8'), /## Última respuesta del agente/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

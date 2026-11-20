@@ -5,6 +5,21 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Cambiado
+- En Claude Code, la petición de narrativa ya no aparece debajo de la respuesta
+  (#73). Al terminar el turno solo se anota, y un hook nuevo de
+  `UserPromptSubmit` se la entrega al agente con el mensaje siguiente, para
+  que guarde el relevo antes de responder. Hace falta volver a correr
+  `chaski init`; sin el hook nuevo se sigue pidiendo en `Stop`.
+
+### Agregado
+- El relevo guarda la última respuesta del agente (`lastReply`), redactada y
+  con vencimiento de 72 h, y la muestra si hubo trabajo después de la última
+  narrativa. Cubre la sesión que se cierra antes de que se entregue la
+  petición.
+- Clave `askNarrativeAfterTurns` para cambiar cuántos turnos esperar antes de
+  volver a pedir la narrativa (por defecto 8).
+
 ## [0.1.3] - 2026-11-14
 
 ### Corregido
