@@ -5,6 +5,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.5] - 2026-11-20
+
 ### Cambiado
 - `chaski cost` separa las peticiones de narrativa en `Stop` (cada una agrega
   un turno) de las diferidas al turno siguiente (sin turno extra). Antes las
