@@ -368,7 +368,7 @@ No son intercambiables. Lo que funciona en uno falla en silencio en otro.
 | Directorio | `cwd` | `cwd` | `workspacePaths` (array) |
 | Transcript | `transcript_path` | `transcript_path` | `transcriptPath` |
 | Salida en `SessionStart` | texto plano | texto plano | **JSON con `injectSteps`** |
-| `SessionStart` al retomar la misma sesión (`source: resume`; se reconoce por `transcript_path`, porque Claude Code cambia el `session_id` al retomar) | solo deriva y turnos cortados; nada si no hay | igual que Claude Code | — (agy no manda `source`) |
+| `SessionStart` al retomar la misma sesión (`source: resume`; se reconoce por el transcript resuelto con `resolveTranscript()`: al retomar, Claude Code cambia el `session_id` y manda un `transcript_path` que no existe) | solo deriva y turnos cortados; nada si no hay | igual que Claude Code | — (agy no manda `source`) |
 | Salida en `PreCompact` | texto plano: instrucción para el resumen de compactación (`COMPACT_HINT` en `src/lib/ask.mjs`) | — (no se registra) | — (no existe) |
 | Entrega de la petición de narrativa (#73) | `UserPromptSubmit` → `hookSpecificOutput.additionalContext` | `UserPromptSubmit` → `hookSpecificOutput.additionalContext` | `PreInvocation` → `injectSteps` (corre antes de **cada** llamada al modelo) |
 | Petición en `Stop` (solo si el hook de entrega no dio señales de vida) | `hookSpecificOutput.additionalContext` | `{ decision: "block", reason }` | **`{ decision: "continue", reason }`** |

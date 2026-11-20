@@ -14,7 +14,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync,
-  realpathSync, statSync,
+  realpathSync, statSync, utimesSync,
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -2898,6 +2898,79 @@ describe('sesión retomada y cambio de sesión', () => {
       assert.match(r.stdout, /cambio de otra persona/);
       assert.doesNotMatch(r.stdout, /Migrando auth/, 'repitió la narrativa');
       assert.match(r.stdout, /<<<FIN-RELEVO-CHASKI>>>\s*$/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+describe('tras un resume, Claude Code manda la ruta de un transcript que no existe', () => {
+  // Visto el 2026-11-20: al retomar, el session_id cambia y `transcript_path`
+  // apunta a `<carpeta>/<id-nuevo>.jsonl`, que nunca se crea; Claude Code sigue
+  // escribiendo en el transcript original. chaski no leía nada desde entonces.
+  const preparar = (m) => {
+    const dir = join(m.raiz, 'transcripts');
+    mkdirSync(dir, { recursive: true });
+    const real = join(dir, 'original.jsonl');
+    writeFileSync(real, readFileSync(join(AQUI, 'fixtures', 'claude-code.transcript.jsonl')));
+    return { dir, real, fantasma: join(dir, 'id-nuevo.jsonl') };
+  };
+  const stop = (m, session, transcriptPath) => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: transcriptPath }),
+  });
+  const estadoDe = (m) => JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'branches',
+    m.g('rev-parse', '--abbrev-ref', 'HEAD').trim(), 'estado.json'), 'utf8'));
+
+  test('capture lee el transcript que se está escribiendo, no la ruta fantasma', () => {
+    const m = montar('chaski-resume-ruta-');
+    try {
+      const { real, fantasma } = preparar(m);
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 95;\n');
+      const r = stop(m, 'id-nuevo', fantasma);
+      assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+      const e = estadoDe(m);
+      assert.ok(e.turns > 0, 'no leyó nada del transcript');
+      assert.ok(e.commands.length > 0, 'perdió los comandos');
+      assert.equal(e.transcript, real, 'guardó la ruta fantasma');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('un transcript viejo de la carpeta no se toma por el activo', () => {
+    const m = montar('chaski-resume-viejo-');
+    try {
+      const { real, fantasma } = preparar(m);
+      const hace1h = new Date(Date.now() - 3600_000);
+      utimesSync(real, hace1h, hace1h);
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 96;\n');
+      stop(m, 'id-nuevo', fantasma);
+      const e = estadoDe(m);
+      assert.equal(e.turns, 0, 'leyó un transcript de hace una hora como si fuera el activo');
+      assert.equal(e.transcript, fantasma);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('al retomar con la ruta fantasma no se repite el relevo de esa conversación', () => {
+    const m = montar('chaski-resume-fantasma-');
+    try {
+      const { real, fantasma } = preparar(m);
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 97;\n');
+      stop(m, 'id-viejo', real);
+      const e = estadoDe(m);
+      Object.assign(e, { narrative: 'Migrando auth.', narrativeAuthor: 'claude code', narrativeWrittenAt: new Date().toISOString() });
+      writeFileSync(join(m.proyecto, '.tambo', 'branches', m.g('rev-parse', '--abbrev-ref', 'HEAD').trim(), 'estado.json'), JSON.stringify(e));
+      const arranque = (transcriptPath) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'SessionStart', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 'id-nuevo', cwd: m.proyecto, hook_event_name: 'SessionStart',
+          source: 'resume', transcript_path: transcriptPath }),
+      });
+      // Caso positivo: retomar otra conversación (otra carpeta, nada reciente) sí lo recibe.
+      assert.match(arranque(join(m.raiz, 'otra', 'x.jsonl')).stdout, /Migrando auth/);
+      assert.equal(arranque(fantasma).stdout, '', 'repitió el relevo de la conversación retomada');
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

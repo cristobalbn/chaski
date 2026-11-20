@@ -11,7 +11,7 @@
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync, statSync, rmSync } from 'node:fs';
-import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, OPEN_TURN_TTL_MS, silencedByPlugin } from './lib/paths.mjs';
+import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, OPEN_TURN_TTL_MS, silencedByPlugin, resolveTranscript } from './lib/paths.mjs';
 import { dirname } from 'node:path';
 import { askText, promptPayload, shouldDeliverPending, PENDING_TTL_MS, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged, writeAtomic } from './lib/relay.mjs';
@@ -64,7 +64,9 @@ function main() {
     // retomar, Claude Code le da a la conversación un session_id nuevo y sigue
     // escribiendo en el mismo archivo (ver capture.mjs). Comparando el id, la
     // primera versión de esto (0.1.7) nunca reconocía una sesión retomada.
-    const transcriptActual = ev.transcript_path ?? ev.transcriptPath ?? null;
+    // Resuelta igual que en capture.mjs: tras un resume la ruta del payload no
+    // existe, y la que guardó el relevo es la del transcript real.
+    const transcriptActual = resolveTranscript(ev.transcript_path ?? ev.transcriptPath ?? null);
     const mismaConversacion = (estado.transcript && transcriptActual && estado.transcript === transcriptActual)
       || (estado.session && estado.session === sessionOf(ev));
     if (ev.source === 'resume' && mismaConversacion) {

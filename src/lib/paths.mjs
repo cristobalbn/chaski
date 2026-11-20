@@ -453,3 +453,39 @@ export function silencedByPlugin(agent, cwd) {
  * antes de quedarse sin cuota) y `chaski next`.
  */
 export function usagePath() { return join(globalDir(), 'usage.json'); }
+
+/** Un transcript de reemplazo tiene que haberse escrito hace menos de esto. */
+export const TRANSCRIPT_FALLBACK_MS = 15 * 60 * 1000;
+
+/**
+ * La ruta del transcript que de verdad se está escribiendo.
+ *
+ * Al retomar una conversación, Claude Code le da un session_id nuevo y le
+ * pasa a los hooks `transcript_path` = `<carpeta>/<id-nuevo>.jsonl`, un archivo
+ * que no existe: sigue escribiendo en el transcript original (visto el
+ * 2026-11-20, con las líneas todavía marcadas con el id original). Sin esto,
+ * chaski no leía nada después de un resume —ni comandos, ni turnos, ni la
+ * última respuesta— y tampoco podía reconocer la conversación retomada.
+ *
+ * Si la ruta existe, es esa. Si no, el `.jsonl` modificado más recientemente
+ * de la misma carpeta, siempre que se haya escrito en los últimos 15 min: es
+ * la conversación activa. Si nada cumple, la ruta tal cual llegó.
+ */
+export function resolveTranscript(ruta, ahora = Date.now()) {
+  if (!ruta || typeof ruta !== 'string') return ruta ?? null;
+  try {
+    if (existsSync(ruta)) return ruta;
+    if (!/\.jsonl$/i.test(ruta)) return ruta;
+    const dir = dirname(ruta);
+    let mejor = null;
+    for (const nombre of readdirSync(dir)) {
+      if (!/\.jsonl$/i.test(nombre)) continue;
+      const p = join(dir, nombre);
+      const t = statSync(p).mtimeMs;
+      if (ahora - t <= TRANSCRIPT_FALLBACK_MS && (!mejor || t > mejor.t)) mejor = { p, t };
+    }
+    return mejor ? mejor.p : ruta;
+  } catch {
+    return ruta;
+  }
+}
