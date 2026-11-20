@@ -15,7 +15,7 @@ import { join, resolve, dirname, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath } from './lib/paths.mjs';
+import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID } from './lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive } from './lib/ask.mjs';
 import { writeAtomic, isValidSignature } from './lib/relay.mjs';
 import { redact, anonymize } from './lib/secrets.mjs';
@@ -233,20 +233,28 @@ function init() {
       // de verdad —incluso con la configuración en solo lectura— y no deja
       // un respaldo ni un temporal por nada.
       let nuevo;
-      if (cli.formato === 'json-claude') nuevo = installClaude(cli.config);
+      // Con el plugin activo, Claude Code ya tiene los hooks por esa vía: init
+      // no los registra en settings.json, y quita los suyos si quedaron de
+      // antes, para que no corran dos veces (#80).
+      const viaPlugin = cli.formato === 'json-claude' && claudePluginEnabled(CWD);
+      if (cli.formato === 'json-claude') nuevo = installClaude(cli.config, { viaPlugin });
       else if (cli.formato === 'json-agy') nuevo = installAgy(cli.config);
       else if (cli.formato === 'toml-codex') nuevo = installCodex(cli.config);
       let actual = null;
       try { actual = readFileSync(cli.config, 'utf8'); } catch {}
-      if (actual === nuevo) {
+      if (actual === nuevo || (viaPlugin && nuevo === null)) {
         estado.yaEstaban.push(name);
-        console.log(`  ${pad(name)} ya configurado     →  ${cli.config}`);
+        console.log(viaPlugin
+          ? `  ${pad(name)} vía plugin ${CLAUDE_PLUGIN_ID}`
+          : `  ${pad(name)} ya configurado     →  ${cli.config}`);
         continue;
       }
       backup(cli.config);
       writeAtomic(cli.config, nuevo);
       estado.configurados.push(name);
-      console.log(`  ${pad(name)} hooks registrados  →  ${cli.config}`);
+      console.log(viaPlugin
+        ? `  ${pad(name)} vía plugin ${CLAUDE_PLUGIN_ID}; quitados los hooks viejos de ${cli.config}`
+        : `  ${pad(name)} hooks registrados  →  ${cli.config}`);
     } catch (e) {
       estado.fallidos.push(name);
       console.log(`  ${pad(name)} FALLÓ: ${e?.message ?? e}`);
@@ -380,8 +388,23 @@ function isChaskiHookGroup(grupo) {
   return comandos.some((c) => typeof c === 'string' && firma.test(c));
 }
 
-function installClaude(ruta) {
+function installClaude(ruta, { viaPlugin = false } = {}) {
   const s = readJsonForWrite(ruta);
+  if (viaPlugin) {
+    // Solo se quitan los nuestros. Sin archivo, o sin hooks nuestros, no hay
+    // nada que escribir: init no lo toca (null, ver el bucle de init).
+    if (!existsSync(ruta)) return null;
+    let quitados = 0;
+    for (const ev of Object.keys(s.hooks ?? {})) {
+      const antes = (s.hooks[ev] ?? []).length;
+      s.hooks[ev] = (s.hooks[ev] ?? []).filter((g) => !isChaskiHookGroup(g));
+      quitados += antes - s.hooks[ev].length;
+      if (!s.hooks[ev].length) delete s.hooks[ev];
+    }
+    if (!quitados) return null;
+    if (s.hooks && !Object.keys(s.hooks).length) delete s.hooks;
+    return JSON.stringify(s, null, 2);
+  }
   s.hooks = s.hooks ?? {};
   const poner = (event, script) => {
     const comando = cmd(script, event, 'claude code');
@@ -547,8 +570,11 @@ function installSkill(cwd) {
   const origen = resolve(AQUI, '..', 'skill', 'SKILL.md');
   if (!existsSync(origen)) return;
 
+  // Con el plugin, Claude Code ya trae la skill (`chaski:relevo`): copiarla
+  // al proyecto la dejaría dos veces en su lista.
+  const viaPlugin = claudePluginEnabled(cwd);
   for (const [base, quienes] of [
-    [['.claude', 'skills'], 'claude code'],
+    ...(viaPlugin ? [] : [[['.claude', 'skills'], 'claude code']]),
     [['.agents', 'skills'], 'codex y agy'],
   ]) {
     const dir = join(cwd, ...base, 'relevo');
@@ -685,7 +711,8 @@ function doctor() {
   for (const [name, cli] of Object.entries(CLIS)) {
     if (!isInstalled(cli.bin) || !existsSync(cli.config)) continue;
     const evento = PROMPT_HOOK_EVENTS[name];
-    const registrado = (registeredEvents(cli) ?? []).includes(evento);
+    const registrado = (name === 'claude code' && claudePluginEnabled(CWD))
+      || (registeredEvents(cli) ?? []).includes(evento);
     let nota;
     if (!registrado) nota = `después de la respuesta — falta el hook ${evento}: ejecuta init`;
     else if (promptHookAlive(vivos, name)) nota = 'antes de la respuesta';
@@ -737,6 +764,12 @@ function doctor() {
 }
 
 function checkHooks(cli) {
+  if (cli.formato === 'json-claude' && claudePluginEnabled(CWD)) {
+    const propios = existsSync(cli.config) ? (registeredEvents(cli) ?? []) : [];
+    return `vía plugin ${CLAUDE_PLUGIN_ID}` + (propios.length
+      ? ' — también hay hooks en settings.json: se silencian solos, pero corre init para quitarlos'
+      : '');
+  }
   if (!existsSync(cli.config)) return 'sin config — ejecuta init';
   const eventos = registeredEvents(cli);
   if (eventos === null) return 'config ilegible — revisa el archivo';
@@ -852,6 +885,10 @@ function uninstall() {
     } catch (e) {
       console.log(`  ${pad(name)} FALLÓ: ${e?.message ?? e}`);
     }
+  }
+  if (claudePluginEnabled(CWD)) {
+    console.log('\n  El plugin de Claude Code sigue activo. Quítalo dentro de Claude Code con:');
+    console.log(`    /plugin uninstall ${CLAUDE_PLUGIN_ID}`);
   }
   console.log(`\n.tambo/ y ~/.chaski/ quedan en disco: son tus relevos.`);
   console.log('Bórralos a mano si quieres.\n');

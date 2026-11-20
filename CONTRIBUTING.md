@@ -128,7 +128,9 @@ el registro de npm hasta que se incrementa `version` en `package.json`.
   `main` indicando cuántos commits de producción están sin publicar en npm.
 - Para publicar en GitHub Releases y npm automáticamente al mergear:
   1. En tu PR, mueve las notas de `## [No publicado]` a `## [X.Y.Z] - YYYY-MM-DD`
-     en `CHANGELOG.md` y actualiza `"version": "X.Y.Z"` en `package.json`.
+     en `CHANGELOG.md` y actualiza `"version": "X.Y.Z"` en `package.json` **y en
+     `.claude-plugin/plugin.json`** (un test falla si difieren: el plugin solo
+     se actualiza para quien lo tiene instalado cuando cambia esa versión).
   2. Al mergear a `main`, `.github/workflows/release.yml` se dispara solo:
      verifica `package.json` + `CHANGELOG.md`, corre `npm run check` y `npm test`,
      crea el tag `vX.Y.Z`, publica el GitHub Release y ejecuta

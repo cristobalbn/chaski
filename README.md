@@ -61,6 +61,7 @@ un resumen a mano funciona exactamente hasta el día en que te olvidas.
 
 - [Instalación](#instalación)
   - [Con npm](#con-npm)
+  - [Como plugin de Claude Code](#como-plugin-de-claude-code)
   - [Qué hace `init`](#qué-hace-init)
   - [Dos pasos después de instalar](#dos-pasos-después-de-instalar)
   - [Verificar la instalación](#verificar-la-instalación)
@@ -116,6 +117,36 @@ npm install -g github:cristobalbn/chaski
 > Los hooks guardan una ruta absoluta a los scripts, y el caché de `npx` es
 > temporal: la ruta desaparece y los hooks fallan en silencio. `init` detecta
 > ese caso y aborta con una explicación.
+
+### Como plugin de Claude Code
+
+Si usas Claude Code, puedes instalar chaski como plugin en vez de dejar que
+`init` edite tu `~/.claude/settings.json`. Dentro de Claude Code:
+
+```
+/plugin marketplace add cristobalbn/chaski
+/plugin install chaski@chaski
+```
+
+(En Claude Code 2.1.275 o posterior basta con
+`/plugin install chaski --marketplace cristobalbn/chaski`.)
+
+Qué cambia frente a `init`:
+
+- **Los hooks y la skill viajan con el plugin.** Una versión nueva de chaski
+  llega con `/plugin update chaski@chaski` (en marketplaces de terceros la
+  actualización automática viene apagada; puedes activarla en `/plugin`), sin
+  volver a correr `init` ni depender de una ruta absoluta en tu configuración.
+- **Sigue haciendo falta Node.js 20 o superior** en el `PATH`: el plugin
+  ejecuta `node`.
+- **Codex y Antigravity no tienen plugin de chaski**: para ellos sigue siendo
+  `npm install -g` + `chaski init`. Si corres `init` con el plugin activo,
+  no registra los hooks de Claude Code (y quita los que hubiera de antes), y
+  `doctor` muestra `vía plugin chaski@chaski`.
+- **Si quedaron los dos** (hooks de `init` y plugin), los de `init` se callan
+  solos: el relevo no se inyecta dos veces.
+- **Sin `init`, `.tambo/` igual queda fuera de git**: la carpeta trae su propio
+  `.gitignore`.
 
 ### Qué hace `init`
 
@@ -319,6 +350,10 @@ Las configuraciones anteriores a la 0.1.0 siguen funcionando mediante puentes de
 compatibilidad, pero `init` sigue siendo el paso correcto
 ([detalle](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#puentes-de-compatibilidad-capturarmjs-leermjs)).
 
+Con el plugin de Claude Code, la actualización de esa parte es
+`/plugin update chaski@chaski` dentro de Claude Code; `init` solo hace falta
+para Codex y Antigravity.
+
 Para saber qué versión tienes y si hay una más nueva:
 
 ```bash
@@ -335,6 +370,9 @@ paquete.
 chaski uninstall
 npm uninstall -g "@cristobalbn/chaski"
 ```
+
+Si instalaste el plugin de Claude Code, quítalo además dentro de Claude Code con
+`/plugin uninstall chaski@chaski` (`uninstall` te lo recuerda).
 
 `uninstall` quita solo los hooks de chaski de la configuración actual de cada
 CLI, así que conserva todo lo que cambiaste después del primer `init` (incluida

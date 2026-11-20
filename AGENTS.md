@@ -201,6 +201,12 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
    instalador. Eso duplica el presupuesto más apretado del proyecto, así que la
    respuesta no es más indirección sino estabilidad de nombres.
 
+   El plugin de Claude Code (#80) no escribe rutas en configuraciones ajenas:
+   sus hooks usan `${CLAUDE_PLUGIN_ROOT}` y viajan con cada versión. El
+   invariante sigue en pie igual, por quien instaló con `init`. Si agregas o
+   cambias un hook, hazlo en `installClaude` **y** en `hooks/hooks.json`: un
+   test compara los dos.
+
    Hay un test en `test/install.test.mjs` que falla si cambian. Si lo ves
    fallar, deshaz el renombre; no ajustes el test.
 
@@ -267,7 +273,9 @@ src/lib/secrets.mjs  ~160 lín.   — filtro de secretos, etiquetas <private> y 
 src/lib/budget.mjs   ~65 lín.    — reloj global y timeouts derivados por subproceso (STOP_HOOK_BUDGET_MS = 1100)
 src/capturar.mjs     ~25 lín.    — puente de compatibilidad hacia capture.mjs
 src/leer.mjs         ~20 lín.    — puente de compatibilidad hacia inject.mjs
-skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo»
+skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo» (también la skill del plugin)
+.claude-plugin/      plugin.json y marketplace.json — el repo es marketplace y plugin de Claude Code (#80)
+hooks/hooks.json     hooks del plugin: forma exec (`node` + `args` con ${CLAUDE_PLUGIN_ROOT}), mismos eventos que installClaude
 ```
 
 ### Archivos de datos, esquemas y persistencia
@@ -351,7 +359,7 @@ No son intercambiables. Lo que funciona en uno falla en silencio en otro.
 
 | | Claude Code | Codex CLI | Antigravity (`agy`) |
 |---|---|---|---|
-| Config | `~/.claude/settings.json` | `~/.codex/config.toml` | `~/.gemini/config/hooks.json` |
+| Config | `~/.claude/settings.json`, o el plugin `chaski@chaski` (`hooks/hooks.json`) | `~/.codex/config.toml` | `~/.gemini/config/hooks.json` |
 | Organización | JSON por evento (`hooks.<Evento>`) | Bloque TOML delimitado (`[[hooks.<Evento>]]` + `[hooks.state]`) | JSON por propietario (`chaski.<Evento>`) |
 | Eventos que registra `init` | `SessionStart`, `UserPromptSubmit`, `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | `SessionStart`, `UserPromptSubmit`, `Stop` | `SessionStart`, `Stop`, `PreInvocation` |
 | Campos del payload | snake_case | snake_case | **camelCase** |

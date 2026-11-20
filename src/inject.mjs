@@ -11,7 +11,7 @@
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync, statSync, rmSync } from 'node:fs';
-import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, OPEN_TURN_TTL_MS } from './lib/paths.mjs';
+import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, OPEN_TURN_TTL_MS, silencedByPlugin } from './lib/paths.mjs';
 import { dirname } from 'node:path';
 import { askText, promptPayload, shouldDeliverPending, PENDING_TTL_MS, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged, writeAtomic } from './lib/relay.mjs';
@@ -29,6 +29,9 @@ function main() {
   // capture.mjs: ningún timeout por llamada protege si nadie lo deriva de
   // cuánto queda.
   const ev = readPayload();
+  // Instalado por `init` y además como plugin de Claude Code: este proceso es
+  // el duplicado, y sin esto el relevo se inyectaría dos veces por sesión.
+  if (silencedByPlugin(agentFromArg(process.argv[3]), cwdFrom(ev))) return;
   // Mismo archivo para los dos hooks de entrada (invariante 8: cada nombre
   // que init escribe en una config ajena queda fijo para siempre, así que no
   // se agrega un tercero). Este camino corre en CADA mensaje del usuario:

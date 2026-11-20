@@ -5,6 +5,18 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Agregado
+- chaski se puede instalar como **plugin de Claude Code** (#80): el repositorio
+  es a la vez el marketplace y el plugin (`/plugin marketplace add
+  cristobalbn/chaski` y `/plugin install chaski@chaski`). Los hooks y la skill
+  viajan con el plugin y se actualizan con él, sin rutas absolutas en
+  `settings.json`. Con el plugin activo, `init` no registra los hooks de
+  Claude Code y quita los que hubiera; si quedaron los dos, los de `init` se
+  callan solos para no inyectar el relevo dos veces. Codex y Antigravity
+  siguen con `init`.
+- `.tambo/` trae su propio `.gitignore` con `*`, así que queda fuera de git
+  aunque no se haya corrido `init` (como con el plugin solo).
+
 ## [0.1.5] - 2026-11-20
 
 ### Cambiado

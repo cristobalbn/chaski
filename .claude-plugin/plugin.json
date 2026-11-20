@@ -1,0 +1,22 @@
+{
+  "name": "chaski",
+  "version": "0.1.5",
+  "description": "Relevo de contexto entre Claude Code, Codex y Antigravity: guarda el estado del trabajo al terminar cada turno y lo entrega al agente siguiente.",
+  "author": {
+    "name": "Cristobal Barrera",
+    "url": "https://github.com/cristobalbn"
+  },
+  "homepage": "https://github.com/cristobalbn/chaski#readme",
+  "repository": "https://github.com/cristobalbn/chaski",
+  "license": "MIT",
+  "keywords": [
+    "handoff",
+    "context",
+    "relevo",
+    "codex",
+    "antigravity"
+  ],
+  "skills": [
+    "./skill"
+  ]
+}

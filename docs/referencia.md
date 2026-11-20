@@ -10,6 +10,7 @@ falta leerlo.
 - [Petición automática de la narrativa](#petición-automática-de-la-narrativa)
 - [Capturar payloads (`chaski probe`)](#capturar-payloads-chaski-probe)
 - [Actualizar: por qué `init` no es opcional](#actualizar-por-qué-init-no-es-opcional)
+- [Plugin de Claude Code](#plugin-de-claude-code)
 - [Puentes de compatibilidad (`capturar.mjs`, `leer.mjs`)](#puentes-de-compatibilidad-capturarmjs-leermjs)
 - [Compactación (Claude Code)](#compactación-claude-code)
 - [Turnos cortados](#turnos-cortados)
@@ -100,6 +101,22 @@ hooks una sola vez, al arrancar, así que `init` corrige la ruta para la
 próxima sesión, no para la que está corriendo. Cierra esa sesión y abre una
 nueva. `chaski doctor` muestra qué eventos quedaron registrados y la ruta de
 los scripts, por si quieres confirmarlo antes de reabrir.
+
+## Plugin de Claude Code
+
+El repositorio es a la vez marketplace (`.claude-plugin/marketplace.json`, nombre
+`chaski`) y plugin (`.claude-plugin/plugin.json` + `hooks/hooks.json`), así
+que el id en `enabledPlugins` es `chaski@chaski`.
+
+| | |
+|---|---|
+| Forma de los hooks | Exec, sin shell: `"command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/src/capture.mjs", "Stop", "claude-code"]`. Sin comillas que se rompan con espacios y sin diferencias entre Git Bash, PowerShell y `sh` |
+| Versión | Fijada en `plugin.json` y siempre igual a `package.json` (un test lo exige). Claude Code solo actualiza a quien tiene el plugin cuando esa versión cambia |
+| Skill | La misma `skill/SKILL.md`, declarada con `"skills": ["./skill"]`. Queda con espacio de nombres: `chaski:relevo` |
+| Duplicados | Los hooks del plugin y los de `settings.json` se suman y corren en paralelo. Los del plugin traen `CLAUDE_PLUGIN_ROOT` en el entorno y los de `settings.json` no: si el plugin está activo, estos últimos salen sin hacer nada (`silencedByPlugin()` en `src/lib/paths.mjs`) |
+| Activo | `enabledPlugins["chaski@chaski"]` en `~/.claude/settings.json`, `.claude/settings.json` o `.claude/settings.local.json`, con esa precedencia de menos a más específico |
+| Sin `init` | `.tambo/` se crea con su propio `.gitignore` (`*`), así que queda fuera de git igual |
+| Validar | `claude plugin validate .` y `claude plugin validate ./.claude-plugin/marketplace.json` |
 
 ## Puentes de compatibilidad (`capturar.mjs`, `leer.mjs`)
 

@@ -1,0 +1,15 @@
+{
+  "name": "chaski",
+  "description": "Marketplace de chaski: el repositorio es a la vez el marketplace y el plugin.",
+  "owner": {
+    "name": "Cristobal Barrera",
+    "url": "https://github.com/cristobalbn"
+  },
+  "plugins": [
+    {
+      "name": "chaski",
+      "source": "./",
+      "description": "Relevo de contexto entre Claude Code, Codex y Antigravity: guarda el estado del trabajo al terminar cada turno y lo entrega al agente siguiente."
+    }
+  ]
+}
