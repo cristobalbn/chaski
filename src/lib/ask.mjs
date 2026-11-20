@@ -111,9 +111,14 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now(), cuota 
   // en tiempo: una sesión larga sin cambios no necesita reescribirla.
   // Si cambió la sesión o el contador previo quedó por encima del actual tras
   // un reinicio de sesión, la cuenta parte desde cero en la sesión nueva.
+  //
+  // Si capture.mjs ya calculó la base de este turno (`estado.turnsAtNarrative`),
+  // manda esa: es la misma cuenta y así las dos no pueden divergir. El cálculo
+  // desde `previo` queda para quien llame sin ella (los tests de esta función).
   const mismaSesion = !previo?.session || !estado?.session || previo.session === estado.session;
-  const baseTurns = mismaSesion && (previo?.turnsAtNarrative ?? 0) <= (estado.turns ?? 0)
-    ? (previo?.turnsAtNarrative ?? 0) : 0;
+  const baseTurns = Number.isFinite(estado.turnsAtNarrative) ? estado.turnsAtNarrative
+    : mismaSesion && (previo?.turnsAtNarrative ?? 0) <= (estado.turns ?? 0)
+      ? (previo?.turnsAtNarrative ?? 0) : 0;
   const turnosDesde = (estado.turns ?? 0) - baseTurns;
   // La cuota se acaba (#82): es la razón de pedir la narrativa temprano, así
   // que va antes que los motivos por turnos. Una vez por ventana: si ya se
