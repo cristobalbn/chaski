@@ -5,6 +5,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.4] - 2026-11-20
+
 ### Cambiado
 - La petición de narrativa ya no aparece debajo de la respuesta (#73), en
   ninguno de los tres CLIs. Al terminar el turno solo se anota, y un hook nuevo
@@ -21,6 +23,9 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   petición.
 - Clave `askNarrativeAfterTurns` para cambiar cuántos turnos esperar antes de
   volver a pedir la narrativa (por defecto 8).
+- `chaski doctor` dice, por CLI, si la petición de narrativa llega antes o
+  después de la respuesta, y qué falta para que llegue antes (correr `init`,
+  confiar en el hook en Codex o abrir una sesión).
 
 ## [0.1.3] - 2026-11-14
 
