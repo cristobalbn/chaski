@@ -15,8 +15,8 @@ import { join, resolve, dirname, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID } from './lib/paths.mjs';
-import { PROMPT_HOOK_EVENTS, promptHookAlive } from './lib/ask.mjs';
+import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath } from './lib/paths.mjs';
+import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from './lib/ask.mjs';
 import { writeAtomic, isValidSignature } from './lib/relay.mjs';
 import { redact, anonymize } from './lib/secrets.mjs';
 
@@ -38,6 +38,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 // Hay un test que falla si estos nombres cambian.
 const CAPTURE = resolve(AQUI, 'capture.mjs');
 const INJECT = resolve(AQUI, 'inject.mjs');
+const STATUSLINE = resolve(AQUI, 'statusline.mjs');
 const MARCA_INI = '# >>> chaski (no editar a mano) >>>';
 const MARCA_FIN = '# <<< chaski <<<';
 
@@ -124,7 +125,7 @@ const WORKSPACE_CWD = resolve(process.cwd());
 const CWD = projectDir(WORKSPACE_CWD);
 
 try {
-  if (accion === 'init') init();
+  if (accion === 'init') init(process.argv.slice(3));
   else if (accion === 'doctor') doctor();
   else if (accion === 'uninstall') uninstall();
   else if (accion === 'probe') probe(process.argv[3]);
@@ -136,6 +137,7 @@ try {
   else {
     console.log('uso: chaski [init|doctor|uninstall|probe|next|cost|why|share|version|help]  (--version, -v, --help, -h)');
     console.log('  init      registra los hooks en los CLIs instalados, ignora .tambo/ en git e instala la skill');
+    console.log('            --statusline: además envuelve tu statusline de Claude Code para anotar la cuota');
     console.log('  doctor    verifica qué quedó instalado y si los hooks están corriendo');
     console.log('  uninstall quita los hooks de chaski de la configuración de cada CLI (conserva .tambo/)');
     console.log('  next     muestra qué CLI está disponible y qué quedó pendiente');
@@ -187,7 +189,7 @@ function projectRootNote() {
   return [];
 }
 
-function init() {
+function init(args = []) {
   console.log('\nchaski init\n');
 
   // Los hooks registran una ruta absoluta a estos scripts. Si chaski corre
@@ -280,6 +282,9 @@ function init() {
   ensureGitignore(CWD);
   installSkill(CWD);
   ensureAgentsMd(CWD);
+  // Opt-in (#82): la statusline es UNA sola entrada en settings.json y suele
+  // ser algo que el usuario armó a su gusto. Solo se toca si lo pide.
+  if (args.includes('--statusline')) installStatusLine();
   finalSummary(estado);
 
   // Un CLI que no se pudo configurar tiene que verse en el código de salida,
@@ -721,6 +726,19 @@ function doctor() {
     console.log(`  ${pad(name)} ${nota}`);
   }
 
+  // #82: sin la statusline de chaski no hay dato de cuota, y la narrativa se
+  // pide por turnos y commits en vez de antes de que la cuota se acabe.
+  if (isInstalled(CLIS['claude code'].bin)) {
+    console.log('\nCuota (statusline de Claude Code)');
+    const sl = readJson(CLIS['claude code'].config, {})?.statusLine;
+    if (!isChaskiStatusLine(sl?.command)) {
+      console.log(`  ${pad('claude code')} sin dato — ejecuta \`chaski init --statusline\` para pedir la narrativa antes de que se acabe`);
+    } else {
+      const resumen = usageSummary((readJson(usagePath(), {}) ?? {})['claude code'], Date.now(), Infinity);
+      console.log(`  ${pad('claude code')} ${resumen ?? 'statusline instalada; todavía sin dato (solo planes Pro, Max y Ultra, tras la primera respuesta)'}`);
+    }
+  }
+
   console.log('\nProyecto');
   console.log(`  ${pad('directorio')} ${CWD}`);
   for (const l of projectRootNote()) console.log(`  ${pad('')} ${l}`);
@@ -874,6 +892,9 @@ function uninstall() {
               if (!s.hooks[ev].length) delete s.hooks[ev];
             }
             if (!Object.keys(s.hooks).length) delete s.hooks;
+          }
+          if (cli.formato === 'json-claude' && restoreStatusLine(s)) {
+            console.log(`  ${pad('statusline')} devuelta a como estaba antes de chaski`);
           }
           writeAtomic(cli.config, JSON.stringify(s, null, 2));
         }
@@ -1050,11 +1071,13 @@ function next() {
   for (const [name, cli] of Object.entries(CLIS)) {
     const instalado = isInstalled(cli.bin);
     const q = quota[name];
+    // Cuota real, si la statusline de chaski la anotó (#82).
+    const uso = usageSummary((readJson(usagePath(), {}) ?? {})[name]);
     const minsAgotado = q?.at ? Math.round((Date.now() - new Date(q.at).getTime()) / 60000) : null;
     // Un registro de agotamiento de más de 12 h ya expiró en cualquier ventana
     // de cuota de consumidor.
     const agotado = Boolean(q && minsAgotado !== null && minsAgotado < 720);
-    filas.push({ name, instalado, agotado, q, minsAgotado });
+    filas.push({ name, instalado, agotado, q, minsAgotado, uso });
   }
 
   // Preferimos sugerir un CLI disponible distinto del que acaba de sellar por
@@ -1072,7 +1095,7 @@ function next() {
       const motivo = f.q.message || f.q.reason || 'rate_limit';
       console.log(`  ${flecha} ${pad(f.name)} agotado · hace ${f.minsAgotado} min (${motivo})`);
     } else {
-      console.log(`  ${flecha} ${pad(f.name)} disponible · ${detalleRelevo}`);
+      console.log(`  ${flecha} ${pad(f.name)} disponible · ${detalleRelevo}${f.uso ? ` · ${f.uso}` : ''}`);
     }
   }
 
@@ -1326,6 +1349,68 @@ function isInstalled(bin) {
     }
     return false;
   }
+}
+
+// ------------------------------------------------------------ statusline (#82)
+
+/** ¿Este comando de statusline es el de chaski? */
+function isChaskiStatusLine(comando) {
+  return typeof comando === 'string' && /statusline\.mjs"?\s*$/.test(comando);
+}
+
+/**
+ * Pone statusline.mjs como statusline de Claude Code, envolviendo la que el
+ * usuario tenía: su comando queda en ~/.chaski/config.json → statusLineCommand
+ * y statusline.mjs lo corre con el mismo stdin. `padding` y demás claves se
+ * conservan. Idempotente.
+ */
+function installStatusLine() {
+  const cli = CLIS['claude code'];
+  if (!isInstalled(cli.bin)) {
+    console.log(`  ${pad('statusline')} Claude Code no instalado, se omite`);
+    return;
+  }
+  try {
+    const s = readJsonForWrite(cli.config);
+    const actual = s.statusLine && typeof s.statusLine === 'object' ? s.statusLine : null;
+    if (isChaskiStatusLine(actual?.command)) {
+      console.log(`  ${pad('statusline')} ya instalada`);
+      return;
+    }
+    const gRuta = join(globalDir(), 'config.json');
+    if (actual?.command) {
+      const g = readJsonForWrite(gRuta);
+      g.statusLineCommand = actual.command;
+      writeAtomic(gRuta, JSON.stringify(g, null, 2));
+    }
+    const q = (p) => `"${p.replace(/\//g, process.platform === 'win32' ? '\\' : '/')}"`;
+    s.statusLine = { ...(actual ?? {}), type: 'command', command: `${q(process.execPath)} ${q(STATUSLINE)}` };
+    backup(cli.config);
+    writeAtomic(cli.config, JSON.stringify(s, null, 2));
+    console.log(`  ${pad('statusline')} instalada${actual?.command ? `; envuelve la tuya: ${actual.command}` : ''}`);
+  } catch (e) {
+    console.log(`  ${pad('statusline')} FALLÓ: ${e?.message ?? e}`);
+  }
+}
+
+/**
+ * Deshace installStatusLine() sobre un settings.json ya leído: devuelve la
+ * statusline del usuario a su lugar, o la quita si no había. Modifica `s`.
+ */
+function restoreStatusLine(s) {
+  if (!isChaskiStatusLine(s?.statusLine?.command)) return false;
+  const gRuta = join(globalDir(), 'config.json');
+  const g = readJson(gRuta, {}) ?? {};
+  if (typeof g.statusLineCommand === 'string' && g.statusLineCommand) {
+    s.statusLine = { ...s.statusLine, command: g.statusLineCommand };
+  } else {
+    delete s.statusLine;
+  }
+  if ('statusLineCommand' in g) {
+    delete g.statusLineCommand;
+    writeAtomic(gRuta, JSON.stringify(g, null, 2));
+  }
+  return true;
 }
 
 function backup(ruta) {

@@ -189,7 +189,7 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
    uno a medio escribir. El lock evita trabajo redundante y que un escritor
    pise los comandos que otro acababa de agregar.
 
-8. **`capture.mjs` e `inject.mjs` no cambian de nombre nunca.** `init` escribe
+8. **`capture.mjs`, `inject.mjs` y `statusline.mjs` no cambian de nombre nunca.** `init` escribe
    su ruta absoluta en la configuración de cada CLI, y esas configuraciones
    viven fuera del repositorio. Renombrarlos deja a toda instalación existente
    invocando un archivo inexistente: el usuario ve un volcado de Node en cada
@@ -264,6 +264,7 @@ herramienta existe para evitar.
 ```
 src/cli.mjs          ~1.200 lín. — init / doctor / next / cost / why / share / probe / uninstall / version
 src/capture.mjs      ~550 lín.   — hook de captura (Stop, SubagentStop): orquesta git, transcripts, cuota, costos e historia
+src/statusline.mjs   ~130 lín.   — statusline opcional de Claude Code (`init --statusline`): anota rate_limits y delega en la del usuario
 src/inject.mjs       ~300 lín.   — hook de inyección (SessionStart; y UserPromptSubmit / PreInvocation, que entregan la petición de narrativa anotada): camino crítico, detecta deriva y neutraliza marcas <<< >>>
 src/lib/facts.mjs    ~570 lín.   — extracción defensiva de hechos desde git (status, log, diff, upstream) y transcripts
 src/lib/paths.mjs    ~340 lín.   — rutas, slugs de ramas (branchSlug), lock por mkdir, loadConfig, detección de entorno
@@ -298,7 +299,8 @@ hooks/hooks.json     hooks del plugin: forma exec (`node` + `args` con ${CLAUDE_
   - `~/.chaski/prompt-hook.json` — `{ "<agent>": "<ISO>" }`, prueba de vida del hook de entrega por CLI (la escribe `inject.mjs`, a lo sumo cada 10 min). `capture.mjs` solo difiere la petición si es de menos de 12 h.
   - `~/.chaski/quota.json` — `{ "<agent>": { at, reason, message } }`, cortes por cuota de las últimas 12 h (leído por `chaski next`; se limpia cuando ese CLI completa un `Stop` normal).
   - `~/.chaski/cost.json` — `{ asks: [{ at, agent, branch, reason, deferred? }], narratives: [{ at, agent, branch }] }` (últimos 500 de cada uno, leído por `chaski cost`).
-  - `~/.chaski/config.json` — configuración global opcional del usuario. Se mezcla con `chaski.json` (proyecto) y `chaski.local.json` (máquina local) con precedencia `local > proyecto > global` en claves escalares (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`, `askNarrativeAfterTurns`) y concatenación de arreglos en `redact` y `excludePaths`.
+  - `~/.chaski/config.json` — configuración global opcional del usuario. Se mezcla con `chaski.json` (proyecto) y `chaski.local.json` (máquina local) con precedencia `local > proyecto > global` en claves escalares (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`, `askNarrativeAfterTurns`, `askNarrativeAtQuota`) y concatenación de arreglos en `redact` y `excludePaths`. Además guarda `statusLineCommand`: la statusline que el usuario tenía antes de `init --statusline`, que `statusline.mjs` sigue ejecutando y `uninstall` devuelve.
+  - `~/.chaski/usage.json` — `{ "claude code": { at, fiveHour: { usedPercentage, resetsAt }, sevenDay } }`, cuota que reporta la statusline (`resetsAt` en segundos Unix). La escribe `statusline.mjs`; la leen `capture.mjs` (motivo «la cuota de 5 h va en N %», una vez por ventana vía `askedQuotaKey` en `estado.json`) y `chaski next`.
   - `~/.chaski/<cli>-<script>-<evento>.cmd` (o `.sh`) — wrappers sin espacios en la ruta generados por `init` para Codex y `agy`.
 
 ### Códigos de salida de CLI y hooks

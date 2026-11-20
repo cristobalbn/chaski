@@ -445,3 +445,11 @@ export function silencedByPlugin(agent, cwd) {
   if (agent !== 'claude code' || process.env.CLAUDE_PLUGIN_ROOT) return false;
   return claudePluginEnabled(cwd);
 }
+
+/**
+ * Cuota de cada CLI tal como la reporta su statusline (#82):
+ * `{ "claude code": { at, fiveHour: { usedPercentage, resetsAt }, sevenDay } }`.
+ * La escribe statusline.mjs; la leen capture.mjs (para pedir la narrativa
+ * antes de quedarse sin cuota) y `chaski next`.
+ */
+export function usagePath() { return join(globalDir(), 'usage.json'); }

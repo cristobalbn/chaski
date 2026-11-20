@@ -14,11 +14,11 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, silencedByPlugin } from './lib/paths.mjs';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, silencedByPlugin, usagePath } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
-import { shouldAsk, askText, askPayload, promptHookAlive, COMPACT_HINT } from './lib/ask.mjs';
+import { shouldAsk, askText, askPayload, promptHookAlive, COMPACT_HINT, quotaPressure } from './lib/ask.mjs';
 import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
 
 main();
@@ -199,8 +199,13 @@ function main() {
     // ¿Toca pedirle la narrativa al agent? Se decide ANTES de escribir, para
     // que el instante de la petición quede en el mismo estado que se guarda:
     // el hook no tiene memoria entre turnos y el debounce vive ahí.
+    //
+    // La cuota (#82) viene de la statusline de ese CLI (statusline.mjs); sin
+    // ella, `cuota` es null y la política queda como antes.
+    const cuota = ev.hook_event_name === 'Stop'
+      ? quotaPressure((readJson(usagePath(), {}) ?? {})[estado.agent], config) : null;
     const motivo = ev.hook_event_name === 'Stop'
-      ? shouldAsk(ev, estado, previo, config) : null;
+      ? shouldAsk(ev, estado, previo, config, Date.now(), cuota) : null;
     if (motivo) {
       estado.askedAt = estado.writtenAt;
       estado.askedReason = motivo;
@@ -208,6 +213,9 @@ function main() {
       estado.askedAt = previo.askedAt ?? null;
       estado.askedReason = previo.askedReason ?? null;
     }
+    // Una petición por ventana de cuota: se recuerda en cuál se pidió.
+    estado.askedQuotaKey = motivo && cuota && motivo.startsWith('la cuota')
+      ? cuota.key : (previo.askedQuotaKey ?? null);
     writeAtomic(rutaRelevo, md);
     writeAtomic(rutaEstado, JSON.stringify(estado, null, 2));
     heartbeat(estado.agent);

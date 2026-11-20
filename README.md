@@ -426,6 +426,12 @@ como respaldo.
 
 - Apagarlo: `"askNarrative": false` en `chaski.json` o `chaski.local.json`.
 - Pedirla menos seguido: `"askNarrativeAfterTurns": 20` (por defecto 8).
+- **Pedirla antes de que se acabe la cuota** (Claude Code, planes Pro, Max y
+  Ultra): `chaski init --statusline`. Envuelve tu statusline (la sigue
+  mostrando igual) para leer cuánto llevas gastado de las ventanas de 5 h y 7
+  días, y pide la narrativa una vez por ventana cuando pasa del 80 %
+  (`"askNarrativeAtQuota"` cambia el umbral; `false` lo apaga). `chaski next`
+  muestra esa cuota y `uninstall` deja tu statusline como estaba.
 - Si actualizaste desde una versión anterior, vuelve a correr `chaski init` para
   registrar el hook nuevo; sin él, la petición sigue llegando al terminar. En
   Codex, acepta también el hook nuevo cuando te pida confiar en él.
@@ -548,6 +554,7 @@ Todo tiene valores por defecto razonables. No hace falta configurar nada.
 | `pruneNarrativeAfterDays` | Días antes de borrar el relevo huérfano que tiene narrativa. Por defecto, el triple de `pruneAfterDays`, con un mínimo de 90. `pruneAfterDays: 0` desactiva también esta limpieza; `pruneNarrativeAfterDays: 0` desactiva solo la de relevos con narrativa (los demás siguen su plazo) |
 | `askNarrative` | Si es `false`, desactiva las peticiones automáticas de narrativa |
 | `askNarrativeAfterTurns` | Turnos de trabajo desde la última narrativa antes de volver a pedirla. Entero positivo; por defecto 8. Un valor inválido usa el defecto |
+| `askNarrativeAtQuota` | Porcentaje de la ventana de cuota de Claude Code (5 h o 7 días) desde el que se pide la narrativa, una vez por ventana. Necesita `chaski init --statusline`. Entero de 1 a 100; por defecto 80; `false` lo apaga |
 
 Los relevos con narrativa viven el triple a propósito: los hechos se
 recalculan desde git en cualquier momento, pero la narrativa existe solo
@@ -566,7 +573,7 @@ crear archivos por proyecto.
 ### Orden de precedencia al combinar los tres niveles
 
 Cuando existen dos o tres archivos a la vez, chaski los combina así:
-- **Claves escalares** (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`, `askNarrativeAfterTurns`): manda el nivel más específico (`chaski.local.json` > `chaski.json` > `~/.chaski/config.json`).
+- **Claves escalares** (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`, `askNarrativeAfterTurns`, `askNarrativeAtQuota`): manda el nivel más específico (`chaski.local.json` > `chaski.json` > `~/.chaski/config.json`).
 - **Listas de seguridad** (`redact` y `excludePaths`): **se concatenan** entre los tres niveles (`global + proyecto + local`), de modo que una configuración local siempre suma patrones de redacción o rutas excluidas y nunca desactiva la política compartida del repositorio.
 
 La partición es deliberada: tu equipo comparte la política del repositorio en

@@ -12,6 +12,7 @@ falta leerlo.
 - [Actualizar: por qué `init` no es opcional](#actualizar-por-qué-init-no-es-opcional)
 - [Plugin de Claude Code](#plugin-de-claude-code)
 - [Puentes de compatibilidad (`capturar.mjs`, `leer.mjs`)](#puentes-de-compatibilidad-capturarmjs-leermjs)
+- [Cuota (statusline de Claude Code)](#cuota-statusline-de-claude-code)
 - [Compactación (Claude Code)](#compactación-claude-code)
 - [Turnos cortados](#turnos-cortados)
 - [Límites conocidos: detalle y mediciones](#límites-conocidos-detalle-y-mediciones)
@@ -130,6 +131,24 @@ por stderr a propósito: corre en cada turno y sería ruido inapagable.
 
 El [CHANGELOG](https://github.com/cristobalbn/chaski/blob/main/CHANGELOG.md)
 cuenta la versión en que volvieron.
+
+## Cuota (statusline de Claude Code)
+
+La narrativa se pide temprano porque escribirla consume cuota. Claude Code le
+pasa a la statusline cuánto va gastado (`rate_limits.five_hour` y
+`rate_limits.seven_day`, con `used_percentage` y `resets_at`; solo en planes
+Pro, Max y Ultra, y recién tras la primera respuesta), y no lo expone en
+ningún otro lugar. Por eso `chaski init --statusline` instala
+`src/statusline.mjs`.
+
+| | |
+|---|---|
+| Qué hace | Anota la cuota en `~/.chaski/usage.json` (si cambió o pasó un minuto) y después corre tu statusline anterior con el mismo stdin y devuelve su salida. Sin statusline propia, imprime modelo y cuota |
+| Tu statusline | Su comando queda en `~/.chaski/config.json` → `statusLineCommand`; `padding` y el resto se conservan. Se ejecuta con `sh` (Git Bash en Windows si está) y 3 s de tope; si falla, sale la línea mínima en vez de una barra vacía |
+| Cuándo pide | En `Stop`, si el dato tiene menos de 15 min, la ventana más gastada pasa de `askNarrativeAtQuota` (80 por defecto) y todavía no se renovó, hubo trabajo después de la última narrativa y no se pidió ya en esa ventana (`askedQuotaKey`). Va antes que los motivos por turnos |
+| Opt-in | `statusLine` es una sola entrada de `settings.json` y suele ser algo armado a gusto: `init` solo la toca con `--statusline`. `uninstall` la devuelve como estaba |
+| Costo | ~52 ms por ejecución contra ~37 ms de un `node` vacío, más lo que tarde tu statusline. Corre con cada mensaje del asistente, con un debounce de 300 ms de Claude Code |
+| Codex y agy | No documentan un dato equivalente |
 
 ## Compactación (Claude Code)
 

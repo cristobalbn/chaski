@@ -855,7 +855,8 @@ describe('puntos de entrada', () => {
   // Este test existe para que ese cambio rompa la build en lugar de la máquina
   // de alguien. Si lo estás viendo fallar: no cambies el test, deshaz el
   // renombre.
-  for (const nombre of ['capture.mjs', 'inject.mjs']) {
+  // statusline.mjs se sumó con #82: `init --statusline` también graba su ruta.
+  for (const nombre of ['capture.mjs', 'inject.mjs', 'statusline.mjs']) {
     test(`src/${nombre} conserva su nombre`, () => {
       assert.ok(existsSync(join(SRC, nombre)),
         `src/${nombre} no existe. Es un punto de entrada registrado en ` +
@@ -863,12 +864,12 @@ describe('puntos de entrada', () => {
     });
   }
 
-  test('cli.mjs registra exactamente esos dos scripts', () => {
+  test('cli.mjs registra exactamente esos tres scripts', () => {
     // Si alguien agrega un tercer punto de entrada, tiene que entrar también
     // en la lista de arriba y en el invariante 8 de AGENTS.md.
     const cli = readFileSync(join(SRC, 'cli.mjs'), 'utf8');
     const registrados = [...cli.matchAll(/resolve\(AQUI, '([\w.-]+)'\)/g)].map((m) => m[1]);
-    assert.deepEqual([...new Set(registrados)].sort(), ['capture.mjs', 'inject.mjs']);
+    assert.deepEqual([...new Set(registrados)].sort(), ['capture.mjs', 'inject.mjs', 'statusline.mjs']);
   });
 });
 
@@ -1940,7 +1941,7 @@ describe('contrato de empaquetado npm y sincronización con GitHub', () => {
   test('los puntos de entrada con shebang usan LF y nunca CRLF', () => {
     // Si se publica a npm desde Windows con CRLF en la primera línea, Linux y
     // macOS fallan al ejecutar el binario con "env: 'node\r': No such file".
-    for (const f of ['cli.mjs', 'capture.mjs', 'inject.mjs']) {
+    for (const f of ['cli.mjs', 'capture.mjs', 'inject.mjs', 'statusline.mjs']) {
       const contenido = readFileSync(join(SRC, f), 'utf8');
       assert.ok(contenido.startsWith('#!/usr/bin/env node\n'),
         `src/${f} debe iniciar con #!/usr/bin/env node y salto LF (no CRLF)`);
@@ -2317,7 +2318,7 @@ test('los hooks no declaran const ni let de módulo después de llamar a main()'
   // más abajo todavía no existe y leerlo lanza un error de TDZ. El hook lo
   // atrapa (invariante 4) y el fallo queda invisible. Pasó dos veces el
   // 2026-11-20. Las constantes van dentro de la función o en un módulo de lib/.
-  for (const archivo of ['capture.mjs', 'inject.mjs']) {
+  for (const archivo of ['capture.mjs', 'inject.mjs', 'statusline.mjs']) {
     const txt = readFileSync(join(SRC, archivo), 'utf8');
     const i = txt.search(/^main\(\);$/m);
     assert.ok(i > 0, `${archivo}: no encontré la llamada a main()`);
@@ -2641,6 +2642,141 @@ describe('plugin de Claude Code (#80)', () => {
       // Idempotente: la segunda vez no hay nada que quitar.
       assert.match(m.correr('init'), /claude code\s+vía plugin chaski@chaski\n/);
       assert.match(m.correr('doctor'), /claude code\s+vía plugin chaski@chaski\n/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+describe('statusline que anota la cuota (#82)', () => {
+  const payload = (m, cinco = 42) => JSON.stringify({
+    session_id: 's', cwd: m.proyecto, model: { display_name: 'Opus 5.5' },
+    rate_limits: {
+      five_hour: { used_percentage: cinco, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+      seven_day: { used_percentage: 13, resets_at: Math.floor(Date.now() / 1000) + 86400 },
+    },
+  });
+  const statusline = (m, input) => spawnSync(process.execPath, [join(SRC, 'statusline.mjs')], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input,
+  });
+  const usoDe = (m) => JSON.parse(readFileSync(join(m.casa, '.chaski', 'usage.json'), 'utf8'))['claude code'];
+  const config = (m) => join(m.casa, '.chaski', 'config.json');
+
+  test('anota rate_limits y, sin statusline propia, muestra modelo y cuota', () => {
+    const m = montar('chaski-sl-def-');
+    try {
+      const r = statusline(m, payload(m));
+      assert.equal(r.status, 0);
+      assert.equal(r.stderr, '');
+      assert.equal(r.stdout.trim(), 'Opus 5.5 · cuota 5 h 42 % · 7 d 13 %');
+      const u = usoDe(m);
+      assert.equal(u.fiveHour.usedPercentage, 42);
+      assert.equal(u.sevenDay.usedPercentage, 13);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('sin rate_limits (plan sin cuota) no anota nada y no falla', () => {
+    const m = montar('chaski-sl-sin-');
+    try {
+      const r = statusline(m, JSON.stringify({ model: { display_name: 'Opus 5.5' } }));
+      assert.equal(r.status, 0);
+      assert.equal(r.stdout.trim(), 'Opus 5.5');
+      assert.ok(!existsSync(join(m.casa, '.chaski', 'usage.json')));
+      assert.equal(statusline(m, 'no es json').stdout.trim(), 'chaski', 'una entrada rota dejó la barra en blanco');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('delega en la statusline del usuario con el mismo stdin', () => {
+    const m = montar('chaski-sl-deleg-');
+    try {
+      const propia = join(m.raiz, 'mi-statusline.mjs');
+      writeFileSync(propia, "let d='';process.stdin.on('data',(c)=>d+=c).on('end',()=>console.log('PROPIA '+JSON.parse(d).model.display_name));\n");
+      mkdirSync(join(m.casa, '.chaski'), { recursive: true });
+      writeFileSync(config(m), JSON.stringify({ statusLineCommand: `"${process.execPath}" "${propia}"` }));
+      const r = statusline(m, payload(m));
+      assert.equal(r.stdout.trim(), 'PROPIA Opus 5.5');
+      assert.equal(usoDe(m).fiveHour.usedPercentage, 42, 'delegar no debe saltarse la anotación');
+      // Si la propia falla, la barra no queda en blanco.
+      writeFileSync(config(m), JSON.stringify({ statusLineCommand: `"${process.execPath}" -e "process.exit(3)"` }));
+      assert.match(statusline(m, payload(m)).stdout, /cuota 5 h 42 %/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('init --statusline envuelve la del usuario y uninstall la devuelve', () => {
+    const m = montar('chaski-sl-init-');
+    try {
+      const ruta = join(m.casa, '.claude', 'settings.json');
+      mkdirSync(join(m.casa, '.claude'), { recursive: true });
+      writeFileSync(ruta, JSON.stringify({ statusLine: { type: 'command', command: 'mi-statusline.sh', padding: 1 } }));
+      // Sin la bandera no se toca: es una preferencia del usuario.
+      m.correr('init');
+      assert.equal(JSON.parse(readFileSync(ruta, 'utf8')).statusLine.command, 'mi-statusline.sh');
+
+      assert.match(m.correr('init', '--statusline'), /statusline\s+instalada; envuelve la tuya: mi-statusline\.sh/);
+      const tras = JSON.parse(readFileSync(ruta, 'utf8')).statusLine;
+      assert.match(tras.command, /statusline\.mjs"$/);
+      assert.equal(tras.padding, 1, 'perdió el padding del usuario');
+      assert.equal(JSON.parse(readFileSync(config(m), 'utf8')).statusLineCommand, 'mi-statusline.sh');
+      assert.match(m.correr('init', '--statusline'), /statusline\s+ya instalada/);
+      assert.match(m.correr('doctor'), /Cuota \(statusline de Claude Code\)\n\s+claude code\s+statusline instalada; todavía sin dato/);
+
+      m.correr('uninstall');
+      const final = JSON.parse(readFileSync(ruta, 'utf8')).statusLine;
+      assert.deepEqual(final, { type: 'command', command: 'mi-statusline.sh', padding: 1 });
+      assert.ok(!('statusLineCommand' in JSON.parse(readFileSync(config(m), 'utf8'))));
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('sin statusline previa, uninstall la quita entera', () => {
+    const m = montar('chaski-sl-nueva-');
+    try {
+      m.correr('init', '--statusline');
+      const ruta = join(m.casa, '.claude', 'settings.json');
+      assert.ok(JSON.parse(readFileSync(ruta, 'utf8')).statusLine, 'no la instaló; el test no probaría nada');
+      m.correr('uninstall');
+      assert.equal(JSON.parse(readFileSync(ruta, 'utf8')).statusLine, undefined);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('con la cuota sobre el umbral, Stop pide la narrativa por eso', () => {
+    const m = montar('chaski-sl-stop-');
+    try {
+      const transcript = join(AQUI, 'fixtures', 'claude-code.transcript.jsonl');
+      const stop = () => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 's', cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: transcript }),
+      });
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 82;\n');
+      stop();
+      // Una narrativa vieja (1 h) y ya contabilizada, con trabajo después, y
+      // sin petición reciente: lo único que puede disparar ahora es la cuota.
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const rutaEstado = join(m.proyecto, '.tambo', 'branches', rama, 'estado.json');
+      const e = JSON.parse(readFileSync(rutaEstado, 'utf8'));
+      assert.ok(e.turns >= 1, 'el fixture no dejó turnos; el test no probaría nada');
+      const hace1h = new Date(Date.now() - 3600_000).toISOString();
+      Object.assign(e, { narrative: 'algo', narrativeAuthor: 'claude code', narrativeWrittenAt: hace1h,
+        narrativeStamp: hace1h, turnsAtNarrative: e.turns - 1, askedAt: null });
+      writeFileSync(rutaEstado, JSON.stringify(e));
+
+      // Caso negativo primero: con la cuota baja, nada que pedir.
+      statusline(m, payload(m, 40));
+      assert.equal(stop().stdout, '', 'pidió sin presión de cuota');
+      statusline(m, payload(m, 88));
+      const r = stop();
+      assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+      assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /la cuota de 5 h va en 88 %/);
+      assert.match(JSON.parse(readFileSync(rutaEstado, 'utf8')).askedQuotaKey, /^5 h:\d+$/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
