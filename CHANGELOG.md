@@ -5,6 +5,19 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Corregido
+- Al retomar una sesión (`resume`) cuyo relevo escribió ella misma, ya no se
+  le repite ese relevo: el agente tiene el historial completo y el relevo solo
+  podía estar más atrasado. Solo se avisa lo que la conversación no puede
+  saber (commits de otros, turnos cortados en otras sesiones); si no hay nada,
+  no se imprime nada.
+- Cuando cambiaba la sesión que captura (una sesión retomada, o dos que
+  alternan en el mismo proyecto), el contador de turnos desde la narrativa
+  volvía a 0 mientras el transcript se releía entero: una narrativa de hacía
+  minutos aparecía con mil turnos de atraso, el relevo mostraba «Última
+  respuesta del agente» de más y la petición creía que iban mil turnos. Ahora
+  la base es la cuenta del momento del cambio.
+
 ## [0.1.6] - 2026-11-20
 
 ### Agregado

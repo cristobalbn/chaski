@@ -188,8 +188,17 @@ function main() {
     // `turns` se reinicia en cada sesión nueva; arrastrar `turnsAtNarrative`
     // de la sesión anterior dejaba `turns - turnsAtNarrative` en negativo y
     // postergaba la petición tantos turnos como hubiera durado la sesión previa.
+    //
+    // Y si la sesión cambió, la base NO es 0 sino los turnos de ahora. Con 0,
+    // releer desde el principio el transcript de una sesión larga (retomada,
+    // o que alterna con otra en el mismo proyecto) contaba todos sus turnos
+    // como posteriores a la narrativa: con `turns` en 1.027 y la narrativa de
+    // hacía 3 minutos, el relevo mostraba «Última respuesta del agente» y la
+    // petición creía que iban mil turnos. La base de ahora puede atrasar la
+    // próxima petición unos turnos; nunca inventa trabajo que no hubo. Sin
+    // narrativa todavía, la base sí es 0: todo el trabajo es posterior a ella.
     const previosEnSesion = mismaSesion && (previo.turnsAtNarrative ?? 0) <= (estado.turns ?? 0)
-      ? (previo.turnsAtNarrative ?? 0) : 0;
+      ? (previo.turnsAtNarrative ?? 0) : (estado.narrative ? (estado.turns ?? 0) : 0);
     estado.turnsAtNarrative = narrativaNueva ? (estado.turns ?? 0) : previosEnSesion;
     estado.narrativeStamp = estado.narrativeWrittenAt ?? null;
 

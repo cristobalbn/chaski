@@ -2782,3 +2782,101 @@ describe('statusline que anota la cuota (#82)', () => {
     }
   });
 });
+
+describe('sesión retomada y cambio de sesión', () => {
+  const transcript = join(AQUI, 'fixtures', 'claude-code.transcript.jsonl');
+  const stop = (m, session) => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: transcript }),
+  });
+  const arranque = (m, session, source) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'SessionStart', 'claude-code'], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'SessionStart', source }),
+  });
+  const rutaEstado = (m) => join(m.proyecto, '.tambo', 'branches', m.g('rev-parse', '--abbrev-ref', 'HEAD').trim(), 'estado.json');
+  const narrar = (m) => {
+    const e = JSON.parse(readFileSync(rutaEstado(m), 'utf8'));
+    Object.assign(e, { narrative: 'Migrando auth; falta refresh.ts:41.', narrativeAuthor: 'claude code',
+      narrativeWrittenAt: new Date().toISOString() });
+    writeFileSync(rutaEstado(m), JSON.stringify(e));
+  };
+
+  test('un cambio de sesión no cuenta los turnos viejos como posteriores a la narrativa', () => {
+    // Regresión (2026-11-20): con la sesión cambiada, la base del contador
+    // volvía a 0 y el transcript se relee entero, así que una sesión larga
+    // quedaba con `turns` en 1.027 y `turnsAtNarrative` en 0: el relevo
+    // mostraba «Última respuesta del agente» con una narrativa de 3 minutos.
+    const m = montar('chaski-turnos-sesion-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 90;\n');
+      stop(m, 'A');
+      narrar(m);
+      stop(m, 'A');
+      const tras = JSON.parse(readFileSync(rutaEstado(m), 'utf8'));
+      assert.ok(tras.turns >= 1, 'el fixture no dejó turnos; el test no probaría nada');
+      assert.equal(tras.turnsAtNarrative, tras.turns, 'la narrativa nueva no fijó la base');
+
+      stop(m, 'B'); // otra sesión captura en el mismo proyecto
+      const r = stop(m, 'A'); // y vuelve la primera: relee su transcript entero
+      assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+      const e = JSON.parse(readFileSync(rutaEstado(m), 'utf8'));
+      assert.equal(e.turnsAtNarrative, e.turns, `base ${e.turnsAtNarrative} con ${e.turns} turnos`);
+      assert.doesNotMatch(readFileSync(join(dirname(rutaEstado(m)), 'relevo.md'), 'utf8'), /Última respuesta del agente/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('sin narrativa, la base sigue en 0: la última respuesta es lo único que hay', () => {
+    const m = montar('chaski-turnos-sin-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 91;\n');
+      stop(m, 'A');
+      stop(m, 'B');
+      const e = JSON.parse(readFileSync(rutaEstado(m), 'utf8'));
+      assert.equal(e.turnsAtNarrative, 0);
+      assert.match(readFileSync(join(dirname(rutaEstado(m)), 'relevo.md'), 'utf8'), /Última respuesta del agente/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('al retomar la misma sesión no se repite su propio relevo', () => {
+    const m = montar('chaski-resume-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 92;\n');
+      stop(m, 'A');
+      narrar(m);
+      // Caso positivo: una sesión nueva sí lo recibe entero.
+      assert.match(arranque(m, 'nueva', 'startup').stdout, /Migrando auth/);
+      // Otra sesión retomada también: no es su relevo.
+      assert.match(arranque(m, 'otra', 'resume').stdout, /Migrando auth/);
+      // La misma sesión retomada, sin cambios desde entonces: nada.
+      const r = arranque(m, 'A', 'resume');
+      assert.equal(r.status, 0);
+      assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+      assert.equal(r.stdout, '');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('al retomar, sí avisa lo que la conversación no puede saber', () => {
+    const m = montar('chaski-resume-deriva-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 93;\n');
+      stop(m, 'A');
+      narrar(m);
+      // Alguien commitea desde otra terminal mientras la sesión estaba cerrada.
+      m.g('add', '-A');
+      m.g('commit', '-qm', 'cambio de otra persona');
+      const r = arranque(m, 'A', 'resume');
+      assert.match(r.stdout, /Sesión retomada: el relevo es de esta misma conversación y no se repite/);
+      assert.match(r.stdout, /cambio de otra persona/);
+      assert.doesNotMatch(r.stdout, /Migrando auth/, 'repitió la narrativa');
+      assert.match(r.stdout, /<<<FIN-RELEVO-CHASKI>>>\s*$/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
