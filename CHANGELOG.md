@@ -5,6 +5,11 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Cambiado
+- `chaski cost` separa las peticiones de narrativa en `Stop` (cada una agrega
+  un turno) de las diferidas al turno siguiente (sin turno extra). Antes las
+  contaba a todas como turnos extra.
+
 ### Agregado
 - Etiquetas `<private>…</private>`: lo que el usuario marca así llega al disco
   como `[privado]`, en el relevo, la narrativa, la última respuesta, los

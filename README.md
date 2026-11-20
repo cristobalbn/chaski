@@ -391,7 +391,8 @@ como respaldo.
 - Si actualizaste desde una versión anterior, vuelve a correr `chaski init` para
   registrar el hook nuevo; sin él, la petición sigue llegando al terminar. En
   Codex, acepta también el hook nuevo cuando te pida confiar en él.
-- Ver cuántos turnos extra pidió: `chaski cost`.
+- Ver cuántas peticiones hizo, separando las que agregaron un turno de las
+  diferidas: `chaski cost`.
 - Los límites exactos (20 minutos, 8 turnos) y el contrato por CLI están en la
   [referencia técnica](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#petición-automática-de-la-narrativa).
 
