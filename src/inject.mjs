@@ -11,9 +11,9 @@
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync, statSync, rmSync } from 'node:fs';
-import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, OPEN_TURN_TTL_MS, silencedByPlugin, resolveTranscript } from './lib/paths.mjs';
+import { readOnlyRelayPath, readOnlyStatePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, OPEN_TURN_TTL_MS, silencedByPlugin, resolveTranscript } from './lib/paths.mjs';
 import { dirname } from 'node:path';
-import { askText, promptPayload, shouldDeliverPending, PENDING_TTL_MS, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
+import { askText, promptPayload, shouldDeliverPending, samePendingConversation, PENDING_TTL_MS, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged, writeAtomic } from './lib/relay.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
 
@@ -45,13 +45,15 @@ function main() {
   try {
     const cwd = projectDir(cwdFrom(ev));
     const ramaActual = currentBranch(cwd, budget);
-    const ruta = relayPath(cwd, ramaActual);
+    // Solo lectura: abrir una sesión no debe crear `.tambo/` en un proyecto
+    // donde chaski nunca capturó.
+    const ruta = readOnlyRelayPath(cwd, ramaActual);
     if (!existsSync(ruta)) return;
 
     let md = readFileSync(ruta, 'utf8');
     if (!md.trim()) return;
 
-    const estado = readJson(statePath(cwd, ramaActual), {}) ?? {};
+    const estado = readJson(readOnlyStatePath(cwd, ramaActual), {}) ?? {};
 
     // Sesión retomada (`source: resume`, Claude Code y Codex) cuyo relevo
     // escribió ella misma: el agente ya tiene el historial completo, y el
@@ -173,11 +175,14 @@ function deliverPending(ev, agent) {
     if (!existsSync(ruta)) return;
     const pending = readJson(ruta, null);
     const estado = pending?.statePath ? readJson(pending.statePath, {}) ?? {} : {};
-    const entregar = shouldDeliverPending(pending, sesion, estado);
+    // El transcript resuelto solo se calcula si hay algo que entregar: tras un
+    // resume la ruta del payload no existe y resolverla lee la carpeta.
+    const transcript = resolveTranscript(ev.transcript_path ?? ev.transcriptPath ?? null);
+    const entregar = shouldDeliverPending(pending, sesion, estado, Date.now(), transcript);
     // Solo se borra la anotación de ESTA sesión (entregada o ya cubierta) o
     // una vencida. La de otra sesión abierta en el mismo proyecto es suya.
     const vencida = !(Date.now() - Date.parse(pending?.at ?? '') <= PENDING_TTL_MS);
-    if (entregar || pending?.session === sesion || vencida) {
+    if (entregar || samePendingConversation(pending, sesion, transcript) || vencida) {
       try { rmSync(ruta, { force: true }); } catch {}
     }
     if (!entregar) return;

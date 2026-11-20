@@ -2976,3 +2976,64 @@ describe('tras un resume, Claude Code manda la ruta de un transcript que no exis
     }
   });
 });
+
+describe('el pedido de narrativa sobrevive a un resume', () => {
+  // Al retomar, Claude Code cambia el session_id: un pedido anotado antes del
+  // reinicio no coincidía con ninguna sesión y no se entregaba nunca, y el
+  // debounce impedía volver a pedirlo durante 12 minutos.
+  test('se entrega a la conversación retomada (id nuevo, mismo transcript)', () => {
+    const m = montar('chaski-pedido-resume-');
+    try {
+      const dir = join(m.raiz, 'transcripts');
+      mkdirSync(dir, { recursive: true });
+      const real = join(dir, 'original.jsonl');
+      writeFileSync(real, readFileSync(join(AQUI, 'fixtures', 'claude-code.transcript.jsonl')));
+      const prompt = (session, transcriptPath) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'UserPromptSubmit', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: session, cwd: m.proyecto, prompt: 'x', transcript_path: transcriptPath }),
+      });
+      prompt('antes', real); // prueba de vida del hook de entrega
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 98;\n');
+      spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 'antes', cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: real }),
+      });
+      assert.ok(existsSync(join(m.proyecto, '.tambo', 'pending-ask.json')), 'no anotó el pedido; el test no probaría nada');
+      // Caso negativo: otra conversación (otra carpeta, nada reciente) no lo recibe.
+      assert.equal(prompt('ajena', join(m.raiz, 'otra', 'x.jsonl')).stdout, '');
+      // La conversación retomada sí, aunque su id y su ruta sean nuevos.
+      const r = prompt('despues', join(dir, 'id-nuevo.jsonl'));
+      assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+      assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /antes de responder este mensaje/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+describe('leer no crea .tambo/', () => {
+  // Con el plugin (nivel de usuario), el hook de inicio corre en todos los
+  // repos que se abren. Antes creaba `.tambo/branches/<rama>/` en cada uno,
+  // aunque chaski nunca hubiera capturado ahí.
+  test('ni el arranque de sesión ni doctor, next o why crean la carpeta', () => {
+    const m = montar('chaski-sin-tambo-');
+    try {
+      const r = spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'SessionStart', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 's', cwd: m.proyecto, source: 'startup' }),
+      });
+      assert.equal(r.status, 0);
+      assert.equal(r.stdout, '');
+      for (const cmd of ['doctor', 'next', 'why']) m.correr(cmd);
+      assert.ok(!existsSync(join(m.proyecto, '.tambo')), 'una lectura creó .tambo/');
+      // Caso positivo: una captura sí la crea.
+      spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 's', cwd: m.proyecto, hook_event_name: 'Stop' }),
+      });
+      assert.ok(existsSync(join(m.proyecto, '.tambo', 'branches')));
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});

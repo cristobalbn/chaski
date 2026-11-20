@@ -147,6 +147,22 @@ export function branchDir(cwd, branch = undefined) {
 export function relayPath(cwd, branch = undefined) { return join(branchDir(cwd, branch), 'relevo.md'); }
 export function statePath(cwd, branch = undefined) { return join(branchDir(cwd, branch), 'estado.json'); }
 
+/**
+ * Las mismas rutas, SIN crear nada: para quien solo lee. relayPath() y
+ * statePath() crean `.tambo/branches/<slug>/` (y el .gitignore de `.tambo/`)
+ * porque los usa quien va a escribir; el hook de inicio de sesión y los
+ * comandos de consulta los usaban para leer, y así dejaban un `.tambo/` vacío
+ * en cada proyecto que se abría —con el plugin, en todos los repos del
+ * usuario—, aunque chaski nunca hubiera capturado ahí.
+ */
+export function readOnlyTambo(cwd) { return join(projectDir(cwd), TAMBO); }
+export function readOnlyBranchDir(cwd, branch = undefined) {
+  const rama = branch === undefined ? currentBranch(cwd) : branch;
+  return join(readOnlyTambo(cwd), 'branches', branchSlug(rama));
+}
+export function readOnlyRelayPath(cwd, branch = undefined) { return join(readOnlyBranchDir(cwd, branch), 'relevo.md'); }
+export function readOnlyStatePath(cwd, branch = undefined) { return join(readOnlyBranchDir(cwd, branch), 'estado.json'); }
+
 /** Config y estado global de chaski, fuera de cualquier proyecto. */
 export function globalDir() {
   const dir = join(homedir(), '.chaski');
@@ -253,7 +269,7 @@ export function pruneOrphanRelays(cwd, opciones = {}) {
 /** Relevos cuya rama ya no existe, sin borrar nada. Para `doctor`. */
 export function orphanRelays(cwd) {
   try {
-    const dirRamas = join(tambo(cwd), 'branches');
+    const dirRamas = join(readOnlyTambo(cwd), 'branches');
     if (!existsSync(dirRamas)) return [];
     const salida = git(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
     if (salida === null) return [];

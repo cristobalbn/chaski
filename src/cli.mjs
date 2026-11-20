@@ -15,7 +15,7 @@ import { join, resolve, dirname, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath } from './lib/paths.mjs';
+import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyTambo, readOnlyRelayPath, readOnlyStatePath } from './lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from './lib/ask.mjs';
 import { writeAtomic, isValidSignature } from './lib/relay.mjs';
 import { redact, anonymize } from './lib/secrets.mjs';
@@ -762,9 +762,9 @@ function doctor() {
     console.log(`  ${pad('huérfanos')} ${huerfanos.length} relevo(s) de ramas que ya no existen` + nota);
   }
 
-  const relevo = relayPath(CWD);
+  const relevo = readOnlyRelayPath(CWD);
   if (existsSync(relevo)) {
-    const estado = readJson(statePath(CWD), {}) ?? {};
+    const estado = readJson(readOnlyStatePath(CWD), {}) ?? {};
     const md = readFileSync(relevo, 'utf8');
     const edad = estado.writtenAt ? Math.round((Date.now() - new Date(estado.writtenAt).getTime()) / 60000) : null;
     console.log(`  ${pad('relevo')} ${md.length} caracteres${edad !== null ? `, escrito hace ${edad} min` : ''}`);
@@ -1058,7 +1058,7 @@ function backupForProbe(ruta) {
 function next() {
   console.log('\nchaski next\n');
   const branch = currentBranch(CWD);
-  const estado = readJson(statePath(CWD, branch), {}) ?? {};
+  const estado = readJson(readOnlyStatePath(CWD, branch), {}) ?? {};
   const quota = readJson(join(globalDir(), 'quota.json'), {}) ?? {};
   const edadRelevo = estado.writtenAt
     ? Math.max(0, Math.round((Date.now() - new Date(estado.writtenAt).getTime()) / 60000))
@@ -1164,7 +1164,7 @@ function why(args) {
   console.log(`\nchaski why${filtro ? ` — "${filtro}"` : ''}\n`);
 
   const entradas = [];
-  const histRuta = join(tambo(CWD), 'historia', 'entries.jsonl');
+  const histRuta = join(readOnlyTambo(CWD), 'historia', 'entries.jsonl');
   if (existsSync(histRuta)) {
     for (const linea of readFileSync(histRuta, 'utf8').split(/\r?\n/).filter(Boolean)) {
       try {
@@ -1176,7 +1176,7 @@ function why(args) {
 
   // También revisa el estado vivo de cada rama por si una narrativa se
   // escribió a mano en estado.json y todavía no pasó por otra captura.
-  const branchesDir = join(tambo(CWD), 'branches');
+  const branchesDir = join(readOnlyTambo(CWD), 'branches');
   if (existsSync(branchesDir)) {
     for (const dir of readdirSync(branchesDir)) {
       const est = readJson(join(branchesDir, dir, 'estado.json'), null);
@@ -1240,7 +1240,7 @@ function share(args) {
   const temaArgs = args.filter((a) => a !== '--yes').join(' ').trim();
 
   const branch = currentBranch(CWD);
-  const estado = readJson(statePath(CWD, branch), {}) ?? {};
+  const estado = readJson(readOnlyStatePath(CWD, branch), {}) ?? {};
   if (!estado.narrative || !String(estado.narrative).trim()) {
     console.error('\nchaski share: la rama actual no tiene narrativa para publicar.');
     console.error('Escribe «relevo» en tu agente antes de compartir una decisión.\n');
