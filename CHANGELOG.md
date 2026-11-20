@@ -5,6 +5,15 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Corregido
+- Después de retomar una conversación en Claude Code, chaski no leía nada del
+  transcript (ni comandos, ni turnos, ni la última respuesta) y seguía
+  repitiendo el relevo: al retomar, Claude Code pasa a los hooks un
+  `transcript_path` con el id nuevo que no existe, y sigue escribiendo en el
+  archivo original. Si la ruta no existe, chaski usa el `.jsonl` escrito más
+  recientemente de esa carpeta (en los últimos 15 min). La 0.1.8 no lo
+  resolvía: comparaba esa ruta inexistente.
+
 ## [0.1.8] - 2026-11-20
 
 ### Corregido

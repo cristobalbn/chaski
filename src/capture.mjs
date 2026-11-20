@@ -14,7 +14,7 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, silencedByPlugin, usagePath } from './lib/paths.mjs';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, silencedByPlugin, usagePath, resolveTranscript } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
@@ -492,7 +492,9 @@ function readPayload() {
   // Antigravity usa camelCase y nombres propios. Verificado contra payloads
   // reales de Claude Code y de agy.
   const ws = Array.isArray(ev.workspacePaths) ? ev.workspacePaths[0] : null;
-  ev.transcript_path = ev.transcript_path ?? ev.transcriptPath ?? ev.transcript ?? null;
+  // resolveTranscript(): tras un resume, Claude Code manda la ruta de un
+  // archivo que no existe (ver paths.mjs).
+  ev.transcript_path = resolveTranscript(ev.transcript_path ?? ev.transcriptPath ?? ev.transcript ?? null);
   ev.hook_event_name = ev.hook_event_name ?? ev.hookEventName ?? ev.event ?? process.argv[2] ?? null;
   ev.session_id = ev.session_id ?? ev.sessionId ?? ev.conversationId ?? ev.conversation_id ?? null;
   ev.cwd = ev.cwd ?? ws ?? ev.workspace ?? ev.project_dir ?? process.cwd();
