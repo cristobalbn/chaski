@@ -388,9 +388,10 @@ describe('la marca de agua pertenece a una sesión', () => {
     try {
       const t1 = join(dir, 'session-de-hoy.jsonl');
       const t2 = join(dir, 'session-de-manana.jsonl');
+      // Un turno es un mensaje del usuario (ver isUserPrompt en facts.mjs).
       const turno = (txt) => JSON.stringify({
-        type: 'assistant',
-        message: { content: [{ type: 'text', text: txt }] },
+        type: 'user',
+        message: { content: txt },
       }) + '\n';
 
       // Hoy deja una marca de agua moderada.
@@ -2061,5 +2062,39 @@ describe('cuota (#82)', () => {
     assert.match(r, /^cuota 5 h al 42 %, se renueva \d{2}:\d{2} · 7 días al 13 %/);
     assert.match(r, /dato de hace 5 min/);
     assert.equal(usageSummary(uso(42, 13, '2026-11-19T00:00:00Z'), ahora), null);
+  });
+});
+
+describe('un turno de Claude Code es un mensaje del usuario', () => {
+  // Antes cada línea user/assistant era un «turno», y los resultados de
+  // herramientas viajan como `user`: una conversación real tenía 1.220
+  // «turnos» y 34 mensajes del usuario, y la narrativa se pedía de más.
+  const linea = (o) => JSON.stringify(o) + '\n';
+  const tmp = () => join(tmpdir(), `chaski-turnos-${process.pid}-${Math.random().toString(36).slice(2)}.jsonl`);
+
+  test('cuenta solo los mensajes escritos por el usuario', () => {
+    const t = tmp();
+    writeFileSync(t, [
+      linea({ type: 'user', message: { content: 'arregla el login' } }),
+      linea({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'Bash', input: { command: 'npm test' } }] } }),
+      linea({ type: 'user', toolUseResult: {}, message: { content: [{ type: 'tool_result', tool_use_id: 'a', content: 'ok' }] } }),
+      linea({ type: 'assistant', message: { content: [{ type: 'text', text: 'listo' }] } }),
+      linea({ type: 'user', isMeta: true, message: { content: [{ type: 'text', text: 'caveat' }] } }),
+      linea({ type: 'user', message: { content: [{ type: 'text', text: 'ahora el logout' }, { type: 'image' }] } }),
+    ].join(''));
+    try {
+      const r = transcriptFacts(t, 0, {});
+      assert.equal(r.turns, 2);
+      // Lo demás se sigue extrayendo igual: los turnos no cambian qué se lee.
+      assert.equal(r.commands.length, 1);
+      assert.equal(r.commands[0].exit, 0);
+      assert.equal(r.lastMessage, 'listo');
+    } finally {
+      rmSync(t, { force: true });
+    }
+  });
+
+  test('el fixture de Claude Code tiene un solo mensaje del usuario', () => {
+    assert.equal(transcriptFacts(fixture('claude-code.transcript.jsonl'), 0, {}).turns, 1);
   });
 });

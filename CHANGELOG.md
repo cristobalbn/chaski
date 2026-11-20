@@ -5,6 +5,13 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Corregido
+- En Claude Code, un «turno» contaba cada línea del transcript, incluidos los
+  resultados de herramientas: una conversación real tenía 1.220 «turnos» y 34
+  mensajes del usuario, así que «van 8 turnos» eran dos o tres mensajes y la
+  narrativa se pedía mucho más seguido de lo diseñado. Ahora un turno es un
+  mensaje del usuario, como ya contaban Codex y Antigravity.
+
 ## [0.1.9] - 2026-11-20
 
 ### Corregido

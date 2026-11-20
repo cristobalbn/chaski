@@ -263,7 +263,14 @@ function extract(ev, res, config, pending) {
   }
 
   const kind = ev.type ?? ev.role ?? ev.kind;
-  if (kind === 'assistant' || kind === 'user') res.turns++;
+  // Un turno es un mensaje del usuario, no cualquier línea. Antes se contaba
+  // toda línea `user` o `assistant`, y en Claude Code cada llamada a una
+  // herramienta agrega dos (el uso y su resultado, que viaja como `user`):
+  // una conversación real tenía 1.220 «turnos» y 34 mensajes del usuario. Con
+  // eso, «van 8 turnos» eran dos o tres mensajes y la narrativa se pedía
+  // mucho más seguido de lo diseñado. Codex (task_started) y agy (USER_INPUT)
+  // ya contaban mensajes; ahora Claude Code también.
+  if (kind === 'user' && isUserPrompt(ev)) res.turns++;
 
   const bloques = [];
   const msg = ev.message ?? ev;
@@ -574,3 +581,16 @@ function renameTarget(bruto) {
 }
 
 function num(v) { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; }
+
+/**
+ * ¿Esta línea `user` de un transcript de Claude Code es un mensaje escrito por
+ * el usuario? No lo son los resultados de herramientas (`tool_result`, con
+ * `toolUseResult`) ni las líneas de metadatos (`isMeta`).
+ */
+function isUserPrompt(ev) {
+  if (ev?.isMeta || ev?.toolUseResult) return false;
+  const c = ev?.message?.content ?? ev?.content;
+  if (typeof c === 'string') return c.trim().length > 0;
+  if (!Array.isArray(c)) return false;
+  return c.some((b) => b?.type === 'text') && !c.some((b) => b?.type === 'tool_result');
+}
