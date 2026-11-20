@@ -289,7 +289,7 @@ hooks/hooks.json     hooks del plugin: forma exec (`node` + `args` con ${CLAUDE_
   - `.tambo/branches/<slug>/relevo.md` — Markdown renderizado desde `estado.json` por `render()` (`src/lib/relay.mjs`), firmado con HMAC e inyectado por `inject.mjs`. Nunca se edita a mano.
   - `.tambo/pending-ask.json` — petición de narrativa anotada por `Stop` (`{ session, at, reason, statePath, hasSkill }`). La consume `inject.mjs` en el `UserPromptSubmit` (Claude Code, Codex) o `PreInvocation` (agy) siguiente de la misma sesión y la borra. Ver `src/lib/ask.mjs`.
   - `.tambo/turns-open.json` — `{ "<session>": { agent, at } }`, turnos empezados y no terminados. Lo escribe el hook de entrega de `inject.mjs` al empezar el turno (solo si `.tambo/` existe), lo limpia `capture.mjs` al cerrarlo (no en `PreCompact`). `SessionStart` avisa de los de otras sesiones posteriores al relevo. Vencen a las 72 h.
-  - `.tambo/historia/entries.jsonl` — histórico append-only de narrativas redactadas (consultado por `chaski why`). Cada línea es `{ at, author, branch, head, narrative }`.
+  - `.tambo/historia/entries.jsonl` — histórico append-only de narrativas redactadas (consultado por `chaski why`, y por `inject.mjs` para mostrar la narrativa más reciente si es de una rama que ya no existe). Cada línea es `{ at, author, branch, head, narrative }`.
 - **En el repositorio (versionado en git, opt-in):**
   - `decisiones/<YYYY-MM-DD>-<tema>.md` — decisiones publicadas explícitamente con `chaski share [tema] [--yes]`.
 - **Globales del usuario (`~/.chaski/`):**

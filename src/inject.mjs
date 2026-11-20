@@ -10,9 +10,9 @@
 //   - Si no hay relevo, no imprime nada. Un agent no debe recibir ruido.
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
-import { readFileSync, existsSync, statSync, rmSync } from 'node:fs';
-import { readOnlyRelayPath, readOnlyStatePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, OPEN_TURN_TTL_MS, silencedByPlugin, resolveTranscript } from './lib/paths.mjs';
-import { dirname } from 'node:path';
+import { readFileSync, existsSync, statSync, rmSync, openSync, readSync, closeSync } from 'node:fs';
+import { readOnlyRelayPath, readOnlyStatePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, OPEN_TURN_TTL_MS, silencedByPlugin, resolveTranscript, readOnlyTambo } from './lib/paths.mjs';
+import { dirname, join } from 'node:path';
 import { askText, promptPayload, shouldDeliverPending, samePendingConversation, PENDING_TTL_MS, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged, writeAtomic } from './lib/relay.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
@@ -133,6 +133,9 @@ function main() {
 
     const cortados = interruptedTurns(cwd, estado, sessionOf(ev));
     if (cortados) partes.push('', neutralizeMarks(cortados));
+
+    const heredada = mergedBranchNarrative(cwd, estado, budget);
+    if (heredada) partes.push('', neutralizeMarks(heredada));
 
     partes.push('', CLOSING_MARK);
 
@@ -256,6 +259,64 @@ function interruptedTurns(cwd, estado, sesionActual) {
       ...lineas,
       '',
       'Lo que ese turno hizo no está en el relevo. Revisa `git status` y `git diff` antes de seguir: puede haber archivos a medio editar.',
+    ].join('\n');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * La narrativa más reciente, si es de una rama que ya no existe y es más
+ * nueva que la de la rama actual.
+ *
+ * El caso: se trabaja en `feat/x`, se guarda ahí la narrativa, se hace
+ * squash-merge y se borra la rama. De vuelta en `main`, el relevo trae la
+ * narrativa vieja de `main`, y la que describe lo último que se hizo quedó en
+ * el relevo huérfano de `feat/x` (pasó el 2026-11-20). Con squash no hay
+ * ancestro en común que lo delate, así que la señal es la rama borrada.
+ *
+ * Solo lee `.tambo/historia/` (ya redactada al escribirse) y, si hay una
+ * candidata, lanza UN `git rev-parse` para ver si la rama sigue viva. No
+ * copia nada al estado de la rama actual: se muestra rotulada y aparte.
+ */
+function mergedBranchNarrative(cwd, estado, budget) {
+  try {
+    const ruta = join(readOnlyTambo(cwd), 'historia', 'entries.jsonl');
+    if (!existsSync(ruta)) return null;
+    // Las últimas entradas bastan: un archivo append-only puede ser largo.
+    const tam = statSync(ruta).size;
+    const desde = Math.max(0, tam - 64 * 1024);
+    const fd = openSync(ruta, 'r');
+    let texto = '';
+    try {
+      const buf = Buffer.alloc(tam - desde);
+      readSync(fd, buf, 0, buf.length, desde);
+      texto = buf.toString('utf8');
+    } finally { closeSync(fd); }
+    let ultima = null;
+    for (const linea of texto.split('\n').reverse()) {
+      try { const e = JSON.parse(linea); if (e?.narrative && e?.branch && e?.at) { ultima = e; break; } } catch {}
+    }
+    if (!ultima) return null;
+    const rama = String(ultima.branch);
+    if (rama === estado.facts?.branch || rama === 'sin-rama') return null;
+    const at = Date.parse(ultima.at);
+    const propia = Date.parse(estado.narrativeWrittenAt ?? '') || 0;
+    if (!Number.isFinite(at) || at <= propia || Date.now() - at > 14 * 86400_000) return null;
+    // El nombre va como argumento a git: nada que pueda leerse como opción.
+    if (!/^[\w./-]+$/.test(rama) || rama.startsWith('-')) return null;
+    const viva = git(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${rama}`], { budget });
+    if (viva) return null;
+    const cuerpo = String(ultima.narrative).trim();
+    const corto = cuerpo.length > 900 ? cuerpo.slice(0, 900).trimEnd() + '…' : cuerpo;
+    const min = Math.max(0, Math.round((Date.now() - at) / 60000));
+    const hace = min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} día(s)`;
+    return [
+      `## Narrativa más reciente: de la rama \`${rama}\` (ya no existe; probablemente se fusionó)`,
+      '',
+      `_Escrita por ${String(ultima.author ?? 'un agente').replace(/[^\w .-]/g, '')} hace ${hace}, después de la de esta rama. Contrástala con el código: describe el trabajo de esa rama._`,
+      '',
+      corto,
     ].join('\n');
   } catch {
     return null;

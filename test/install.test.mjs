@@ -3037,3 +3037,79 @@ describe('leer no crea .tambo/', () => {
     }
   });
 });
+
+describe('narrativa de una rama ya fusionada', () => {
+  // Pasó el 2026-11-20: se trabajó en una rama, se guardó ahí la narrativa,
+  // squash-merge y borrado de la rama; de vuelta en main, el relevo traía la
+  // narrativa vieja de main y la nueva quedaba en el relevo huérfano.
+  const stop = (m) => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: 's', cwd: m.proyecto, hook_event_name: 'Stop' }),
+  });
+  const narrar = (m, texto, at) => {
+    const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+    const dir = readdirSync(join(m.proyecto, '.tambo', 'branches'))
+      .map((d) => join(m.proyecto, '.tambo', 'branches', d, 'estado.json'))
+      .find((p) => existsSync(p) && JSON.parse(readFileSync(p, 'utf8')).facts?.branch === rama);
+    const e = JSON.parse(readFileSync(dir, 'utf8'));
+    Object.assign(e, { narrative: texto, narrativeAuthor: 'claude code', narrativeWrittenAt: at });
+    writeFileSync(dir, JSON.stringify(e));
+    stop(m); // la captura siguiente la archiva en .tambo/historia/
+  };
+  const arranque = (m) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'SessionStart', 'claude-code'], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: 'nueva', cwd: m.proyecto, source: 'startup' }),
+  });
+
+  test('si la rama ya no existe, su narrativa más nueva aparece rotulada', () => {
+    const m = montar('chaski-fusionada-');
+    try {
+      const principal = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 1;\n');
+      stop(m);
+      narrar(m, 'Narrativa vieja de la rama principal.', new Date(Date.now() - 3600_000).toISOString());
+
+      m.g('checkout', '-qb', 'feat/pagos');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 2;\n');
+      stop(m);
+      narrar(m, 'Pagos listos; falta el webhook en pagos.ts:12.', new Date().toISOString());
+
+      m.g('add', '-A');
+      m.g('commit', '-qm', 'pagos');
+      m.g('checkout', '-q', principal);
+      // Mientras la rama existe, es trabajo en paralelo: no se mezcla.
+      assert.doesNotMatch(arranque(m).stdout, /falta el webhook/);
+      m.g('branch', '-D', 'feat/pagos');
+      const r = arranque(m);
+      assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+      assert.match(r.stdout, /Narrativa más reciente: de la rama `feat\/pagos` \(ya no existe; probablemente se fusionó\)/);
+      assert.match(r.stdout, /falta el webhook en pagos\.ts:12/);
+      assert.match(r.stdout, /Narrativa vieja de la rama principal/, 'tapó la narrativa propia');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('si la narrativa propia es más nueva, no se muestra la de la rama borrada', () => {
+    const m = montar('chaski-fusionada-vieja-');
+    try {
+      const principal = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      m.g('checkout', '-qb', 'feat/vieja');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 3;\n');
+      stop(m);
+      narrar(m, 'Trabajo viejo de la rama.', new Date(Date.now() - 3600_000).toISOString());
+      m.g('add', '-A');
+      m.g('commit', '-qm', 'vieja');
+      m.g('checkout', '-q', principal);
+      m.g('branch', '-D', 'feat/vieja');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 4;\n');
+      stop(m);
+      narrar(m, 'Lo último, en la rama principal.', new Date().toISOString());
+      const r = arranque(m);
+      assert.match(r.stdout, /Lo último, en la rama principal/);
+      assert.doesNotMatch(r.stdout, /Trabajo viejo de la rama/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});

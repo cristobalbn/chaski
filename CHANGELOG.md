@@ -5,6 +5,12 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Agregado
+- Si la narrativa más reciente es de una rama que ya no existe (típico tras un
+  squash-merge y borrar la rama) y es más nueva que la de la rama actual, el
+  relevo la muestra aparte y rotulada. Antes, de vuelta en `main`, se veía la
+  narrativa vieja de `main` y la última quedaba en el relevo huérfano.
+
 ### Corregido
 - Un pedido de narrativa anotado antes de reiniciar Claude Code no se
   entregaba nunca: quedaba atado al id de sesión, que cambia al retomar, y el
