@@ -18,7 +18,7 @@ import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBra
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
-import { shouldAsk, askText, askPayload, promptHookAlive } from './lib/ask.mjs';
+import { shouldAsk, askText, askPayload, promptHookAlive, COMPACT_HINT } from './lib/ask.mjs';
 import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
 
 main();
@@ -60,6 +60,15 @@ function main() {
     // turno igual terminó bien y avisar lo contrario sería mentir. PreCompact
     // no cierra el turno (la compactación automática ocurre a mitad de uno).
     if (ev.hook_event_name !== 'PreCompact') closeTurn(cwd, ev.session_id);
+
+    // En Claude Code, lo que PreCompact imprime «becomes instructions for the
+    // compaction summary». Se pide que el resumen conserve lo mismo que una
+    // narrativa: compactar es perder contexto, igual que cambiar de agente.
+    // Va antes del lock: no depende del estado, y una captura salteada no
+    // debería dejar sin instrucción a la compactación.
+    if (ev.hook_event_name === 'PreCompact' && ev.__agente === 'claude code') {
+      process.stdout.write(COMPACT_HINT + '\n');
+    }
 
     // Un solo escritor. Si otro proceso tiene el lock, este turno se saltea:
     // el siguiente lo recupera, porque la marca de agua no avanzó.

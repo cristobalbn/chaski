@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
 import { transcriptFacts, gitFacts } from '../src/lib/facts.mjs';
-import { redact, isExcludedPath } from '../src/lib/secrets.mjs';
+import { redact, isExcludedPath, anonymize } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
 import { branchSlug, pruneOrphanRelays, git, projectDir } from '../src/lib/paths.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
@@ -1966,5 +1966,28 @@ describe('etiquetas <private>', () => {
     });
     assert.match(md, /Migrando pagos de \[privado\] a la API nueva/);
     assert.ok(!md.includes('Banco Ejemplo'));
+  });
+});
+
+describe('anonymize (para lo que se publica)', () => {
+  test('la carpeta personal exacta, con cualquiera de los dos separadores', () => {
+    const { texto, anonymized } = anonymize(
+      'ver C:\\Users\\cris\\proj\\a.js y C:/Users/cris/proj', { home: 'C:\\Users\\cris' });
+    assert.equal(texto, 'ver ~\\proj\\a.js y ~/proj');
+    assert.equal(anonymized, 2);
+  });
+
+  test('carpetas personales de otros usuarios y de macOS/Linux', () => {
+    assert.equal(anonymize('/home/otro/x y /Users/ana/y', { home: '/home/z' }).texto, '~/x y ~/y');
+  });
+
+  test('correos sí, versiones de paquete no', () => {
+    const { texto } = anonymize('escribe a yo@mail.com; usa lodash@4.17.21 y @types/node');
+    assert.equal(texto, 'escribe a [correo]; usa lodash@4.17.21 y @types/node');
+  });
+
+  test('texto sin datos personales queda igual', () => {
+    const t = 'Migrando la capa de auth a JWT en src/auth/refresh.ts:41.';
+    assert.deepEqual(anonymize(t, { home: '/home/z' }), { texto: t, anonymized: 0 });
   });
 });

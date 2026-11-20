@@ -358,6 +358,7 @@ No son intercambiables. Lo que funciona en uno falla en silencio en otro.
 | Directorio | `cwd` | `cwd` | `workspacePaths` (array) |
 | Transcript | `transcript_path` | `transcript_path` | `transcriptPath` |
 | Salida en `SessionStart` | texto plano | texto plano | **JSON con `injectSteps`** |
+| Salida en `PreCompact` | texto plano: instrucción para el resumen de compactación (`COMPACT_HINT` en `src/lib/ask.mjs`) | — (no se registra) | — (no existe) |
 | Entrega de la petición de narrativa (#73) | `UserPromptSubmit` → `hookSpecificOutput.additionalContext` | `UserPromptSubmit` → `hookSpecificOutput.additionalContext` | `PreInvocation` → `injectSteps` (corre antes de **cada** llamada al modelo) |
 | Petición en `Stop` (solo si el hook de entrega no dio señales de vida) | `hookSpecificOutput.additionalContext` | `{ decision: "block", reason }` | **`{ decision: "continue", reason }`** |
 

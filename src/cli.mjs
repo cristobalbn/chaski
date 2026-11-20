@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath } from './lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive } from './lib/ask.mjs';
 import { writeAtomic, isValidSignature } from './lib/relay.mjs';
-import { redact } from './lib/secrets.mjs';
+import { redact, anonymize } from './lib/secrets.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 
@@ -1181,7 +1181,10 @@ function share(args) {
   }
 
   const config = loadFilterConfig(CWD);
-  const { texto: cuerpoLimpio, redactions } = redact(String(estado.narrative).trim(), config);
+  const { texto: sinSecretos, redactions } = redact(String(estado.narrative).trim(), config);
+  // decisiones/ se versiona: la carpeta personal (con el nombre de usuario) y
+  // los correos no tienen por qué quedar en la historia de git del equipo.
+  const { texto: cuerpoLimpio, anonymized } = anonymize(sinSecretos, { home: homedir() });
   const slugBase = slugify(temaArgs || branch || 'decision');
   const fecha = new Date().toISOString().slice(0, 10);
   const decDir = join(CWD, 'decisiones');
@@ -1210,6 +1213,9 @@ function share(args) {
   console.log(`\nchaski share → decisiones/${nombre}`);
   if (redactions > 0) {
     console.log(`(${redactions} secreto(s) redactado(s) antes de publicar)`);
+  }
+  if (anonymized > 0) {
+    console.log(`(${anonymized} dato(s) personal(es) anonimizado(s): carpetas personales y correos)`);
   }
   console.log('\n────────────────────────────────────────────────────────────');
   console.log(contenido.trimEnd());

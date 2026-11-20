@@ -14,6 +14,13 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   lo dice al arrancar, con el CLI y hace cuánto, y pide revisar `git status`
   antes de seguir. Usa el hook de entrega de la 0.1.4, así que funciona en los
   tres CLIs.
+- En Claude Code, el hook `PreCompact` le indica al resumen de compactación
+  que conserve lo que un relevo necesita: la tarea, lo decidido y lo
+  descartado con su porqué, lo que quedó a medias con rutas y el siguiente
+  paso. Compactar pierde contexto igual que cambiar de agente.
+- `chaski share` anonimiza antes de publicar en `decisiones/`: la carpeta
+  personal (con el nombre de usuario) pasa a `~` y los correos a `[correo]`.
+  El relevo local no se toca.
 
 ## [0.1.4] - 2026-11-20
 

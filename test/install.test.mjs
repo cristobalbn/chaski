@@ -2398,3 +2398,75 @@ describe('turnos que empezaron y no terminaron', () => {
     }
   });
 });
+
+describe('PreCompact guía el resumen de compactación', () => {
+  const correr = (m, evento, agent) => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), evento, agent], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: 's', cwd: m.proyecto, hook_event_name: evento, trigger: 'auto' }),
+  });
+
+  test('en Claude Code, PreCompact imprime la instrucción y nada más', () => {
+    const m = montar('chaski-precompact-hint-');
+    try {
+      const r = correr(m, 'PreCompact', 'claude-code');
+      assert.equal(r.status, 0);
+      assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+      assert.match(r.stdout, /^chaski: al resumir, conserva/);
+      assert.match(r.stdout, /siguiente paso/);
+      assert.equal(r.stdout.trim().split('\n').length, 1, 'salió algo más que la instrucción');
+      // La captura igual ocurrió.
+      assert.ok(existsSync(join(m.proyecto, '.tambo', 'branches')), 'PreCompact dejó de capturar');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('ni Stop ni otro CLI la imprimen', () => {
+    const m = montar('chaski-precompact-otros-');
+    try {
+      assert.doesNotMatch(correr(m, 'Stop', 'claude-code').stdout, /al resumir/);
+      assert.doesNotMatch(correr(m, 'PreCompact', 'codex').stdout, /al resumir/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+test('share anonimiza la carpeta personal y los correos antes de publicar', () => {
+  const m = montar('chaski-share-anon-');
+  try {
+    spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+      cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+      input: JSON.stringify({ session_id: 's', cwd: m.proyecto, hook_event_name: 'Stop' }),
+    });
+    const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+    const rutaEstado = join(m.proyecto, '.tambo', 'branches', rama, 'estado.json');
+    const est = JSON.parse(readFileSync(rutaEstado, 'utf8'));
+    // `m.casa` es el home del proceso hijo (HOME y USERPROFILE apuntan ahí).
+    const archivo = join(m.casa, 'proyectos', 'app', 'auth.ts');
+    est.narrative = `Falta cerrar ${archivo}:41. Dudas a ana.perez@ejemplo.cl. Usa paquete@1.2.3.`;
+    est.narrativeAuthor = 'claude code';
+    est.narrativeWrittenAt = new Date().toISOString();
+    writeFileSync(rutaEstado, JSON.stringify(est, null, 2));
+    assert.ok(readFileSync(rutaEstado, 'utf8').includes('ana.perez@ejemplo.cl'), 'el fixture no tiene el correo');
+
+    const salida = m.correr('share', 'auth', '--yes');
+    assert.match(salida, /dato\(s\) personal\(es\) anonimizado\(s\)/);
+    const dec = readdirSync(join(m.proyecto, 'decisiones'));
+    const texto = readFileSync(join(m.proyecto, 'decisiones', dec[0]), 'utf8');
+    // Lo que importa: ni la carpeta personal ni el nombre de su directorio
+    // llegan al archivo. No se exige la forma `~/...` porque en Linux y macOS
+    // la ruta temporal del test es larga y aleatoria, y el filtro de secretos
+    // —que corre ANTES, a propósito— ya la redacta como alta entropía. El
+    // reemplazo por `~` lo prueban los tests unitarios de anonymize().
+    assert.ok(!texto.includes(m.casa), 'publicó la carpeta personal');
+    assert.ok(!texto.includes(m.casa.split(/[\\/]/).at(-2)), 'publicó el nombre de la carpeta temporal');
+    assert.ok(!texto.includes('ana.perez@ejemplo.cl'), 'publicó un correo');
+    // En Linux la redacción mete un espacio («[redactado: cadena-…]»).
+    assert.match(texto, /Falta cerrar .*\.ts:41\. Dudas/);
+    assert.match(texto, /Dudas a \[correo\]/);
+    assert.match(texto, /paquete@1\.2\.3/, 'tomó una versión por un correo');
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
