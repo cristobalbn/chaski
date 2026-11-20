@@ -351,9 +351,6 @@ function freshSubagents(lista, ahora = Date.now()) {
   return vivas.length ? vivas : null;
 }
 
-/** Vencimiento de `lastReply`: el mismo que el de las conclusiones de subagentes. */
-const REPLY_TTL_MS = 72 * 3600 * 1000;
-
 /**
  * La última respuesta del agente, redactada y acotada, o null.
  *
@@ -376,6 +373,11 @@ function replyFrom(texto, config, at) {
 }
 
 function freshReply(r, ahora = Date.now()) {
+  // El vencimiento va DENTRO de la función, como en freshSubagents(): un
+  // `const` de módulo se declara después de que `main()` ya corrió, y leerlo
+  // lanza un error de TDZ que el catch del hook convierte en «captura
+  // omitida». Pasaba en cada turno sin respuesta nueva con un lastReply previo.
+  const REPLY_TTL_MS = 72 * 3600 * 1000;
   const t = Date.parse(r?.at ?? '');
   return r?.text && Number.isFinite(t) && ahora - t < REPLY_TTL_MS ? r : null;
 }

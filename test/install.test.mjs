@@ -2259,3 +2259,47 @@ describe('#73: la petición de narrativa se entrega antes de la respuesta', () =
     }
   });
 });
+
+test('una captura sin respuesta nueva conserva lastReply y no deja nada en stderr', () => {
+  // Regresión: el vencimiento de lastReply era un `const` de módulo declarado
+  // después de que main() corría. Leerlo lanzaba un error de TDZ, el hook lo
+  // atrapaba y la captura entera se perdía con «captura omitida». Solo pasaba
+  // en la SEGUNDA captura —con un lastReply previo y sin mensaje nuevo—, así
+  // que ningún test de una sola captura lo veía.
+  const m = montar('chaski-reply-tdz-');
+  try {
+    const transcript = join(AQUI, 'fixtures', 'claude-code.transcript.jsonl');
+    const capturar = () => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+      cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+      input: JSON.stringify({ session_id: 's', cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: transcript }),
+    });
+    writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 5;\n');
+    const primera = capturar();
+    assert.equal(primera.stderr, '', 'la primera captura falló');
+    const ramas = readdirSync(join(m.proyecto, '.tambo', 'branches'));
+    const ruta = join(m.proyecto, '.tambo', 'branches', ramas[0], 'estado.json');
+    const antes = JSON.parse(readFileSync(ruta, 'utf8')).lastReply;
+    assert.ok(antes?.text, 'el fixture no dejó lastReply; el test no probaría nada');
+
+    const segunda = capturar(); // mismo transcript: desde la marca de agua no hay nada nuevo
+    assert.equal(segunda.status, 0);
+    assert.doesNotMatch(segunda.stderr, /captura omitida/, `el hook se tragó un error: ${segunda.stderr}`);
+    assert.deepEqual(JSON.parse(readFileSync(ruta, 'utf8')).lastReply, antes, 'perdió lastReply');
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test('los hooks no declaran const ni let de módulo después de llamar a main()', () => {
+  // main() corre en cuanto se evalúa su línea; un `const` de módulo declarado
+  // más abajo todavía no existe y leerlo lanza un error de TDZ. El hook lo
+  // atrapa (invariante 4) y el fallo queda invisible. Pasó dos veces el
+  // 2026-11-20. Las constantes van dentro de la función o en un módulo de lib/.
+  for (const archivo of ['capture.mjs', 'inject.mjs']) {
+    const txt = readFileSync(join(SRC, archivo), 'utf8');
+    const i = txt.search(/^main\(\);$/m);
+    assert.ok(i > 0, `${archivo}: no encontré la llamada a main()`);
+    const tarde = txt.slice(i).match(/^(?:const|let|var) \w+/gm) ?? [];
+    assert.deepEqual(tarde, [], `${archivo}: declaración de módulo después de main(): ${tarde.join(', ')}`);
+  }
+});
