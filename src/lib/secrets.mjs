@@ -106,6 +106,16 @@ export function redact(texto, config = null) {
   let out = String(texto);
   let n = 0;
 
+  // Lo que el usuario marcó como privado no llega al disco, sea secreto o no
+  // (un nombre de cliente, una cifra, una conversación): ningún patrón puede
+  // adivinar eso, así que la marca la pone quien sabe. Va primero para que
+  // nada de adentro llegue a los patrones de abajo. Una etiqueta sin cerrar
+  // tapa hasta el final: ante la duda, se calla de más y no de menos.
+  out = out.replace(/<private>[\s\S]*?(?:<\/private>|$)/gi, () => {
+    n++;
+    return '[privado]';
+  });
+
   for (const [re, etiqueta] of [...PATTERNS, ...userPatterns(config)]) {
     out = out.replace(re, (match, ...grupos) => {
       n++;

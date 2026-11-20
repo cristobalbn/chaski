@@ -2303,3 +2303,98 @@ test('los hooks no declaran const ni let de módulo después de llamar a main()'
     assert.deepEqual(tarde, [], `${archivo}: declaración de módulo después de main(): ${tarde.join(', ')}`);
   }
 });
+
+describe('turnos que empezaron y no terminaron', () => {
+  // El hook de entrega corre al empezar cada turno y capture.mjs al cerrarlo.
+  // Una marca que sobrevive es un turno cortado (interrupción, ventana
+  // cerrada, cuelgue), y la sesión siguiente tiene que saberlo: el relevo que
+  // lee es de ANTES de un turno que hizo algo.
+  const stop = (m, session, evento = 'Stop') => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), evento, 'claude-code'], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: evento }),
+  });
+  const turno = (m, agent, evento, session) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), evento, agent], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify(agent === 'agy'
+      ? { conversationId: session, workspacePaths: [m.proyecto], invocationNum: 1 }
+      : { session_id: session, cwd: m.proyecto, prompt: 'x' }),
+  });
+  const arranque = (m, session) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'SessionStart', 'codex'], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'SessionStart', source: 'startup' }),
+  });
+  const AVISO = /turno cortado después de este relevo/;
+
+  test('un turno sin Stop se avisa en la sesión siguiente, con el CLI que lo cortó', () => {
+    const m = montar('chaski-cortado-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 1;\n');
+      stop(m, 'previa');
+      turno(m, 'agy', 'PreInvocation', 'conv-agy');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 2; // a medias\n');
+      const r = arranque(m, 'nueva');
+      assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+      assert.match(r.stdout, AVISO);
+      assert.match(r.stdout, /Un turno de agy empezó hace \d+ min y no terminó/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('un turno que cerró con Stop no se avisa', () => {
+    const m = montar('chaski-cerrado-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 1;\n');
+      stop(m, 'previa');
+      turno(m, 'claude-code', 'UserPromptSubmit', 'a');
+      assert.ok(existsSync(join(m.proyecto, '.tambo', 'turns-open.json')), 'no anotó el turno; el test no probaría nada');
+      stop(m, 'a');
+      assert.doesNotMatch(arranque(m, 'nueva').stdout, AVISO);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('PreCompact no cierra el turno: la compactación ocurre a mitad de uno', () => {
+    const m = montar('chaski-precompact-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 1;\n');
+      stop(m, 'previa');
+      turno(m, 'claude-code', 'UserPromptSubmit', 'a');
+      stop(m, 'a', 'PreCompact');
+      // La captura de PreCompact es posterior al turno, así que el relevo ya
+      // refleja lo de después: no se avisa, pero la marca sigue abierta.
+      const abiertos = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'turns-open.json'), 'utf8'));
+      assert.ok(abiertos.a, 'PreCompact cerró el turno');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('la misma sesión (resume, compact) no se avisa a sí misma', () => {
+    const m = montar('chaski-misma-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 1;\n');
+      stop(m, 'previa');
+      turno(m, 'codex', 'UserPromptSubmit', 'esta');
+      assert.match(arranque(m, 'otra').stdout, AVISO, 'el caso positivo no avisó; el test no probaría nada');
+      assert.doesNotMatch(arranque(m, 'esta').stdout, AVISO);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('una captura posterior al corte deja de avisar: el relevo ya es de después', () => {
+    const m = montar('chaski-posterior-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 1;\n');
+      stop(m, 'previa');
+      turno(m, 'claude-code', 'UserPromptSubmit', 'cortada');
+      assert.match(arranque(m, 'nueva').stdout, AVISO, 'el caso positivo no avisó; el test no probaría nada');
+      stop(m, 'otra-sesion');
+      assert.doesNotMatch(arranque(m, 'nueva').stdout, AVISO);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});

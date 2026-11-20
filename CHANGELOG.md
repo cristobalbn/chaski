@@ -5,6 +5,16 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Agregado
+- Etiquetas `<private>…</private>`: lo que el usuario marca así llega al disco
+  como `[privado]`, en el relevo, la narrativa, la última respuesta, los
+  comandos y `chaski share`. Una etiqueta sin cerrar tapa hasta el final.
+- Aviso de turno cortado: si un turno empezó y no terminó (interrupción,
+  ventana cerrada, cuelgue) después de la última captura, la sesión siguiente
+  lo dice al arrancar, con el CLI y hace cuánto, y pide revisar `git status`
+  antes de seguir. Usa el hook de entrega de la 0.1.4, así que funciona en los
+  tres CLIs.
+
 ## [0.1.4] - 2026-11-20
 
 ### Cambiado

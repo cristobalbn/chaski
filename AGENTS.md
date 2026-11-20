@@ -263,7 +263,7 @@ src/lib/facts.mjs    ~570 lín.   — extracción defensiva de hechos desde git 
 src/lib/paths.mjs    ~340 lín.   — rutas, slugs de ramas (branchSlug), lock por mkdir, loadConfig, detección de entorno
 src/lib/relay.mjs    ~410 lín.   — render de Markdown endurecido (vallas, código en línea), preámbulo, firma HMAC SHA-256 y writeAtomic
 src/lib/ask.mjs      ~200 lín.   — petición proactiva de narrativa (shouldAsk), debounces y payloads por CLI
-src/lib/secrets.mjs  ~150 lín.   — filtro de secretos y rutas excluidas antes de escribir a disco
+src/lib/secrets.mjs  ~160 lín.   — filtro de secretos, etiquetas <private> y rutas excluidas antes de escribir a disco
 src/lib/budget.mjs   ~65 lín.    — reloj global y timeouts derivados por subproceso (STOP_HOOK_BUDGET_MS = 1100)
 src/capturar.mjs     ~25 lín.    — puente de compatibilidad hacia capture.mjs
 src/leer.mjs         ~20 lín.    — puente de compatibilidad hacia inject.mjs
@@ -279,6 +279,7 @@ skill/SKILL.md       ~80 lín.    — instrucciones de la petición «relevo»
     - **Campos exclusivos del agente (al guardar narrativa)**: `narrative` (string Markdown), `narrativeAuthor` (`"claude code" | "codex" | "agy"`), `narrativeWrittenAt` (ISO 8601 UTC actual, posterior a `writtenAt`).
   - `.tambo/branches/<slug>/relevo.md` — Markdown renderizado desde `estado.json` por `render()` (`src/lib/relay.mjs`), firmado con HMAC e inyectado por `inject.mjs`. Nunca se edita a mano.
   - `.tambo/pending-ask.json` — petición de narrativa anotada por `Stop` (`{ session, at, reason, statePath, hasSkill }`). La consume `inject.mjs` en el `UserPromptSubmit` (Claude Code, Codex) o `PreInvocation` (agy) siguiente de la misma sesión y la borra. Ver `src/lib/ask.mjs`.
+  - `.tambo/turns-open.json` — `{ "<session>": { agent, at } }`, turnos empezados y no terminados. Lo escribe el hook de entrega de `inject.mjs` al empezar el turno (solo si `.tambo/` existe), lo limpia `capture.mjs` al cerrarlo (no en `PreCompact`). `SessionStart` avisa de los de otras sesiones posteriores al relevo. Vencen a las 72 h.
   - `.tambo/historia/entries.jsonl` — histórico append-only de narrativas redactadas (consultado por `chaski why`). Cada línea es `{ at, author, branch, head, narrative }`.
 - **En el repositorio (versionado en git, opt-in):**
   - `decisiones/<YYYY-MM-DD>-<tema>.md` — decisiones publicadas explícitamente con `chaski share [tema] [--yes]`.

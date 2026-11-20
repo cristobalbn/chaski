@@ -370,3 +370,19 @@ export function pendingAskPath(cwd) { return join(projectDir(cwd), TAMBO, 'pendi
  * capture.mjs solo difiere la petición si es reciente. Ver ask.mjs.
  */
 export function promptHookPath() { return join(globalDir(), 'prompt-hook.json'); }
+
+/**
+ * Turnos empezados y no terminados, por sesión: `{ "<session>": { agent, at } }`.
+ * El hook de entrega (inicio de turno) agrega la sesión y capture.mjs la quita
+ * al cerrar el turno. Si sobrevive, el turno se cortó: interrupción, ventana
+ * cerrada, cuelgue. Ver openTurn() en inject.mjs.
+ */
+/**
+ * Marcas de turno abierto de más de esto no se muestran ni se conservan. Vive
+ * aquí y no en inject.mjs: allí un `const` de módulo se declara después de que
+ * `main()` ya corrió, y leerlo lanza un error de TDZ que el `catch` del hook
+ * se traga en silencio. Pasó al escribir esto.
+ */
+export const OPEN_TURN_TTL_MS = 72 * 3600 * 1000;
+
+export function openTurnsPath(cwd) { return join(projectDir(cwd), TAMBO, 'turns-open.json'); }

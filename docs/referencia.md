@@ -11,6 +11,7 @@ falta leerlo.
 - [Capturar payloads (`chaski probe`)](#capturar-payloads-chaski-probe)
 - [Actualizar: por qué `init` no es opcional](#actualizar-por-qué-init-no-es-opcional)
 - [Puentes de compatibilidad (`capturar.mjs`, `leer.mjs`)](#puentes-de-compatibilidad-capturarmjs-leermjs)
+- [Turnos cortados](#turnos-cortados)
 - [Límites conocidos: detalle y mediciones](#límites-conocidos-detalle-y-mediciones)
 - [Términos de uso de los proveedores](#términos-de-uso-de-los-proveedores)
 
@@ -111,6 +112,22 @@ por stderr a propósito: corre en cada turno y sería ruido inapagable.
 
 El [CHANGELOG](https://github.com/cristobalbn/chaski/blob/main/CHANGELOG.md)
 cuenta la versión en que volvieron.
+
+## Turnos cortados
+
+El hook de entrega (`UserPromptSubmit`, o `PreInvocation` en agy) anota el
+turno como abierto en `.tambo/turns-open.json` al empezar, y `capture.mjs` lo
+quita al cerrarlo (`Stop`, `StopFailure` o `SessionEnd`; `PreCompact` no,
+porque la compactación automática ocurre a mitad de un turno). Si la marca
+sobrevive, el turno se cortó: interrupción, ventana cerrada o cuelgue.
+
+| | |
+|---|---|
+| Cuándo se avisa | Al arrancar una sesión **distinta**, si el turno cortado empezó **después** de la última captura: solo entonces el relevo es de antes de algo que el agente nuevo no ve. Una captura posterior lo deja de avisar |
+| Qué dice | Qué CLI cortó el turno y hace cuánto, y que revise `git status` y `git diff` antes de seguir |
+| Dónde no se crea | En un proyecto sin `.tambo/`: el hook corre en cada mensaje de cualquier proyecto |
+| Vencimiento | 72 h |
+| Costo | Una escritura por turno (en agy, por turno y no por llamada al modelo) |
 
 ## Límites conocidos: detalle y mediciones
 
