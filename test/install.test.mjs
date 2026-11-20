@@ -2492,3 +2492,157 @@ test('share anonimiza la carpeta personal y los correos antes de publicar', () =
     rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
+
+describe('plugin de Claude Code (#80)', () => {
+  const RAIZ = join(SRC, '..');
+  const leer = (r) => JSON.parse(readFileSync(join(RAIZ, r), 'utf8'));
+
+  test('el manifiesto tiene la misma versión que package.json', () => {
+    // El plugin fija su versión: Claude Code solo actualiza a quien lo tiene
+    // instalado cuando cambia. Si se desfasa de package.json, una versión
+    // nueva en npm no llega a quien usa el plugin, o al revés.
+    assert.equal(leer('.claude-plugin/plugin.json').version, leer('package.json').version);
+    assert.equal(leer('.claude-plugin/plugin.json').name, 'chaski');
+  });
+
+  test('el marketplace es el mismo repo y el id es chaski@chaski', () => {
+    const m = leer('.claude-plugin/marketplace.json');
+    assert.equal(m.name, 'chaski');
+    assert.ok(m.owner?.name);
+    assert.deepEqual(m.plugins.map((p) => [p.name, p.source]), [['chaski', './']]);
+  });
+
+  test('la skill que declara el manifiesto existe', () => {
+    for (const dir of leer('.claude-plugin/plugin.json').skills) {
+      assert.ok(dir.startsWith('./'), 'las rutas del manifiesto deben empezar con ./');
+      assert.ok(existsSync(join(RAIZ, dir, 'SKILL.md')), `falta ${dir}/SKILL.md`);
+    }
+  });
+
+  test('hooks.json registra los mismos eventos y scripts que init', () => {
+    // Si se agrega un hook a installClaude y no al plugin (o al revés), una de
+    // las dos instalaciones queda sin él. Se compara contra lo que init
+    // escribe de verdad, no contra una lista copiada.
+    const m = montar('chaski-plugin-paridad-');
+    try {
+      m.correr('init');
+      const settings = JSON.parse(readFileSync(join(m.casa, '.claude', 'settings.json'), 'utf8'));
+      const deInit = Object.fromEntries(Object.entries(settings.hooks).map(([ev, grupos]) => {
+        const c = grupos.flatMap((g) => g.hooks.map((h) => h.command)).find((x) => /\.mjs/.test(x));
+        return [ev, c.match(/(capture|inject)\.mjs/)[0]];
+      }));
+      const plugin = leer('hooks/hooks.json');
+      assert.ok(plugin.hooks, 'sin la clave "hooks" de primer nivel el archivo no carga');
+      const delPlugin = Object.fromEntries(Object.entries(plugin.hooks).map(([ev, grupos]) => {
+        const h = grupos[0].hooks[0];
+        // Forma exec (sin shell): sin comillas que se rompan con espacios ni
+        // diferencias entre Git Bash, PowerShell y sh.
+        assert.equal(h.command, 'node', `${ev}: tiene que ser la forma exec`);
+        assert.equal(h.args[1], ev, `${ev}: el evento no coincide`);
+        assert.equal(h.args[2], 'claude-code');
+        assert.match(h.args[0], /^\$\{CLAUDE_PLUGIN_ROOT\}\/src\/(capture|inject)\.mjs$/);
+        assert.ok(existsSync(join(RAIZ, h.args[0].replace('${CLAUDE_PLUGIN_ROOT}/', ''))));
+        return [ev, h.args[0].split('/').pop()];
+      }));
+      assert.deepEqual(delPlugin, deInit);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  const activarPlugin = (m, valor = true) => {
+    const dir = join(m.casa, '.claude');
+    mkdirSync(dir, { recursive: true });
+    const ruta = join(dir, 'settings.json');
+    const s = existsSync(ruta) ? JSON.parse(readFileSync(ruta, 'utf8')) : {};
+    s.enabledPlugins = { ...(s.enabledPlugins ?? {}), 'chaski@chaski': valor };
+    writeFileSync(ruta, JSON.stringify(s, null, 2));
+  };
+  const hook = (m, script, evento, env = {}) => spawnSync(process.execPath, [join(SRC, script), evento, 'claude-code'], {
+    cwd: m.proyecto, env: { ...m.entorno, ...env }, encoding: 'utf8',
+    input: JSON.stringify({ session_id: 's', cwd: m.proyecto, hook_event_name: evento }),
+  });
+
+  test('con el plugin activo, los hooks de settings.json se callan y los del plugin trabajan', () => {
+    const m = montar('chaski-plugin-dup-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 80;\n');
+      activarPlugin(m);
+      // El de settings.json (sin CLAUDE_PLUGIN_ROOT) no hace nada.
+      const viejo = hook(m, 'capture.mjs', 'Stop');
+      assert.equal(viejo.status, 0);
+      assert.equal(viejo.stdout, '');
+      assert.ok(!existsSync(join(m.proyecto, '.tambo')), 'el hook duplicado capturó igual');
+      // El del plugin sí: es el caso positivo de la línea de arriba.
+      const delPlugin = hook(m, 'capture.mjs', 'Stop', { CLAUDE_PLUGIN_ROOT: join(SRC, '..') });
+      assert.equal(delPlugin.stderr, '', 'el hook ocultó un error propio');
+      assert.ok(existsSync(join(m.proyecto, '.tambo', 'branches')), 'el hook del plugin no capturó');
+      // Con la skill del plugin a mano, la petición es la corta.
+      assert.match(JSON.parse(delPlugin.stdout).hookSpecificOutput.additionalContext, /skill `relevo`/);
+      // Y la inyección tampoco se duplica.
+      assert.equal(hook(m, 'inject.mjs', 'SessionStart').stdout, '');
+      assert.match(hook(m, 'inject.mjs', 'SessionStart', { CLAUDE_PLUGIN_ROOT: join(SRC, '..') }).stdout, /RELEVO-CHASKI/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('sin init (solo el plugin), .tambo/ igual queda fuera de git', () => {
+    // Invariante 3: init agrega .tambo/ al .gitignore, pero quien instala solo
+    // el plugin nunca corre init. La carpeta trae su propio .gitignore.
+    const m = montar('chaski-plugin-gitignore-');
+    try {
+      activarPlugin(m);
+      hook(m, 'capture.mjs', 'Stop', { CLAUDE_PLUGIN_ROOT: join(SRC, '..') });
+      assert.ok(existsSync(join(m.proyecto, '.tambo', 'branches')), 'no capturó; el test no probaría nada');
+      const sucio = () => m.g('status', '--porcelain', '--untracked-files=all');
+      assert.doesNotMatch(sucio(), /\.tambo/, 'el relevo quedó a la vista de git');
+      // Caso positivo: sin ese archivo, git sí lo vería.
+      rmSync(join(m.proyecto, '.tambo', '.gitignore'));
+      assert.match(sucio(), /\.tambo/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('un false más específico apaga el plugin: el proyecto manda sobre el usuario', () => {
+    const m = montar('chaski-plugin-local-');
+    try {
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 81;\n');
+      activarPlugin(m, true);
+      mkdirSync(join(m.proyecto, '.claude'), { recursive: true });
+      writeFileSync(join(m.proyecto, '.claude', 'settings.local.json'),
+        JSON.stringify({ enabledPlugins: { 'chaski@chaski': false } }));
+      hook(m, 'capture.mjs', 'Stop');
+      assert.ok(existsSync(join(m.proyecto, '.tambo', 'branches')), 'se calló aunque el plugin está apagado en el proyecto');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('init con el plugin activo quita los hooks propios de Claude Code y no copia su skill', () => {
+    const m = montar('chaski-plugin-init-');
+    try {
+      m.correr('init');
+      const ruta = join(m.casa, '.claude', 'settings.json');
+      assert.ok(JSON.stringify(JSON.parse(readFileSync(ruta, 'utf8')).hooks ?? {}).includes('capture.mjs'),
+        'el primer init no registró nada; el test no probaría nada');
+      rmSync(join(m.proyecto, '.claude'), { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      activarPlugin(m);
+      const salida = m.correr('init');
+      assert.match(salida, /claude code\s+vía plugin chaski@chaski; quitados los hooks viejos/);
+      const tras = JSON.parse(readFileSync(ruta, 'utf8'));
+      assert.ok(!JSON.stringify(tras.hooks ?? {}).includes('capture.mjs'), 'quedaron hooks propios');
+      assert.equal(tras.enabledPlugins['chaski@chaski'], true, 'init tocó enabledPlugins');
+      assert.ok(!existsSync(join(m.proyecto, '.claude', 'skills', 'relevo')), 'copió la skill que ya trae el plugin');
+      assert.ok(existsSync(join(m.proyecto, '.agents', 'skills', 'relevo', 'SKILL.md')), 'dejó sin skill a Codex y agy');
+      // Codex y agy siguen por init.
+      assert.match(readFileSync(join(m.casa, '.codex', 'config.toml'), 'utf8'), /UserPromptSubmit/);
+      // Idempotente: la segunda vez no hay nada que quitar.
+      assert.match(m.correr('init'), /claude code\s+vía plugin chaski@chaski\n/);
+      assert.match(m.correr('doctor'), /claude code\s+vía plugin chaski@chaski\n/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});

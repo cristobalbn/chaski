@@ -14,7 +14,7 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath, openTurnsPath } from './lib/paths.mjs';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, silencedByPlugin } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
@@ -37,6 +37,9 @@ function main() {
     const ev = readPayload();
     const sessionDir = resolve(ev.cwd || process.cwd());
     const cwd = projectDir(sessionDir);
+
+    // Instalado por `init` y además como plugin: este proceso es el duplicado.
+    if (silencedByPlugin(ev.__agente, sessionDir)) return ok();
 
     const config = loadConfig(cwd);
 
@@ -232,8 +235,11 @@ function main() {
       const inProject = relativeSession !== '..'
         && !relativeSession.startsWith('..' + sep) && !isAbsolute(relativeSession);
       const skillBase = estado.agent === 'claude code' ? '.claude' : '.agents';
-      const hasSkill = inProject
-        && existsSync(join(cwd, skillBase, 'skills', 'relevo', 'SKILL.md'));
+      // Con el plugin, la skill viaja con él y vale en cualquier carpeta.
+      const enPlugin = process.env.CLAUDE_PLUGIN_ROOT
+        && existsSync(join(process.env.CLAUDE_PLUGIN_ROOT, 'skill', 'SKILL.md'));
+      const hasSkill = Boolean(enPlugin) || (inProject
+        && existsSync(join(cwd, skillBase, 'skills', 'relevo', 'SKILL.md')));
       if (diferida) {
         // #73: no se imprime nada. Lo entrega inject.mjs con el mensaje
         // siguiente del usuario, antes de la respuesta. Ver ask.mjs.

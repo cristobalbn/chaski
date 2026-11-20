@@ -52,6 +52,11 @@ export function projectDir(cwd) {
 export function tambo(cwd) {
   const dir = join(projectDir(cwd), TAMBO);
   mkdirSync(dir, { recursive: true });
+  // Invariante 3 sin depender de `init` (#80): quien instala solo el plugin
+  // de Claude Code nunca corre init, y `.tambo/` no queda en el .gitignore
+  // del proyecto. Un .gitignore propio con `*` hace que git ignore la carpeta
+  // entera sin tocar el del usuario. `wx`: si ya existe, no se toca.
+  try { writeFileSync(join(dir, '.gitignore'), '# chaski: relevo local, nunca se versiona\n*\n', { flag: 'wx' }); } catch {}
   return dir;
 }
 
@@ -293,10 +298,15 @@ export function tamboIsIgnored(cwd) {
   }
   try {
     const txt = readFileSync(join(root, '.gitignore'), 'utf8');
-    return txt.split(/\r?\n/).some((l) => {
+    if (txt.split(/\r?\n/).some((l) => {
       const s = l.trim();
       return s === TAMBO || s === TAMBO + '/';
-    });
+    })) return true;
+  } catch {}
+  // El .gitignore propio de `.tambo/` (ver tambo()): `git check-ignore` sobre
+  // la carpeta no lo reporta como ignorada aunque todo su contenido lo esté.
+  try {
+    return readFileSync(join(root, TAMBO, '.gitignore'), 'utf8').split(/\r?\n/).some((l) => l.trim() === '*');
   } catch {
     return false;
   }
@@ -386,3 +396,52 @@ export function promptHookPath() { return join(globalDir(), 'prompt-hook.json');
 export const OPEN_TURN_TTL_MS = 72 * 3600 * 1000;
 
 export function openTurnsPath(cwd) { return join(projectDir(cwd), TAMBO, 'turns-open.json'); }
+
+// ----------------------------------------------------------- plugin de Claude Code
+//
+// Desde #80 chaski también se instala como plugin de Claude Code: el repo es a
+// la vez el marketplace (`.claude-plugin/marketplace.json`) y el plugin
+// (`.claude-plugin/plugin.json` + `hooks/hooks.json`). El id que queda en
+// `enabledPlugins` es `<plugin>@<marketplace>`, los dos `chaski`.
+
+/** Id del plugin en `enabledPlugins`. */
+export const CLAUDE_PLUGIN_ID = 'chaski@chaski';
+
+/**
+ * ¿El plugin de chaski está activo para Claude Code en este proyecto?
+ *
+ * Mira los tres niveles donde Claude Code guarda `enabledPlugins`, con su
+ * precedencia (local > proyecto > usuario): un `false` más específico apaga
+ * un `true` más general. Nunca lanza.
+ */
+export function claudePluginEnabled(cwd) {
+  const base = projectDir(cwd);
+  let activo = false;
+  for (const ruta of [
+    join(homedir(), '.claude', 'settings.json'),
+    join(base, '.claude', 'settings.json'),
+    join(base, '.claude', 'settings.local.json'),
+  ]) {
+    try {
+      const s = JSON.parse(readFileSync(ruta, 'utf8').replace(/^\uFEFF/, ''));
+      const v = s?.enabledPlugins?.[CLAUDE_PLUGIN_ID];
+      if (typeof v === 'boolean') activo = v;
+    } catch {}
+  }
+  return activo;
+}
+
+/**
+ * ¿Este proceso de hook debe callarse porque el plugin ya hace su trabajo?
+ *
+ * Quien instaló chaski con `init` y después el plugin tiene los mismos hooks
+ * dos veces: Claude Code los corre en paralelo y el relevo se inyectaría dos
+ * veces por sesión. Los del plugin traen `CLAUDE_PLUGIN_ROOT` en el entorno
+ * (documentado); los de `settings.json` no. Si el plugin está activo, los de
+ * `settings.json` salen sin hacer nada. Solo Claude Code: Codex y agy no
+ * tienen plugin de chaski.
+ */
+export function silencedByPlugin(agent, cwd) {
+  if (agent !== 'claude code' || process.env.CLAUDE_PLUGIN_ROOT) return false;
+  return claudePluginEnabled(cwd);
+}
