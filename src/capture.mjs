@@ -270,7 +270,7 @@ function main() {
         // #73: no se imprime nada. Lo entrega inject.mjs con el mensaje
         // siguiente del usuario, antes de la respuesta. Ver ask.mjs.
         writeAtomic(pendingAskPath(cwd), JSON.stringify({
-          session: estado.session, at: estado.writtenAt, reason: motivo, statePath: rutaEstado, hasSkill,
+          session: estado.session, transcript: estado.transcript, at: estado.writtenAt, reason: motivo, statePath: rutaEstado, hasSkill,
         }));
       } else {
         const salida = askPayload(estado.agent, askText(motivo, hasSkill, rutaEstado));

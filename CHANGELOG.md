@@ -6,6 +6,12 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 ## [No publicado]
 
 ### Corregido
+- Un pedido de narrativa anotado antes de reiniciar Claude Code no se
+  entregaba nunca: quedaba atado al id de sesión, que cambia al retomar, y el
+  debounce impedía volver a pedirlo. Ahora se ata también al transcript.
+- Abrir una sesión, o correr `doctor`, `next` o `why`, creaba `.tambo/` en
+  proyectos donde chaski nunca había capturado; con el plugin, en todos los
+  repos que se abrían. Leer ya no crea nada.
 - En Claude Code, un «turno» contaba cada línea del transcript, incluidos los
   resultados de herramientas: una conversación real tenía 1.220 «turnos» y 34
   mensajes del usuario, así que «van 8 turnos» eran dos o tres mensajes y la

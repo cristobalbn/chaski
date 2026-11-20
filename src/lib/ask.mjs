@@ -289,15 +289,26 @@ export function promptHookAlive(registro, agent, ahora = Date.now()) {
 export const PENDING_TTL_MS = 12 * 3600 * 1000;
 
 /**
+ * ¿La anotación es de esta conversación? Por id de sesión o por transcript:
+ * al retomar, Claude Code cambia el id y la conversación sigue en el mismo
+ * transcript, así que comparando solo el id la petición anotada antes de un
+ * reinicio no se entregaba nunca (y el debounce impedía volver a pedirla).
+ */
+export function samePendingConversation(pending, sessionId, transcript = null) {
+  if (sessionId && pending?.session === sessionId) return true;
+  return Boolean(transcript && pending?.transcript && pending.transcript === transcript);
+}
+
+/**
  * ¿Hay que entregar la petición anotada con este mensaje?
  *
  * Solo en la MISMA sesión: en otra, el agente no tiene la conversación que
  * tendría que resumir y escribiría una narrativa inventada. Y no si ya hay
  * una narrativa posterior a la anotación: sería pedirla dos veces.
  */
-export function shouldDeliverPending(pending, sessionId, estado, ahora = Date.now()) {
+export function shouldDeliverPending(pending, sessionId, estado, ahora = Date.now(), transcript = null) {
   if (!pending || typeof pending !== 'object' || !pending.reason) return false;
-  if (!sessionId || pending.session !== sessionId) return false;
+  if (!samePendingConversation(pending, sessionId, transcript)) return false;
   const at = Date.parse(pending.at ?? '');
   if (!Number.isFinite(at) || ahora - at > PENDING_TTL_MS || at > ahora + 60_000) return false;
   const narrada = Date.parse(estado?.narrativeWrittenAt ?? '');
