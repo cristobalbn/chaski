@@ -19,7 +19,7 @@ import { redact, isExcludedPath } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
 import { branchSlug, pruneOrphanRelays, git, projectDir } from '../src/lib/paths.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
-import { shouldAsk, askText, askPayload } from '../src/lib/ask.mjs';
+import { shouldAsk, askText, askPayload, turnsThreshold, shouldDeliverPending, promptPayload, PENDING_TTL_MS } from '../src/lib/ask.mjs';
 
 /** Presupuesto falso: `remaining()` fijo, no atado al reloj real. Para
  * probar decisiones de presupuesto sin depender de cuánto tarda la máquina. */
@@ -1774,5 +1774,113 @@ describe('render endurecido contra texto ajeno (#53)', () => {
     assert.match(preamble(vieja, true), /narrativa es más vieja que los hechos: se escribió hace 3 día\(s\)/);
     // Contraste: una narrativa reciente no lleva el aviso.
     assert.doesNotMatch(preamble(fresca, true), /más vieja que los hechos/);
+  });
+});
+
+describe('#73: umbral configurable y petición diferida', () => {
+  const base = () => ({
+    agent: 'claude code', turns: 20, head: 'aaa1111', writtenAt: new Date().toISOString(),
+    facts: { dirty: [{ ruta: 'a.js' }] }, commands: [], narrative: 'algo',
+  });
+
+  test('askNarrativeAfterTurns sube el umbral; sin la clave sigue en 8', () => {
+    // Caso positivo primero: con 12 turnos desde la narrativa y el umbral por
+    // defecto, se pide. Sin esto, el null de abajo no probaría nada.
+    assert.match(shouldAsk({ hook_event_name: 'Stop' }, base(), { turnsAtNarrative: 8 }, {}) ?? '',
+      /van 12 turnos/);
+    assert.equal(shouldAsk({ hook_event_name: 'Stop' }, base(), { turnsAtNarrative: 8 },
+      { askNarrativeAfterTurns: 30 }), null);
+    assert.match(shouldAsk({ hook_event_name: 'Stop' }, base(), { turnsAtNarrative: 8 },
+      { askNarrativeAfterTurns: 5 }) ?? '', /van 12 turnos/);
+  });
+
+  test('un askNarrativeAfterTurns inválido vuelve al valor por defecto, no apaga', () => {
+    for (const v of [0, -3, 2.5, '20', null, true]) {
+      assert.equal(turnsThreshold({ askNarrativeAfterTurns: v }), 8, `aceptó ${JSON.stringify(v)}`);
+    }
+    assert.equal(turnsThreshold({ askNarrativeAfterTurns: 20 }), 20);
+  });
+
+  test('la petición diferida avisa que es del trabajo anterior y que después responda', () => {
+    const t = askText('van 9 turnos', true, null, { beforeReply: true });
+    assert.match(t, /antes de responder este mensaje/);
+    assert.match(t, /trabajo anterior/);
+    assert.match(t, /responde con normalidad/);
+    assert.match(t, /skill `relevo`/);
+    assert.equal(t.split('\n').length, 1);
+    // La de Stop no cambia.
+    assert.match(askText('x'), /antes de cerrar/);
+  });
+
+  test('promptPayload usa el contrato de UserPromptSubmit', () => {
+    const o = promptPayload('hola');
+    assert.equal(o.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+    assert.equal(o.hookSpecificOutput.additionalContext, 'hola');
+    assert.ok(!('decision' in o), 'decision: block rechazaría el mensaje del usuario');
+  });
+
+  describe('shouldDeliverPending', () => {
+    const ahora = Date.parse('2026-11-20T12:00:00Z');
+    const p = { session: 's1', at: '2026-11-20T11:00:00Z', reason: 'van 9 turnos' };
+
+    test('entrega en la misma sesión si no hay narrativa posterior', () => {
+      assert.equal(shouldDeliverPending(p, 's1', {}, ahora), true);
+      assert.equal(shouldDeliverPending(p, 's1', { narrativeWrittenAt: '2026-11-20T10:00:00Z' }, ahora), true);
+    });
+
+    test('no entrega en otra sesión: el agente no tendría la conversación', () => {
+      assert.equal(shouldDeliverPending(p, 's2', {}, ahora), false);
+      assert.equal(shouldDeliverPending(p, null, {}, ahora), false);
+    });
+
+    test('no entrega si ya hay una narrativa posterior a la anotación', () => {
+      assert.equal(shouldDeliverPending(p, 's1', { narrativeWrittenAt: '2026-11-20T11:30:00Z' }, ahora), false);
+    });
+
+    test('no entrega una anotación vencida, del futuro o rota', () => {
+      assert.equal(shouldDeliverPending(p, 's1', {}, ahora + PENDING_TTL_MS + 1), false);
+      assert.equal(shouldDeliverPending({ ...p, at: '2026-11-21T11:00:00Z' }, 's1', {}, ahora), false);
+      for (const roto of [null, 'x', {}, { ...p, reason: '' }, { ...p, at: 'ayer' }]) {
+        assert.equal(shouldDeliverPending(roto, 's1', {}, ahora), false);
+      }
+    });
+  });
+
+  describe('última respuesta del agente en el relevo', () => {
+    const conRespuesta = (extra) => ({
+      version: 1, agent: 'claude code', writtenAt: new Date().toISOString(),
+      facts: { branch: 'main', isRepo: true, dirty: [] }, commands: [],
+      lastReply: { text: 'Falta cerrar la rotación en refresh.ts:41.', at: new Date().toISOString() },
+      ...extra,
+    });
+
+    test('aparece si hubo trabajo después de la última narrativa', () => {
+      const md = render(conRespuesta({ turns: 12, turnsAtNarrative: 4, narrative: 'vieja' }));
+      assert.match(md, /## Última respuesta del agente/);
+      assert.match(md, /refresh\.ts:41/);
+      assert.match(md, /No es narrativa/);
+    });
+
+    test('no aparece si la narrativa ya cubre el último trabajo', () => {
+      // Positivo arriba con el mismo estado salvo los turnos.
+      const md = render(conRespuesta({ turns: 12, turnsAtNarrative: 12, narrative: 'al día' }));
+      assert.doesNotMatch(md, /Última respuesta del agente/);
+      assert.doesNotMatch(md, /refresh\.ts:41/);
+    });
+
+    test('va después de «Estado del código», fuera de lo que onlyNarrativeChanged tolera', () => {
+      const md = render(conRespuesta({ turns: 3, turnsAtNarrative: 0 }));
+      assert.ok(md.indexOf('## Última respuesta del agente') > md.indexOf('## Estado del código'));
+    });
+
+    test('se redacta al renderizar aunque haya llegado sin redactar a estado.json', () => {
+      const token = ['sk', '-', 'b'.repeat(32)].join('');
+      // Positivo: el filtro reconoce este token cuando aparece.
+      assert.ok(redact(`x ${token}`).redactions > 0, 'el token de prueba no es detectable');
+      const md = render(conRespuesta({ turns: 3, turnsAtNarrative: 0,
+        lastReply: { text: `usé ${token} para probar`, at: new Date().toISOString() } }));
+      assert.match(md, /Última respuesta del agente/);
+      assert.ok(!md.includes(token), 'se filtró un token en el relevo');
+    });
   });
 });

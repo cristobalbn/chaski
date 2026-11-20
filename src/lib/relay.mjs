@@ -271,6 +271,25 @@ export function render(estado, config = null) {
     L.push('');
   }
 
+  // Última respuesta del agente (#73): la red de seguridad para cuando la
+  // narrativa se pidió para el mensaje siguiente y ese mensaje no llegó. Solo
+  // aparece si hubo trabajo después de la última narrativa; si no, la
+  // narrativa ya lo cubre y esto sería ruido. La condición no mira el campo
+  // `narrative` a propósito: onlyNarrativeChanged() re-renderiza sin él, y
+  // esta sección tiene que salir igual en los dos renders.
+  //
+  // Va después de «Estado del código» y no junto a la narrativa: lo que está
+  // entre los dos encabezados es lo único que onlyNarrativeChanged() tolera
+  // sin firma, y un texto inyectado ahí pasaría por narrativa legítima.
+  if (estado.lastReply?.text && (estado.turns ?? 0) > (estado.turnsAtNarrative ?? 0)) {
+    L.push('## Última respuesta del agente');
+    L.push('');
+    L.push(`_Tomada del transcript${antiguedad(estado.lastReply.at)}. No es narrativa: hubo trabajo después de la última, y esto es lo único que quedó del porqué._`);
+    L.push('');
+    L.push(redact(String(estado.lastReply.text), config).texto);
+    L.push('');
+  }
+
   // Lo que quedó corriendo al cerrar: es lo primero que el agent nuevo
   // necesita saber, porque puede estar modificando el árbol ahora mismo.
   if (Array.isArray(estado.backgroundTasks) && estado.backgroundTasks.length) {

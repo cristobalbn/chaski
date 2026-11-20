@@ -30,6 +30,17 @@ export const DEBOUNCE_MIN = 12;
 export const TURNOS_MIN = 8;
 
 /**
+ * El umbral de turnos efectivo: `askNarrativeAfterTurns` si es un entero
+ * positivo, `TURNOS_MIN` en cualquier otro caso. Un valor inválido no apaga
+ * la petición —para eso está `askNarrative: false`—, porque un error de
+ * tipeo en la config no debería dejar a nadie sin narrativa sin saberlo.
+ */
+export function turnsThreshold(config) {
+  const n = config?.askNarrativeAfterTurns;
+  return Number.isInteger(n) && n >= 1 ? n : TURNOS_MIN;
+}
+
+/**
  * Minutos que una narrativa se considera fresca. Mientras lo sea, no se vuelve
  * a pedir ni aunque haya commits nuevos.
  *
@@ -104,7 +115,7 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
     ? (previo?.turnsAtNarrative ?? 0) : 0;
   const turnosDesde = (estado.turns ?? 0) - baseTurns;
   if (commitsNuevos) return 'hay commits nuevos desde la última narrativa';
-  if (turnosDesde >= TURNOS_MIN) return `van ${turnosDesde} turnos desde la última narrativa`;
+  if (turnosDesde >= turnsThreshold(config)) return `van ${turnosDesde} turnos desde la última narrativa`;
 
   return null;
 }
@@ -130,8 +141,14 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
  * que un texto así puede activar las defensas contra inyección de prompts del
  * propio modelo.
  */
-export function askText(motivo, haySkill = true, rutaEstado = null) {
-  const linea = `chaski: antes de cerrar, guarda el relevo de este trabajo — ${motivo}.`;
+export function askText(motivo, haySkill = true, rutaEstado = null, { beforeReply = false } = {}) {
+  // Diferida (#73), la petición llega junto con el mensaje siguiente del
+  // usuario, y el agente tiene que saber dos cosas: que el relevo es del
+  // trabajo ANTERIOR, no del mensaje nuevo, y que después responde con
+  // normalidad. Sin lo segundo, contestaría «guardé el relevo» y nada más.
+  const linea = beforeReply
+    ? `chaski: antes de responder este mensaje, guarda el relevo del trabajo anterior — ${motivo}. Después responde con normalidad.`
+    : `chaski: antes de cerrar, guarda el relevo de este trabajo — ${motivo}.`;
   if (haySkill) return `${linea} Usa la skill \`relevo\`.`;
   // La ruta va absoluta y resuelta (#48). La plantilla `<rama>` + "en la raíz
   // del repositorio" dejaba al agent adivinando justo en los casos en que no
@@ -199,4 +216,48 @@ export function askPayload(agent, reason) {
   // daría error: no haría nada, en silencio, el peor modo de fallo posible.
   if (a === 'agy' || a === 'antigravity') return { decision: 'continue', reason };
   return null;
+}
+
+// ----------------------------------------------------------- petición diferida
+//
+// #73: en Claude Code, la petición en `Stop` llega DESPUÉS de la respuesta, y
+// las llamadas de herramientas con que el agente guarda el relevo se pintan
+// debajo y la empujan fuera de la pantalla. La documentación de hooks cierra
+// las otras salidas: `suppressOutput` en `Stop` «Has no effect», `SessionEnd`
+// no puede hacer actuar al modelo y un hook `async` entrega en el turno
+// siguiente igual. Lo que sí es invisible es el contexto de
+// `UserPromptSubmit`: «Neither channel produces a visible transcript entry».
+//
+// Así que en `Stop` solo se anota la petición, y el hook de
+// `UserPromptSubmit` (inject.mjs) se la entrega al agente con el mensaje
+// siguiente del usuario: el guardado ocurre ANTES de la respuesta, y la
+// respuesta queda al final, que es donde el usuario la busca.
+//
+// El riesgo es que no haya mensaje siguiente (se cierra la sesión, se acaba
+// la cuota). Lo cubre `lastReply` en capture.mjs: la última respuesta del
+// agente queda en el relevo sin que intervenga ningún modelo.
+
+/** Una petición anotada vale un rato: después ya no es «el trabajo anterior». */
+export const PENDING_TTL_MS = 12 * 3600 * 1000;
+
+/**
+ * ¿Hay que entregar la petición anotada con este mensaje?
+ *
+ * Solo en la MISMA sesión: en otra, el agente no tiene la conversación que
+ * tendría que resumir y escribiría una narrativa inventada. Y no si ya hay
+ * una narrativa posterior a la anotación: sería pedirla dos veces.
+ */
+export function shouldDeliverPending(pending, sessionId, estado, ahora = Date.now()) {
+  if (!pending || typeof pending !== 'object' || !pending.reason) return false;
+  if (!sessionId || pending.session !== sessionId) return false;
+  const at = Date.parse(pending.at ?? '');
+  if (!Number.isFinite(at) || ahora - at > PENDING_TTL_MS || at > ahora + 60_000) return false;
+  const narrada = Date.parse(estado?.narrativeWrittenAt ?? '');
+  if (Number.isFinite(narrada) && narrada >= at) return false;
+  return true;
+}
+
+/** Salida de `UserPromptSubmit` en Claude Code: contexto que no se pinta. */
+export function promptPayload(texto) {
+  return { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: texto } };
 }

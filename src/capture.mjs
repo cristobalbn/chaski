@@ -14,7 +14,8 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig } from './lib/paths.mjs';
+import { homedir } from 'node:os';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
@@ -140,8 +141,40 @@ function main() {
       };
     }
 
+    // Red de seguridad de la petición diferida (#73): si nadie escribe otro
+    // mensaje, la narrativa no llega a pedirse, pero la última respuesta del
+    // agente suele decir qué se hizo y qué falta. Se guarda sin intervención
+    // de ningún modelo. Es texto de modelo, así que va fuera de los hechos
+    // (invariante 2), redactado (invariante 6) y con vencimiento, como las
+    // conclusiones de subagentes y por la misma razón: se inyecta en cada
+    // arranque y puede repetir algo hostil que el agente leyó.
+    estado.lastReply = replyFrom(t.lastMessage, config, estado.writtenAt) ?? freshReply(previo.lastReply);
+
     const { redactions } = redact(JSON.stringify(estado.commands), config);
     estado.redactions = redactions;
+
+    // Cuántos turnos tenía el relevo cuando se escribió la narrativa: es con
+    // esto que se mide si quedó atrás, y lo anota el código, no el modelo.
+    //
+    // Se compara contra `narrativeStamp` —la marca que esta misma función ya
+    // contabilizó— y NO contra `previo.narrativeWrittenAt`. La narrativa se
+    // escribe fuera de banda, directo en estado.json, así que en la captura
+    // siguiente el previo ya trae la marca nueva y los dos valores coinciden:
+    // comparándolos, el contador nunca se movía de cero y la política creía
+    // que habían pasado todos los turnos de la sesión desde la última
+    // narrativa. Resultado: la pedía cada vez que expiraba el debounce, para
+    // siempre. Con `turns` en 2.049 y el contador en 0, se veía en cada turno.
+    //
+    // Va antes de render() porque el relevo decide con él si mostrar
+    // `lastReply`: solo cuando hubo trabajo después de la narrativa.
+    const narrativaNueva = (estado.narrativeWrittenAt ?? null) !== (previo.narrativeStamp ?? null);
+    // `turns` se reinicia en cada sesión nueva; arrastrar `turnsAtNarrative`
+    // de la sesión anterior dejaba `turns - turnsAtNarrative` en negativo y
+    // postergaba la petición tantos turnos como hubiera durado la sesión previa.
+    const previosEnSesion = mismaSesion && (previo.turnsAtNarrative ?? 0) <= (estado.turns ?? 0)
+      ? (previo.turnsAtNarrative ?? 0) : 0;
+    estado.turnsAtNarrative = narrativaNueva ? (estado.turns ?? 0) : previosEnSesion;
+    estado.narrativeStamp = estado.narrativeWrittenAt ?? null;
 
     const md = render(estado, config);
     estado.signature = sign(md);
@@ -158,26 +191,6 @@ function main() {
       estado.askedAt = previo.askedAt ?? null;
       estado.askedReason = previo.askedReason ?? null;
     }
-    // Cuántos turnos tenía el relevo cuando se escribió la narrativa: es con
-    // esto que se mide si quedó atrás, y lo anota el código, no el modelo.
-    //
-    // Se compara contra `narrativeStamp` —la marca que esta misma función ya
-    // contabilizó— y NO contra `previo.narrativeWrittenAt`. La narrativa se
-    // escribe fuera de banda, directo en estado.json, así que en la captura
-    // siguiente el previo ya trae la marca nueva y los dos valores coinciden:
-    // comparándolos, el contador nunca se movía de cero y la política creía
-    // que habían pasado todos los turnos de la sesión desde la última
-    // narrativa. Resultado: la pedía cada vez que expiraba el debounce, para
-    // siempre. Con `turns` en 2.049 y el contador en 0, se veía en cada turno.
-    const narrativaNueva = (estado.narrativeWrittenAt ?? null) !== (previo.narrativeStamp ?? null);
-    // `turns` se reinicia en cada sesión nueva; arrastrar `turnsAtNarrative`
-    // de la sesión anterior dejaba `turns - turnsAtNarrative` en negativo y
-    // postergaba la petición tantos turnos como hubiera durado la sesión previa.
-    const previosEnSesion = mismaSesion && (previo.turnsAtNarrative ?? 0) <= (estado.turns ?? 0)
-      ? (previo.turnsAtNarrative ?? 0) : 0;
-    estado.turnsAtNarrative = narrativaNueva ? (estado.turns ?? 0) : previosEnSesion;
-    estado.narrativeStamp = estado.narrativeWrittenAt ?? null;
-
     writeAtomic(rutaRelevo, md);
     writeAtomic(rutaEstado, JSON.stringify(estado, null, 2));
     heartbeat(estado.agent);
@@ -202,8 +215,16 @@ function main() {
       const skillBase = estado.agent === 'claude code' ? '.claude' : '.agents';
       const hasSkill = inProject
         && existsSync(join(cwd, skillBase, 'skills', 'relevo', 'SKILL.md'));
-      const salida = askPayload(estado.agent, askText(motivo, hasSkill, rutaEstado));
-      if (salida) process.stdout.write(JSON.stringify(salida) + '\n');
+      if (canDefer(estado.agent)) {
+        // #73: no se imprime nada. Lo entrega inject.mjs con el mensaje
+        // siguiente del usuario, antes de la respuesta. Ver ask.mjs.
+        writeAtomic(pendingAskPath(cwd), JSON.stringify({
+          session: estado.session, at: estado.writtenAt, reason: motivo, statePath: rutaEstado, hasSkill,
+        }));
+      } else {
+        const salida = askPayload(estado.agent, askText(motivo, hasSkill, rutaEstado));
+        if (salida) process.stdout.write(JSON.stringify(salida) + '\n');
+      }
     }
 
     // Aviso para quien mire stderr (doctor, una terminal, logs del CLI). El
@@ -327,6 +348,56 @@ function freshSubagents(lista, ahora = Date.now()) {
     return Number.isFinite(t) && ahora - t < SUBAGENT_TTL_MS;
   });
   return vivas.length ? vivas : null;
+}
+
+/** Vencimiento de `lastReply`: el mismo que el de las conclusiones de subagentes. */
+const REPLY_TTL_MS = 72 * 3600 * 1000;
+
+/**
+ * La última respuesta del agente, redactada y acotada, o null.
+ *
+ * A diferencia de una conclusión de subagente, lo valioso suele estar al
+ * FINAL («falta X», «siguiente paso»), así que si no cabe se conservan el
+ * principio y el final, no solo el principio.
+ */
+function replyFrom(texto, config, at) {
+  if (typeof texto !== 'string' || !texto.trim()) return null;
+  const limpio = redact(texto, config).texto
+    .replace(/```[\s\S]*?```/g, '[bloque de código]')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (!limpio) return null;
+  const MAX = 700;
+  const corto = limpio.length > MAX
+    ? `${limpio.slice(0, 280).trimEnd()} […] ${limpio.slice(-400).trimStart()}`
+    : limpio;
+  return { text: corto, at };
+}
+
+function freshReply(r, ahora = Date.now()) {
+  const t = Date.parse(r?.at ?? '');
+  return r?.text && Number.isFinite(t) && ahora - t < REPLY_TTL_MS ? r : null;
+}
+
+/**
+ * ¿Puede diferirse la petición al mensaje siguiente? (#73)
+ *
+ * Solo en Claude Code, y solo si su configuración tiene el hook de
+ * `UserPromptSubmit` de chaski. Una instalación anterior que actualizó el
+ * paquete sin volver a correr `init` no lo tiene: diferir ahí sería anotar
+ * peticiones que nadie entrega, y quedarse sin narrativa en silencio. Para
+ * esas sigue la petición en `Stop`, que molesta pero funciona.
+ */
+function canDefer(agent) {
+  if (agent !== 'claude code') return false;
+  try {
+    const s = JSON.parse(readFileSync(join(homedir(), '.claude', 'settings.json'), 'utf8').replace(/^﻿/, ''));
+    const grupos = s?.hooks?.UserPromptSubmit;
+    return Array.isArray(grupos) && grupos.some((g) => Array.isArray(g?.hooks)
+      && g.hooks.some((h) => /inject\.mjs"?\s+UserPromptSubmit\b/.test(String(h?.command ?? ''))));
+  } catch {
+    return false;
+  }
 }
 
 /**

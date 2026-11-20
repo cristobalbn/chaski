@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Hook de inyección. Lo ejecutan los tres CLIs al arrancar una sesión.
+// Hook de inyección. Lo ejecutan los tres CLIs al arrancar una sesión, y
+// Claude Code además en cada mensaje del usuario (UserPromptSubmit, #73).
 //
 // Lo que este script imprime por stdout entra al contexto del agent, así que
 // es la única parte de chaski que está en el camino crítico. Reglas:
@@ -8,8 +9,9 @@
 //   - Si no hay relevo, no imprime nada. Un agent no debe recibir ruido.
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
-import { readFileSync, existsSync, statSync } from 'node:fs';
-import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig } from './lib/paths.mjs';
+import { readFileSync, existsSync, statSync, rmSync } from 'node:fs';
+import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath } from './lib/paths.mjs';
+import { askText, promptPayload, shouldDeliverPending, PENDING_TTL_MS } from './lib/ask.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged } from './lib/relay.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
 
@@ -24,9 +26,16 @@ function main() {
   // llamada tampoco se justificaba aquí solo, por la misma razón que en
   // capture.mjs: ningún timeout por llamada protege si nadie lo deriva de
   // cuánto queda.
+  const ev = readPayload();
+  // Mismo archivo para los dos hooks de entrada (invariante 8: cada nombre
+  // que init escribe en una config ajena queda fijo para siempre, así que no
+  // se agrega un tercero). Este camino corre en CADA mensaje del usuario:
+  // no lanza git ni re-renderiza nada, lee un JSON chico y sale.
+  if (process.argv[2] === 'UserPromptSubmit') return deliverPending(ev);
+
   const budget = createBudget(SESSION_START_BUDGET_MS);
   try {
-    const cwd = projectDir(cwdFromPayload());
+    const cwd = projectDir(cwdFrom(ev));
     const ramaActual = currentBranch(cwd, budget);
     const ruta = relayPath(cwd, ramaActual);
     if (!existsSync(ruta)) return;
@@ -91,9 +100,47 @@ function main() {
   }
 }
 
-function cwdFromPayload() {
+function readPayload() {
   let ev = {};
   try { ev = JSON.parse(readFileSync(0, 'utf8')) || {}; } catch {}
+  return ev && typeof ev === 'object' ? ev : {};
+}
+
+/**
+ * Entrega, con el mensaje del usuario, la petición de narrativa que `Stop`
+ * dejó anotada (#73). La salida de `UserPromptSubmit` llega al agente como
+ * contexto y no se pinta en la conversación; el guardado ocurre antes de la
+ * respuesta y la respuesta queda al final. Ver ask.mjs.
+ *
+ * La anotación se borra al entregarla: una petición, un mensaje. Si el borrado
+ * falla, la protege igual shouldDeliverPending(), que no la entrega de nuevo
+ * una vez que hay una narrativa posterior.
+ */
+function deliverPending(ev) {
+  try {
+    const ruta = pendingAskPath(cwdFrom(ev));
+    if (!existsSync(ruta)) return;
+    const pending = readJson(ruta, null);
+    const sesion = ev.session_id ?? ev.sessionId ?? null;
+    const estado = pending?.statePath ? readJson(pending.statePath, {}) ?? {} : {};
+    const entregar = shouldDeliverPending(pending, sesion, estado);
+    // Solo se borra la anotación de ESTA sesión (entregada o ya cubierta) o
+    // una vencida. La de otra sesión abierta en el mismo proyecto es suya.
+    const vencida = !(Date.now() - Date.parse(pending?.at ?? '') <= PENDING_TTL_MS);
+    if (entregar || pending?.session === sesion || vencida) {
+      try { rmSync(ruta, { force: true }); } catch {}
+    }
+    if (!entregar) return;
+    const texto = askText(String(pending.reason), pending.hasSkill !== false, pending.statePath, { beforeReply: true });
+    process.stdout.write(JSON.stringify(promptPayload(neutralizeMarks(texto))) + '\n');
+  } catch (e) {
+    process.stderr.write(`chaski: no se pudo entregar la petición de relevo (${e?.message ?? e})\n`);
+  } finally {
+    process.exitCode = 0;
+  }
+}
+
+function cwdFrom(ev) {
   // Antigravity usa camelCase y manda un array de rutas de workspace en vez
   // de un cwd. Documentado en su contrato de hooks.
   const ws = Array.isArray(ev.workspacePaths) ? ev.workspacePaths[0] : null;

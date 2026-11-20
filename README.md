@@ -376,12 +376,20 @@ No necesitas trabajar dentro del código de chaski para usarlo en otro proyecto.
 El relevo tiene **hechos** (archivos, commits, comandos: los saca chaski de git
 y de la conversación, gratis) y **narrativa** (qué intentabas, qué quedó a
 medias, el siguiente paso: solo la puede escribir el agente). A veces, al
-terminar un turno con trabajo detrás, chaski le pide al agente **un turno
-extra** para guardar ese porqué. Ese turno consume algo de cuota, pero se pide
-con poca frecuencia, mientras todavía sobra, y nunca se invoca ningún modelo por
-fuera. En Claude Code lo verás como una línea bajo «Stop hook feedback».
+terminar un turno con trabajo detrás, chaski le pide al agente que guarde ese
+porqué. Consume algo de cuota, pero se pide con poca frecuencia, mientras
+todavía sobra, y nunca se invoca ningún modelo por fuera.
+
+En Claude Code la petición no aparece debajo de la respuesta: se anota al
+terminar el turno y el agente la atiende **al empezar el siguiente**, antes de
+responderte, así lo que preguntaste queda al final de la pantalla. Si cierras la
+sesión antes, el relevo guarda la última respuesta del agente como respaldo.
+En Codex y Antigravity sigue siendo un turno extra al terminar.
 
 - Apagarlo: `"askNarrative": false` en `chaski.json` o `chaski.local.json`.
+- Pedirla menos seguido: `"askNarrativeAfterTurns": 20` (por defecto 8).
+- Si actualizaste desde una versión anterior, vuelve a correr `chaski init` para
+  registrar el hook nuevo; sin él, Claude Code sigue pidiéndola al terminar.
 - Ver cuántos turnos extra pidió: `chaski cost`.
 - Los límites exactos (20 minutos, 8 turnos) y el contrato por CLI están en la
   [referencia técnica](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#petición-automática-de-la-narrativa).
@@ -498,7 +506,8 @@ Todo tiene valores por defecto razonables. No hace falta configurar nada.
 | `excludePaths` | Rutas que nunca aparecen en el relevo |
 | `pruneAfterDays` | Días antes de borrar el relevo de una rama que ya no existe. Por defecto 30; `0` desactiva la limpieza |
 | `pruneNarrativeAfterDays` | Días antes de borrar el relevo huérfano que tiene narrativa. Por defecto, el triple de `pruneAfterDays`, con un mínimo de 90. `pruneAfterDays: 0` desactiva también esta limpieza; `pruneNarrativeAfterDays: 0` desactiva solo la de relevos con narrativa (los demás siguen su plazo) |
-| `askNarrative` | Si es `false`, desactiva las peticiones automáticas de narrativa en el hook `Stop` |
+| `askNarrative` | Si es `false`, desactiva las peticiones automáticas de narrativa |
+| `askNarrativeAfterTurns` | Turnos de trabajo desde la última narrativa antes de volver a pedirla. Entero positivo; por defecto 8. Un valor inválido usa el defecto |
 
 Los relevos con narrativa viven el triple a propósito: los hechos se
 recalculan desde git en cualquier momento, pero la narrativa existe solo
@@ -517,7 +526,7 @@ crear archivos por proyecto.
 ### Orden de precedencia al combinar los tres niveles
 
 Cuando existen dos o tres archivos a la vez, chaski los combina así:
-- **Claves escalares** (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`): manda el nivel más específico (`chaski.local.json` > `chaski.json` > `~/.chaski/config.json`).
+- **Claves escalares** (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`, `askNarrativeAfterTurns`): manda el nivel más específico (`chaski.local.json` > `chaski.json` > `~/.chaski/config.json`).
 - **Listas de seguridad** (`redact` y `excludePaths`): **se concatenan** entre los tres niveles (`global + proyecto + local`), de modo que una configuración local siempre suma patrones de redacción o rutas excluidas y nunca desactiva la política compartida del repositorio.
 
 La partición es deliberada: tu equipo comparte la política del repositorio en

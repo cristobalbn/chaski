@@ -391,6 +391,8 @@ function installClaude(ruta) {
     ];
   };
   poner('SessionStart', INJECT);
+  // Entrega la petición de narrativa antes de la respuesta, no después (#73).
+  poner('UserPromptSubmit', INJECT);
   poner('Stop', CAPTURE);
   poner('SessionEnd', CAPTURE);
   poner('PreCompact', CAPTURE);

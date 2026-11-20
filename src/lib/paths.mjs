@@ -355,3 +355,11 @@ export function loadConfig(cwd) {
   ];
   return merged;
 }
+
+/**
+ * Petición de narrativa anotada en `Stop` para entregarse en el mensaje
+ * siguiente (#73). Una por proyecto y no por rama: quien la lee es el hook de
+ * `UserPromptSubmit`, que corre en cada mensaje y no puede pagar un `git` para
+ * saber la rama. La sesión que trae adentro la ata a su conversación.
+ */
+export function pendingAskPath(cwd) { return join(projectDir(cwd), TAMBO, 'pending-ask.json'); }
