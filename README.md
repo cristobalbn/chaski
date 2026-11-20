@@ -380,16 +380,17 @@ terminar un turno con trabajo detrás, chaski le pide al agente que guarde ese
 porqué. Consume algo de cuota, pero se pide con poca frecuencia, mientras
 todavía sobra, y nunca se invoca ningún modelo por fuera.
 
-En Claude Code la petición no aparece debajo de la respuesta: se anota al
-terminar el turno y el agente la atiende **al empezar el siguiente**, antes de
-responderte, así lo que preguntaste queda al final de la pantalla. Si cierras la
-sesión antes, el relevo guarda la última respuesta del agente como respaldo.
-En Codex y Antigravity sigue siendo un turno extra al terminar.
+La petición no aparece debajo de la respuesta: se anota al terminar el turno y
+el agente la atiende **al empezar el siguiente**, antes de responderte, así lo
+que preguntaste queda al final de la pantalla. Funciona igual en los tres CLIs.
+Si cierras la sesión antes, el relevo guarda la última respuesta del agente
+como respaldo.
 
 - Apagarlo: `"askNarrative": false` en `chaski.json` o `chaski.local.json`.
 - Pedirla menos seguido: `"askNarrativeAfterTurns": 20` (por defecto 8).
 - Si actualizaste desde una versión anterior, vuelve a correr `chaski init` para
-  registrar el hook nuevo; sin él, Claude Code sigue pidiéndola al terminar.
+  registrar el hook nuevo; sin él, la petición sigue llegando al terminar. En
+  Codex, acepta también el hook nuevo cuando te pida confiar en él.
 - Ver cuántos turnos extra pidió: `chaski cost`.
 - Los límites exactos (20 minutos, 8 turnos) y el contrato por CLI están en la
   [referencia técnica](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#petición-automática-de-la-narrativa).

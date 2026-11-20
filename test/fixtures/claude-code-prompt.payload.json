@@ -1,0 +1,8 @@
+{
+  "session_id": "aaaaaaaa-1111-2222-3333-444444444444",
+  "transcript_path": "/tmp/proyecto/claude-code.transcript.jsonl",
+  "cwd": "/tmp/proyecto",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "sigue con lo de ayer"
+}

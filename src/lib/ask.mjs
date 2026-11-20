@@ -236,6 +236,41 @@ export function askPayload(agent, reason) {
 // El riesgo es que no haya mensaje siguiente (se cierra la sesión, se acaba
 // la cuota). Lo cubre `lastReply` en capture.mjs: la última respuesta del
 // agente queda en el relevo sin que intervenga ningún modelo.
+//
+// Los tres CLIs tienen un evento previo a la respuesta, cada uno con su
+// contrato (ver PROMPT_HOOK_EVENTS y promptPayload):
+//   - Claude Code: `UserPromptSubmit` con `hookSpecificOutput.additionalContext`.
+//   - Codex: `UserPromptSubmit`, mismo formato; su documentación dice que ese
+//     texto «is added as extra developer context».
+//   - Antigravity: `PreInvocation` con `injectSteps`. Corre antes de CADA
+//     llamada al modelo, no una vez por mensaje, así que la anotación se borra
+//     al entregarla y la petición sale una sola vez.
+
+/** Evento que entrega la petición anotada, por CLI. */
+export const PROMPT_HOOK_EVENTS = Object.freeze({
+  'claude code': 'UserPromptSubmit',
+  codex: 'UserPromptSubmit',
+  agy: 'PreInvocation',
+});
+
+/**
+ * Cuánto vale la prueba de vida del hook de entrega.
+ *
+ * Diferir solo es seguro si ese hook CORRE, y estar registrado no lo prueba:
+ * Codex no ejecuta un hook nuevo hasta que el usuario lo marca como
+ * confiable, y una configuración puede quedar a medio actualizar. Diferir
+ * sin quien entregue deja el relevo sin narrativa sin que nadie se entere.
+ * Como el hook corre al empezar cada turno, uno que funciona tiene una marca
+ * de minutos al llegar el `Stop`; 12 h solo cubre pausas largas.
+ */
+export const PROMPT_HOOK_FRESH_MS = 12 * 3600 * 1000;
+
+/** ¿El hook de entrega de este CLI dio señales de vida hace poco? */
+export function promptHookAlive(registro, agent, ahora = Date.now()) {
+  if (!PROMPT_HOOK_EVENTS[agent]) return false;
+  const t = Date.parse(registro?.[agent] ?? '');
+  return Number.isFinite(t) && ahora - t < PROMPT_HOOK_FRESH_MS && t <= ahora + 60_000;
+}
 
 /** Una petición anotada vale un rato: después ya no es «el trabajo anterior». */
 export const PENDING_TTL_MS = 12 * 3600 * 1000;
@@ -257,7 +292,17 @@ export function shouldDeliverPending(pending, sessionId, estado, ahora = Date.no
   return true;
 }
 
-/** Salida de `UserPromptSubmit` en Claude Code: contexto que no se pinta. */
-export function promptPayload(texto) {
-  return { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: texto } };
+/**
+ * La salida del hook de entrega, en el contrato de cada CLI. `null` para uno
+ * desconocido.
+ *
+ * Antigravity no acepta `hookSpecificOutput`: igual que en `SessionStart`,
+ * un formato ajeno no da error, se ignora en silencio. Su `systemMessage`
+ * va anidado en otro objeto, como exige su contrato.
+ */
+export function promptPayload(agent, texto) {
+  if (agent === 'agy') return { injectSteps: [{ systemMessage: { systemMessage: texto } }] };
+  const evento = PROMPT_HOOK_EVENTS[agent];
+  if (!evento) return null;
+  return { hookSpecificOutput: { hookEventName: evento, additionalContext: texto } };
 }

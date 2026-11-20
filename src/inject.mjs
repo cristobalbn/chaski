@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Hook de inyección. Lo ejecutan los tres CLIs al arrancar una sesión, y
-// Claude Code además en cada mensaje del usuario (UserPromptSubmit, #73).
+// además antes de cada respuesta para entregar la petición de narrativa:
+// UserPromptSubmit en Claude Code y Codex, PreInvocation en agy (#73).
 //
 // Lo que este script imprime por stdout entra al contexto del agent, así que
 // es la única parte de chaski que está en el camino crítico. Reglas:
@@ -10,9 +11,9 @@
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync, statSync, rmSync } from 'node:fs';
-import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath } from './lib/paths.mjs';
-import { askText, promptPayload, shouldDeliverPending, PENDING_TTL_MS } from './lib/ask.mjs';
-import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged } from './lib/relay.mjs';
+import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath } from './lib/paths.mjs';
+import { askText, promptPayload, shouldDeliverPending, PENDING_TTL_MS, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
+import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged, writeAtomic } from './lib/relay.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
 
 main();
@@ -30,8 +31,11 @@ function main() {
   // Mismo archivo para los dos hooks de entrada (invariante 8: cada nombre
   // que init escribe en una config ajena queda fijo para siempre, así que no
   // se agrega un tercero). Este camino corre en CADA mensaje del usuario:
-  // no lanza git ni re-renderiza nada, lee un JSON chico y sale.
-  if (process.argv[2] === 'UserPromptSubmit') return deliverPending(ev);
+  // no lanza git ni re-renderiza nada, lee un JSON chico y sale. En
+  // Antigravity es `PreInvocation`, que corre antes de cada llamada al modelo.
+  if (process.argv[2] === 'UserPromptSubmit' || process.argv[2] === 'PreInvocation') {
+    return deliverPending(ev, agentFromArg(process.argv[3]));
+  }
 
   const budget = createBudget(SESSION_START_BUDGET_MS);
   try {
@@ -116,12 +120,15 @@ function readPayload() {
  * falla, la protege igual shouldDeliverPending(), que no la entrega de nuevo
  * una vez que hay una narrativa posterior.
  */
-function deliverPending(ev) {
+function deliverPending(ev, agent) {
   try {
+    // Prueba de vida ANTES de mirar si hay algo que entregar: es lo que le
+    // permite a capture.mjs diferir la petición la próxima vez. Ver ask.mjs.
+    recordAlive(agent);
     const ruta = pendingAskPath(cwdFrom(ev));
     if (!existsSync(ruta)) return;
     const pending = readJson(ruta, null);
-    const sesion = ev.session_id ?? ev.sessionId ?? null;
+    const sesion = ev.session_id ?? ev.sessionId ?? ev.conversationId ?? ev.conversation_id ?? null;
     const estado = pending?.statePath ? readJson(pending.statePath, {}) ?? {} : {};
     const entregar = shouldDeliverPending(pending, sesion, estado);
     // Solo se borra la anotación de ESTA sesión (entregada o ya cubierta) o
@@ -132,12 +139,36 @@ function deliverPending(ev) {
     }
     if (!entregar) return;
     const texto = askText(String(pending.reason), pending.hasSkill !== false, pending.statePath, { beforeReply: true });
-    process.stdout.write(JSON.stringify(promptPayload(neutralizeMarks(texto))) + '\n');
+    const salida = promptPayload(agent, neutralizeMarks(texto));
+    if (salida) process.stdout.write(JSON.stringify(salida) + '\n');
   } catch (e) {
     process.stderr.write(`chaski: no se pudo entregar la petición de relevo (${e?.message ?? e})\n`);
   } finally {
     process.exitCode = 0;
   }
+}
+
+/** `claude-code` (como viaja en la línea de comando) → `claude code`. */
+function agentFromArg(arg) {
+  const n = String(arg ?? '').trim().toLowerCase().replace(/-/g, ' ');
+  return n === 'claude' ? 'claude code' : n;
+}
+
+/**
+ * Marca que el hook de entrega de este CLI corre. Se reescribe a lo sumo cada
+ * 10 minutos: en Antigravity el hook corre antes de cada llamada al modelo, y
+ * escribir en cada una sería trabajo y contención por nada.
+ */
+function recordAlive(agent) {
+  if (!PROMPT_HOOK_EVENTS[agent]) return;
+  try {
+    const ruta = promptHookPath();
+    const r = readJson(ruta, {}) ?? {};
+    const previo = Date.parse(r[agent] ?? '');
+    if (Number.isFinite(previo) && Date.now() - previo < 10 * 60_000 && previo <= Date.now()) return;
+    r[agent] = new Date().toISOString();
+    writeAtomic(ruta, JSON.stringify(r, null, 2));
+  } catch {}
 }
 
 function cwdFrom(ev) {

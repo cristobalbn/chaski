@@ -363,3 +363,10 @@ export function loadConfig(cwd) {
  * saber la rama. La sesión que trae adentro la ata a su conversación.
  */
 export function pendingAskPath(cwd) { return join(projectDir(cwd), TAMBO, 'pending-ask.json'); }
+
+/**
+ * Prueba de vida del hook de entrega de cada CLI: `{ "<agent>": "<ISO>" }`.
+ * La escribe inject.mjs al correr en `UserPromptSubmit`/`PreInvocation`, y
+ * capture.mjs solo difiere la petición si es reciente. Ver ask.mjs.
+ */
+export function promptHookPath() { return join(globalDir(), 'prompt-hook.json'); }

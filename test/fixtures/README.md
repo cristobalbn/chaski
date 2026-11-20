@@ -24,6 +24,11 @@ existen para detectar.
 | `agy.payload.json` | hook `Stop`, Antigravity CLI 1.4.12 |
 | `agy.transcript.jsonl` | pasos con `step_index`, `type` y `content` |
 | `agy-tool-calls.transcript.jsonl` | formato observado el 2026-11-07: `tool_calls` en `PLANNER_RESPONSE` y salidas `GENERIC`; contenido sintético |
+| `claude-code-prompt.payload.json` | hook `UserPromptSubmit` de Claude Code, **según la documentación oficial** (2026-11-20), sin captura real todavía |
+| `codex-prompt.payload.json` | hook `UserPromptSubmit` de Codex, **según la documentación oficial** (2026-11-20), sin captura real todavía |
+| `agy-preinvocation.payload.json` | hook `PreInvocation` de Antigravity, **según la documentación instalada** (`agy-customizations/docs/hooks.md`), sin captura real todavía |
+
+Los tres `*-prompt` / `*-preinvocation` no salen de `chaski probe`: reemplázalos por una captura real en cuanto haya una. Si la forma difiere, el test de contrato lo dice.
 
 Los tres formatos de transcript son distintos entre sí. Ninguno de los CLIs
 prometió mantenerlos estables entre versiones, y por eso hay un test por
