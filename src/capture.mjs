@@ -14,7 +14,7 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath } from './lib/paths.mjs';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath, openTurnsPath } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
@@ -54,6 +54,12 @@ function main() {
     // contaminaría el relevo con cien lecturas de archivos y tres caminos
     // abandonados que a nadie le sirven mañana.
     if (ev.agent_id) return ok();
+
+    // El turno terminó: se quita su marca de turno abierto. Va antes del lock
+    // a propósito: si otro proceso lo tiene, esta captura se saltea, pero el
+    // turno igual terminó bien y avisar lo contrario sería mentir. PreCompact
+    // no cierra el turno (la compactación automática ocurre a mitad de uno).
+    if (ev.hook_event_name !== 'PreCompact') closeTurn(cwd, ev.session_id);
 
     // Un solo escritor. Si otro proceso tiene el lock, este turno se saltea:
     // el siguiente lo recupera, porque la marca de agua no avanzó.
@@ -349,6 +355,19 @@ function freshSubagents(lista, ahora = Date.now()) {
     return Number.isFinite(t) && ahora - t < SUBAGENT_TTL_MS;
   });
   return vivas.length ? vivas : null;
+}
+
+/** Quita la marca de turno abierto de esta sesión. Nunca lanza. */
+function closeTurn(cwd, session) {
+  if (!session) return;
+  try {
+    const ruta = openTurnsPath(cwd);
+    if (!existsSync(ruta)) return;
+    const abiertos = readJson(ruta, {}) ?? {};
+    if (!(session in abiertos)) return;
+    delete abiertos[session];
+    writeAtomic(ruta, JSON.stringify(abiertos, null, 2));
+  } catch {}
 }
 
 /**

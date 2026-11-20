@@ -1926,3 +1926,45 @@ describe('#73: umbral configurable y petición diferida', () => {
     });
   });
 });
+
+describe('etiquetas <private>', () => {
+  test('lo marcado como privado no llega al texto, y se cuenta', () => {
+    const { texto, redactions } = redact('el cliente <private>ACME Ltda, 3.200 USD</private> pidió el cambio');
+    assert.equal(texto, 'el cliente [privado] pidió el cambio');
+    assert.equal(redactions, 1);
+  });
+
+  test('varias etiquetas, multilínea y en mayúsculas', () => {
+    const { texto, redactions } = redact('a <private>uno\ndos</private> b <PRIVATE>tres</PRIVATE> c');
+    assert.equal(texto, 'a [privado] b [privado] c');
+    assert.equal(redactions, 2);
+  });
+
+  test('una etiqueta sin cerrar tapa hasta el final', () => {
+    const { texto } = redact('visible <private>esto no se cierra nunca\ny sigue');
+    assert.equal(texto, 'visible [privado]');
+  });
+
+  test('sin etiquetas el texto queda igual', () => {
+    // Caso positivo de los anteriores: el texto de adentro sí aparece si no
+    // está marcado, así que las aserciones de arriba prueban algo.
+    assert.equal(redact('el cliente ACME Ltda pidió el cambio').texto, 'el cliente ACME Ltda pidió el cambio');
+  });
+
+  test('un secreto dentro de la etiqueta tampoco deja rastro', () => {
+    const token = ['sk', '-', 'c'.repeat(32)].join('');
+    assert.ok(redact(token).redactions > 0, 'el token de prueba no es detectable');
+    const { texto } = redact(`x <private>${token}</private> y`);
+    assert.equal(texto, 'x [privado] y');
+  });
+
+  test('el relevo renderizado respeta la etiqueta en la narrativa', () => {
+    const md = render({
+      version: 1, agent: 'claude code', writtenAt: new Date().toISOString(),
+      facts: { branch: 'main', isRepo: true, dirty: [] }, commands: [],
+      narrative: 'Migrando pagos de <private>Banco Ejemplo</private> a la API nueva.',
+    });
+    assert.match(md, /Migrando pagos de \[privado\] a la API nueva/);
+    assert.ok(!md.includes('Banco Ejemplo'));
+  });
+});

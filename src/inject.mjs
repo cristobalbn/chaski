@@ -11,7 +11,8 @@
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync, statSync, rmSync } from 'node:fs';
-import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath } from './lib/paths.mjs';
+import { relayPath, statePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, OPEN_TURN_TTL_MS } from './lib/paths.mjs';
+import { dirname } from 'node:path';
 import { askText, promptPayload, shouldDeliverPending, PENDING_TTL_MS, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged, writeAtomic } from './lib/relay.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
@@ -90,6 +91,9 @@ function main() {
     const deriva = detectDrift(cwd, estado, budget, ramaActual);
     if (deriva) partes.push('', neutralizeMarks(deriva));
 
+    const cortados = interruptedTurns(cwd, estado, sessionOf(ev));
+    if (cortados) partes.push('', neutralizeMarks(cortados));
+
     partes.push('', CLOSING_MARK);
 
     let salida = partes.join('\n');
@@ -125,10 +129,11 @@ function deliverPending(ev, agent) {
     // Prueba de vida ANTES de mirar si hay algo que entregar: es lo que le
     // permite a capture.mjs diferir la petición la próxima vez. Ver ask.mjs.
     recordAlive(agent);
+    const sesion = sessionOf(ev);
+    openTurn(cwdFrom(ev), sesion, agent);
     const ruta = pendingAskPath(cwdFrom(ev));
     if (!existsSync(ruta)) return;
     const pending = readJson(ruta, null);
-    const sesion = ev.session_id ?? ev.sessionId ?? ev.conversationId ?? ev.conversation_id ?? null;
     const estado = pending?.statePath ? readJson(pending.statePath, {}) ?? {} : {};
     const entregar = shouldDeliverPending(pending, sesion, estado);
     // Solo se borra la anotación de ESTA sesión (entregada o ya cubierta) o
@@ -145,6 +150,72 @@ function deliverPending(ev, agent) {
     process.stderr.write(`chaski: no se pudo entregar la petición de relevo (${e?.message ?? e})\n`);
   } finally {
     process.exitCode = 0;
+  }
+}
+
+/** Id de la conversación, con el nombre que use cada CLI. */
+function sessionOf(ev) {
+  return ev.session_id ?? ev.sessionId ?? ev.conversationId ?? ev.conversation_id ?? null;
+}
+
+/**
+ * Anota que esta sesión empezó un turno. capture.mjs la quita al cerrarlo
+ * (closeTurn); si sobrevive, el turno se cortó, y la sesión siguiente lo
+ * avisa (interruptedTurns).
+ *
+ * Solo en un proyecto donde chaski ya escribió algo: este hook corre en cada
+ * mensaje de cualquier proyecto, y crear `.tambo/` en uno que nunca capturó
+ * sería ensuciarle el árbol a alguien. Una escritura por turno, no por
+ * llamada: en agy el hook corre varias veces por turno.
+ */
+function openTurn(cwd, session, agent) {
+  if (!session) return;
+  try {
+    const ruta = openTurnsPath(cwd);
+    if (!existsSync(dirname(ruta))) return;
+    const abiertos = readJson(ruta, {}) ?? {};
+    if (abiertos[session]) return;
+    const ahora = Date.now();
+    for (const [s, t] of Object.entries(abiertos)) {
+      if (!(ahora - Date.parse(t?.at ?? '') < OPEN_TURN_TTL_MS)) delete abiertos[s];
+    }
+    abiertos[session] = { agent, at: new Date(ahora).toISOString() };
+    writeAtomic(ruta, JSON.stringify(abiertos, null, 2));
+  } catch {}
+}
+
+/**
+ * Turnos de OTRAS sesiones que empezaron después del relevo y no terminaron.
+ *
+ * «Después del relevo» es la condición que importa: si hubo una captura
+ * posterior, el relevo ya refleja el estado de después del corte. Si no, lo
+ * que el agente nuevo lee es de antes de un turno que hizo algo y no llegó a
+ * cerrar: puede haber archivos a medio editar o un comando a medio correr.
+ * Los hechos de git se recalculan igual al arrancar; lo que puede faltar son
+ * los comandos y el porqué.
+ */
+function interruptedTurns(cwd, estado, sesionActual) {
+  try {
+    const abiertos = readJson(openTurnsPath(cwd), {}) ?? {};
+    const desde = Date.parse(estado?.writtenAt ?? '') || 0;
+    const ahora = Date.now();
+    const lineas = [];
+    for (const [s, t] of Object.entries(abiertos)) {
+      const at = Date.parse(t?.at ?? '');
+      if (s === sesionActual || !Number.isFinite(at) || at <= desde || ahora - at > OPEN_TURN_TTL_MS) continue;
+      const min = Math.max(0, Math.round((ahora - at) / 60000));
+      const hace = min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} día(s)`;
+      lineas.push(`- Un turno de ${String(t.agent ?? 'otro agente').replace(/[^\w .-]/g, '')} empezó hace ${hace} y no terminó: se interrumpió, se cerró la ventana o se cortó.`);
+    }
+    if (!lineas.length) return null;
+    return [
+      '**ATENCIÓN: hubo un turno cortado después de este relevo.**',
+      ...lineas,
+      '',
+      'Lo que ese turno hizo no está en el relevo. Revisa `git status` y `git diff` antes de seguir: puede haber archivos a medio editar.',
+    ].join('\n');
+  } catch {
+    return null;
   }
 }
 

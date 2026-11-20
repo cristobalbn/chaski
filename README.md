@@ -581,6 +581,12 @@ nombre sensible, URLs con credenciales y cabeceras `Authorization`. Las rutas
 tipo `.env`, `*.pem` o `id_rsa` nunca aparecen en el relevo. Lo redactado deja
 marca visible, para que nadie confunda una redacción con un dato ausente.
 
+**Lo que marques como privado tampoco se guarda.** Un nombre de cliente o una
+cifra no tienen forma de secreto, así que ningún patrón los atrapa: envuélvelos
+en `<private>…</private>` (en tu mensaje, o pídele al agente que lo haga en la
+narrativa) y llegan al disco como `[privado]`. Una etiqueta sin cerrar tapa
+hasta el final del texto.
+
 **Alcance de escritura:** `.tambo/` del proyecto, `~/.chaski/`, y los archivos
 de configuración de los CLIs que habilitaste, más `.gitignore`, `AGENTS.md`,
 `.claude/skills/relevo/` y `.agents/skills/relevo/` durante `init` y
