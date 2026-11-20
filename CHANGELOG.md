@@ -6,11 +6,13 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 ## [No publicado]
 
 ### Cambiado
-- En Claude Code, la petición de narrativa ya no aparece debajo de la respuesta
-  (#73). Al terminar el turno solo se anota, y un hook nuevo de
-  `UserPromptSubmit` se la entrega al agente con el mensaje siguiente, para
-  que guarde el relevo antes de responder. Hace falta volver a correr
-  `chaski init`; sin el hook nuevo se sigue pidiendo en `Stop`.
+- La petición de narrativa ya no aparece debajo de la respuesta (#73), en
+  ninguno de los tres CLIs. Al terminar el turno solo se anota, y un hook nuevo
+  se la entrega al agente al empezar el turno siguiente, para que guarde el
+  relevo antes de responder: `UserPromptSubmit` en Claude Code y Codex,
+  `PreInvocation` en Antigravity. Hace falta volver a correr `chaski init`
+  (y en Codex, confiar en el hook nuevo). Mientras el hook de entrega no dé
+  señales de vida, se sigue pidiendo en `Stop`.
 
 ### Agregado
 - El relevo guarda la última respuesta del agente (`lastReply`), redactada y

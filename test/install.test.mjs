@@ -245,8 +245,8 @@ describe('uninstall revierte lo que init tocó', () => {
       m.correr('init');
       const sana = m.correr('doctor');
       assert.match(sana, /claude code\s+registrado \(SessionStart, UserPromptSubmit, Stop, SessionEnd, PreCompact, SubagentStop, StopFailure\)/);
-      assert.match(sana, /codex\s+registrado \(SessionStart, Stop\)/);
-      assert.match(sana, /agy\s+registrado \(SessionStart, Stop\)/);
+      assert.match(sana, /codex\s+registrado \(SessionStart, UserPromptSubmit, Stop\)/);
+      assert.match(sana, /agy\s+registrado \(SessionStart, Stop, PreInvocation\)/);
 
       // Mismo texto "chaski", eventos y nombres de script, pero sin un hook real.
       writeFileSync(join(m.casa, '.codex', 'config.toml'),
@@ -2054,56 +2054,131 @@ describe('narrativa guardada después de la última captura', () => {
 
 describe('#73: la petición de narrativa se entrega antes de la respuesta', () => {
   // En Stop, la petición llegaba después de la respuesta y el guardado la
-  // empujaba fuera de la pantalla. Con el hook de UserPromptSubmit registrado,
-  // Stop solo la anota y la entrega inject.mjs con el mensaje siguiente.
-  const transcript = join(AQUI, 'fixtures', 'claude-code.transcript.jsonl');
-  const capturar = (m, session) => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+  // empujaba fuera de la pantalla. Ahora Stop solo la anota y la entrega
+  // inject.mjs en el evento previo a la respuesta de cada CLI —si ese hook
+  // dio señales de vida—: UserPromptSubmit en Claude Code y Codex,
+  // PreInvocation en agy.
+  const CLIS = {
+    'claude-code': {
+      evento: 'UserPromptSubmit', transcript: 'claude-code.transcript.jsonl',
+      stop: (m, s, t) => ({ session_id: s, cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: t }),
+      prompt: (m, s) => ({ session_id: s, cwd: m.proyecto, hook_event_name: 'UserPromptSubmit', prompt: 'sigue' }),
+      texto: (o) => o.hookSpecificOutput?.additionalContext,
+      enStop: (o) => o.hookSpecificOutput?.additionalContext,
+    },
+    codex: {
+      evento: 'UserPromptSubmit', transcript: 'codex.transcript.jsonl',
+      stop: (m, s, t) => ({ session_id: s, cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: t }),
+      prompt: (m, s) => ({ session_id: s, turn_id: 't1', cwd: m.proyecto, hook_event_name: 'UserPromptSubmit', prompt: 'sigue' }),
+      texto: (o) => o.hookSpecificOutput?.additionalContext,
+      enStop: (o) => o.decision === 'block' && o.reason,
+    },
+    agy: {
+      evento: 'PreInvocation', transcript: 'agy.transcript.jsonl',
+      // camelCase y sin cwd: el contrato de Antigravity.
+      stop: (m, s, t) => ({ conversationId: s, workspacePaths: [m.proyecto], transcriptPath: t, executionNum: 0 }),
+      prompt: (m, s) => ({ conversationId: s, workspacePaths: [m.proyecto], invocationNum: 1, initialNumSteps: 4, lastUserInput: 'sigue' }),
+      texto: (o) => o.injectSteps?.[0]?.systemMessage?.systemMessage,
+      enStop: (o) => o.decision === 'continue' && o.reason,
+    },
+  };
+  const capturar = (m, agent, session) => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', agent], {
     cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
-    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: transcript }),
+    input: JSON.stringify(CLIS[agent].stop(m, session, join(AQUI, 'fixtures', CLIS[agent].transcript))),
   });
-  const mensaje = (m, session) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'UserPromptSubmit', 'claude-code'], {
+  const mensaje = (m, agent, session) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), CLIS[agent].evento, agent], {
     cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
-    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'UserPromptSubmit', prompt: 'sigue' }),
+    input: JSON.stringify(CLIS[agent].prompt(m, session)),
   });
   const pendiente = (m) => join(m.proyecto, '.tambo', 'pending-ask.json');
 
-  test('init registra UserPromptSubmit con inject.mjs y uninstall lo quita', () => {
+  test('init registra el hook de entrega en los tres CLIs y uninstall lo quita', () => {
     const m = montar('chaski-73-init-');
     try {
       m.correr('init');
-      const s = JSON.parse(readFileSync(join(m.casa, '.claude', 'settings.json'), 'utf8'));
-      const cmds = (s.hooks.UserPromptSubmit ?? []).flatMap((g) => g.hooks.map((h) => h.command));
+      const claude = JSON.parse(readFileSync(join(m.casa, '.claude', 'settings.json'), 'utf8'));
+      const cmds = (claude.hooks.UserPromptSubmit ?? []).flatMap((g) => g.hooks.map((h) => h.command));
       assert.ok(cmds.some((c) => /inject\.mjs"? UserPromptSubmit claude-code$/.test(c)), cmds.join('\n'));
+      const codex = readFileSync(join(m.casa, '.codex', 'config.toml'), 'utf8');
+      assert.match(codex, /\[\[hooks\.UserPromptSubmit\]\]\s*\n\[\[hooks\.UserPromptSubmit\.hooks\]\]/);
+      assert.match(codex, /codex-inject-UserPromptSubmit\.(?:cmd|sh)/);
+      const agy = JSON.parse(readFileSync(join(m.casa, '.gemini', 'config', 'hooks.json'), 'utf8'));
+      assert.match(agy.chaski.PreInvocation?.[0]?.command ?? '', /agy-inject-PreInvocation\.(?:cmd|sh)/);
+
       m.correr('uninstall');
       const tras = JSON.parse(readFileSync(join(m.casa, '.claude', 'settings.json'), 'utf8'));
       assert.ok(!JSON.stringify(tras.hooks?.UserPromptSubmit ?? []).includes('inject.mjs'),
         'uninstall dejó el hook de UserPromptSubmit');
+      assert.doesNotMatch(readFileSync(join(m.casa, '.codex', 'config.toml'), 'utf8'), /UserPromptSubmit/);
+      const agyTras = JSON.parse(readFileSync(join(m.casa, '.gemini', 'config', 'hooks.json'), 'utf8'));
+      assert.equal(agyTras.chaski, undefined);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
-  test('Stop no imprime nada y el mensaje siguiente recibe la petición, una sola vez', () => {
-    const m = montar('chaski-73-flujo-');
+  for (const agent of Object.keys(CLIS)) {
+    test(`${agent}: Stop no imprime nada y el turno siguiente recibe la petición, una sola vez`, () => {
+      const m = montar(`chaski-73-${agent}-`);
+      try {
+        // El hook de entrega corre al empezar cada turno; esta primera vez no
+        // hay nada que entregar, pero deja la prueba de vida.
+        const primero = mensaje(m, agent, 's73');
+        assert.equal(primero.status, 0);
+        assert.equal(primero.stdout, '');
+        assert.equal(primero.stderr, '', 'el hook ocultó un error propio');
+
+        writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 73;\n');
+        const r = capturar(m, agent, 's73');
+        assert.equal(r.status, 0);
+        assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+        assert.equal(r.stdout, '', 'Stop volvió a pedir la narrativa debajo de la respuesta');
+        assert.ok(existsSync(pendiente(m)), 'no anotó la petición');
+
+        const e = mensaje(m, agent, 's73');
+        assert.equal(e.status, 0);
+        assert.equal(e.stderr, '', 'el hook ocultó un error propio');
+        const texto = CLIS[agent].texto(JSON.parse(e.stdout)) ?? '';
+        assert.match(texto, /antes de responder este mensaje/);
+        assert.match(texto, /todavía no tiene narrativa/);
+        assert.ok(!existsSync(pendiente(m)), 'la anotación quedó y se entregaría de nuevo');
+
+        // En agy el hook corre antes de CADA llamada al modelo del turno.
+        assert.equal(mensaje(m, agent, 's73').stdout, '', 'entregó la misma petición dos veces');
+      } finally {
+        rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      }
+    });
+
+    test(`${agent}: si el hook de entrega nunca corrió, sigue pidiendo en Stop`, () => {
+      // Instalación sin volver a correr init, o en Codex un hook nuevo que el
+      // usuario todavía no marcó como confiable. Diferir ahí sería quedarse
+      // sin narrativa en silencio. El caso positivo es el test de arriba.
+      const m = montar(`chaski-73-${agent}-viejo-`);
+      try {
+        writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 76;\n');
+        const r = capturar(m, agent, 's');
+        assert.equal(r.stderr, '', 'el hook ocultó un error propio');
+        assert.match(CLIS[agent].enStop(JSON.parse(r.stdout)) || '', /antes de cerrar/);
+        assert.ok(!existsSync(pendiente(m)));
+      } finally {
+        rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      }
+    });
+  }
+
+  test('doctor dice en qué CLI la petición ya llega antes de la respuesta', () => {
+    const m = montar('chaski-73-doctor-');
     try {
       m.correr('init');
-      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 73;\n');
-      const r = capturar(m, 's73');
-      assert.equal(r.status, 0);
-      assert.equal(r.stderr, '', 'el hook ocultó un error propio');
-      assert.equal(r.stdout, '', 'Stop volvió a pedir la narrativa debajo de la respuesta');
-      assert.ok(existsSync(pendiente(m)), 'no anotó la petición');
-
-      const e = mensaje(m, 's73');
-      assert.equal(e.status, 0);
-      assert.equal(e.stderr, '', 'el hook ocultó un error propio');
-      const o = JSON.parse(e.stdout);
-      assert.equal(o.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-      assert.match(o.hookSpecificOutput.additionalContext, /antes de responder este mensaje/);
-      assert.match(o.hookSpecificOutput.additionalContext, /todavía no tiene narrativa/);
-      assert.ok(!existsSync(pendiente(m)), 'la anotación quedó y se entregaría de nuevo');
-
-      assert.equal(mensaje(m, 's73').stdout, '', 'entregó la misma petición dos veces');
+      const antes = m.correr('doctor');
+      assert.match(antes, /claude code\s+después de la respuesta hasta que UserPromptSubmit corra/);
+      assert.match(antes, /codex\s+después de la respuesta hasta que UserPromptSubmit corra — Codex pide confiar/);
+      assert.match(antes, /agy\s+después de la respuesta hasta que PreInvocation corra/);
+      mensaje(m, 'claude-code', 's');
+      const despues = m.correr('doctor');
+      assert.match(despues, /claude code\s+antes de la respuesta/);
+      assert.match(despues, /codex\s+después de la respuesta/, 'la prueba de vida de Claude Code contó para Codex');
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -2112,13 +2187,13 @@ describe('#73: la petición de narrativa se entrega antes de la respuesta', () =
   test('otra sesión no recibe la petición ni la borra', () => {
     const m = montar('chaski-73-sesion-');
     try {
-      m.correr('init');
+      mensaje(m, 'claude-code', 'la-de-antes');
       writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 74;\n');
-      capturar(m, 'la-de-antes');
+      capturar(m, 'claude-code', 'la-de-antes');
       assert.ok(existsSync(pendiente(m)), 'el fixture no anotó nada; el test no probaría nada');
-      assert.equal(mensaje(m, 'otra').stdout, '');
+      assert.equal(mensaje(m, 'claude-code', 'otra').stdout, '');
       assert.ok(existsSync(pendiente(m)), 'borró la anotación de otra sesión');
-      assert.match(mensaje(m, 'la-de-antes').stdout, /antes de responder/);
+      assert.match(mensaje(m, 'claude-code', 'la-de-antes').stdout, /antes de responder/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -2127,28 +2202,28 @@ describe('#73: la petición de narrativa se entrega antes de la respuesta', () =
   test('si la narrativa se escribió entre medio, no se pide', () => {
     const m = montar('chaski-73-narrada-');
     try {
-      m.correr('init');
+      mensaje(m, 'claude-code', 's');
       writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 75;\n');
-      capturar(m, 's');
+      capturar(m, 'claude-code', 's');
       const p = JSON.parse(readFileSync(pendiente(m), 'utf8'));
       const estado = JSON.parse(readFileSync(p.statePath, 'utf8'));
       estado.narrative = 'escrita a mano';
       estado.narrativeWrittenAt = new Date(Date.parse(p.at) + 1000).toISOString();
       writeFileSync(p.statePath, JSON.stringify(estado));
-      assert.equal(mensaje(m, 's').stdout, '');
+      assert.equal(mensaje(m, 'claude-code', 's').stdout, '');
       assert.ok(!existsSync(pendiente(m)), 'la anotación cubierta quedó en disco');
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
-  test('sin el hook registrado (instalación vieja) sigue pidiendo en Stop', () => {
-    // Diferir sin quien entregue sería quedarse sin narrativa en silencio.
-    const m = montar('chaski-73-viejo-');
+  test('la prueba de vida es por CLI: la de Claude Code no hace diferir a Codex', () => {
+    const m = montar('chaski-73-cruce-');
     try {
-      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 76;\n');
-      const r = capturar(m, 's');
-      assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /antes de cerrar/);
+      mensaje(m, 'claude-code', 's');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 78;\n');
+      const r = capturar(m, 'codex', 's');
+      assert.equal(JSON.parse(r.stdout).decision, 'block', 'Codex difirió sin su propio hook vivo');
       assert.ok(!existsSync(pendiente(m)));
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
@@ -2158,7 +2233,7 @@ describe('#73: la petición de narrativa se entrega antes de la respuesta', () =
   test('sin anotación, el hook de cada mensaje no imprime nada ni crea .tambo', () => {
     const m = montar('chaski-73-vacio-');
     try {
-      const e = mensaje(m, 's');
+      const e = mensaje(m, 'claude-code', 's');
       assert.equal(e.status, 0);
       assert.equal(e.stdout, '');
       assert.equal(e.stderr, '');
@@ -2172,7 +2247,7 @@ describe('#73: la petición de narrativa se entrega antes de la respuesta', () =
     const m = montar('chaski-73-reply-');
     try {
       writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 77;\n');
-      capturar(m, 's');
+      capturar(m, 'claude-code', 's');
       const ramas = readdirSync(join(m.proyecto, '.tambo', 'branches'));
       const dir = join(m.proyecto, '.tambo', 'branches', ramas[0]);
       const estado = JSON.parse(readFileSync(join(dir, 'estado.json'), 'utf8'));

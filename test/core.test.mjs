@@ -19,7 +19,7 @@ import { redact, isExcludedPath } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
 import { branchSlug, pruneOrphanRelays, git, projectDir } from '../src/lib/paths.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
-import { shouldAsk, askText, askPayload, turnsThreshold, shouldDeliverPending, promptPayload, PENDING_TTL_MS } from '../src/lib/ask.mjs';
+import { shouldAsk, askText, askPayload, turnsThreshold, shouldDeliverPending, promptPayload, PENDING_TTL_MS, promptHookAlive, PROMPT_HOOK_EVENTS } from '../src/lib/ask.mjs';
 
 /** Presupuesto falso: `remaining()` fijo, no atado al reloj real. Para
  * probar decisiones de presupuesto sin depender de cuánto tarda la máquina. */
@@ -325,6 +325,27 @@ describe('contrato de payload: los tres traen lo mínimo', () => {
     assert.ok(Array.isArray(p.background_tasks));
     assert.ok(p.background_tasks.some((t) => t.status === 'running'));
   });
+});
+
+describe('contrato de payload: hook de entrega de la petición (#73)', () => {
+  // inject.mjs ata la petición a su conversación por el id de sesión y
+  // encuentra el proyecto por cwd/workspacePaths. Si un CLI renombra
+  // cualquiera de los dos, la petición anotada no se entrega nunca y el
+  // relevo se queda sin narrativa sin que nadie lo note.
+  for (const [cli, archivo, sesion, dir, par] of [
+    ['Claude Code', 'claude-code-prompt.payload.json', 'session_id', 'cwd', 'claude-code.payload.json'],
+    ['Codex', 'codex-prompt.payload.json', 'session_id', 'cwd', 'codex.payload.json'],
+    ['Antigravity', 'agy-preinvocation.payload.json', 'conversationId', 'workspacePaths', 'agy.payload.json'],
+  ]) {
+    test(cli, () => {
+      const p = payload(archivo);
+      assert.ok(typeof p[sesion] === 'string' && p[sesion], `falta ${sesion}`);
+      assert.ok(p[dir] !== undefined, `falta ${dir}`);
+      // El id tiene que ser EL MISMO campo que trae el Stop de ese CLI: es lo
+      // que capture.mjs guarda como sesión de la anotación.
+      assert.equal(p[sesion], payload(par)[sesion], 'el id de sesión no coincide con el del Stop');
+    });
+  }
 });
 
 test('lectura incremental: desde la marca de agua no relee nada', () => {
@@ -1812,11 +1833,32 @@ describe('#73: umbral configurable y petición diferida', () => {
     assert.match(askText('x'), /antes de cerrar/);
   });
 
-  test('promptPayload usa el contrato de UserPromptSubmit', () => {
-    const o = promptPayload('hola');
-    assert.equal(o.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-    assert.equal(o.hookSpecificOutput.additionalContext, 'hola');
-    assert.ok(!('decision' in o), 'decision: block rechazaría el mensaje del usuario');
+  test('promptPayload usa el contrato de cada CLI', () => {
+    for (const agent of ['claude code', 'codex']) {
+      const o = promptPayload(agent, 'hola');
+      assert.equal(o.hookSpecificOutput.hookEventName, 'UserPromptSubmit', agent);
+      assert.equal(o.hookSpecificOutput.additionalContext, 'hola', agent);
+      assert.ok(!('decision' in o), `${agent}: decision: block rechazaría el mensaje del usuario`);
+    }
+    // Antigravity ignora en silencio cualquier formato que no sea injectSteps,
+    // con el systemMessage anidado en otro objeto.
+    const a = promptPayload('agy', 'hola');
+    assert.deepEqual(a, { injectSteps: [{ systemMessage: { systemMessage: 'hola' } }] });
+    assert.ok(!('terminationBehavior' in a) || a.terminationBehavior === '',
+      'terminate cortaría la llamada al modelo');
+    assert.equal(promptPayload('desconocido', 'hola'), null);
+  });
+
+  test('promptHookAlive: solo una marca reciente del MISMO CLI permite diferir', () => {
+    const ahora = Date.parse('2026-11-20T12:00:00Z');
+    const r = { codex: '2026-11-20T11:50:00Z', agy: '2026-11-19T20:00:00Z' };
+    assert.equal(promptHookAlive(r, 'codex', ahora), true);
+    assert.equal(promptHookAlive(r, 'claude code', ahora), false, 'tomó la marca de otro CLI');
+    assert.equal(promptHookAlive(r, 'agy', ahora), false, 'aceptó una marca de hace 16 h');
+    assert.equal(promptHookAlive({ codex: '2026-11-21T12:00:00Z' }, 'codex', ahora), false, 'aceptó una marca del futuro');
+    assert.equal(promptHookAlive({ x: r.codex }, 'x', ahora), false);
+    assert.equal(promptHookAlive(null, 'codex', ahora), false);
+    assert.equal(PROMPT_HOOK_EVENTS.agy, 'PreInvocation');
   });
 
   describe('shouldDeliverPending', () => {

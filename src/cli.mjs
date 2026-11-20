@@ -15,7 +15,8 @@ import { join, resolve, dirname, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch } from './lib/paths.mjs';
+import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath } from './lib/paths.mjs';
+import { PROMPT_HOOK_EVENTS, promptHookAlive } from './lib/ask.mjs';
 import { writeAtomic, isValidSignature } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
 
@@ -410,6 +411,10 @@ function installAgy(ruta) {
   h.chaski = {
     SessionStart: [{ type: 'command', command: cmd(INJECT, 'SessionStart', 'agy', true), timeout: 10 }],
     Stop: [{ type: 'command', command: cmd(CAPTURE, 'Stop', 'agy', true), timeout: 10 }],
+    // Entrega la petición de narrativa antes de la respuesta, no después
+    // (#73). Corre antes de CADA llamada al modelo: inject.mjs sale sin hacer
+    // nada si no hay una petición anotada para esta conversación.
+    PreInvocation: [{ type: 'command', command: cmd(INJECT, 'PreInvocation', 'agy', true), timeout: 10 }],
   };
   return JSON.stringify(h, null, 2);
 }
@@ -438,6 +443,14 @@ function installCodex(ruta) {
     // Vía wrapper, igual que Antigravity: Codex también ejecuta con
     // `cmd /c`, así que una ruta con espacios entre comillas es frágil.
     `command = ${JSON.stringify(cmd(INJECT, 'SessionStart', 'codex', true))}`,
+    '',
+    // Entrega la petición de narrativa antes de la respuesta, no después
+    // (#73). Es un hook nuevo: Codex pide confiar en él antes de ejecutarlo,
+    // y mientras no corra, capture.mjs sigue pidiendo en `Stop`.
+    '[[hooks.UserPromptSubmit]]',
+    '[[hooks.UserPromptSubmit.hooks]]',
+    'type = "command"',
+    `command = ${JSON.stringify(cmd(INJECT, 'UserPromptSubmit', 'codex', true))}`,
     '',
     '[[hooks.Stop]]',
     '[[hooks.Stop.hooks]]',
@@ -662,6 +675,23 @@ function doctor() {
       console.log('    Abre una sesión interactiva y escribe algo. Si sigue sin');
       console.log('    aparecer, revisa el log del CLI: suele decir por qué falló.');
     }
+  }
+
+  // #73: la petición de narrativa solo se difiere al turno siguiente si el
+  // hook de entrega de ese CLI corre. Mientras no, llega debajo de la
+  // respuesta, y sin esta línea el usuario no tendría cómo saber por qué.
+  console.log('\nPetición de narrativa (antes de la respuesta o después)');
+  const vivos = readJson(promptHookPath(), {}) ?? {};
+  for (const [name, cli] of Object.entries(CLIS)) {
+    if (!isInstalled(cli.bin) || !existsSync(cli.config)) continue;
+    const evento = PROMPT_HOOK_EVENTS[name];
+    const registrado = (registeredEvents(cli) ?? []).includes(evento);
+    let nota;
+    if (!registrado) nota = `después de la respuesta — falta el hook ${evento}: ejecuta init`;
+    else if (promptHookAlive(vivos, name)) nota = 'antes de la respuesta';
+    else if (name === 'codex') nota = `después de la respuesta hasta que ${evento} corra — Codex pide confiar en el hook nuevo`;
+    else nota = `después de la respuesta hasta que ${evento} corra — escribe un mensaje en una sesión nueva`;
+    console.log(`  ${pad(name)} ${nota}`);
   }
 
   console.log('\nProyecto');

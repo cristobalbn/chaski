@@ -14,12 +14,11 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { homedir } from 'node:os';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath } from './lib/paths.mjs';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
-import { shouldAsk, askText, askPayload } from './lib/ask.mjs';
+import { shouldAsk, askText, askPayload, promptHookAlive } from './lib/ask.mjs';
 import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
 
 main();
@@ -215,7 +214,9 @@ function main() {
       const skillBase = estado.agent === 'claude code' ? '.claude' : '.agents';
       const hasSkill = inProject
         && existsSync(join(cwd, skillBase, 'skills', 'relevo', 'SKILL.md'));
-      if (canDefer(estado.agent)) {
+      // Sin id de sesión no hay cómo atar la anotación a su conversación, y
+      // shouldDeliverPending() no la entregaría nunca.
+      if (estado.session && canDefer(estado.agent)) {
         // #73: no se imprime nada. Lo entrega inject.mjs con el mensaje
         // siguiente del usuario, antes de la respuesta. Ver ask.mjs.
         writeAtomic(pendingAskPath(cwd), JSON.stringify({
@@ -382,19 +383,17 @@ function freshReply(r, ahora = Date.now()) {
 /**
  * ¿Puede diferirse la petición al mensaje siguiente? (#73)
  *
- * Solo en Claude Code, y solo si su configuración tiene el hook de
- * `UserPromptSubmit` de chaski. Una instalación anterior que actualizó el
- * paquete sin volver a correr `init` no lo tiene: diferir ahí sería anotar
- * peticiones que nadie entrega, y quedarse sin narrativa en silencio. Para
- * esas sigue la petición en `Stop`, que molesta pero funciona.
+ * Solo si el hook de entrega de ESE CLI dio señales de vida hace poco.
+ * Mirar la configuración no alcanza (así lo hacía la primera versión, solo
+ * para Claude Code): una instalación que actualizó el paquete sin volver a
+ * correr `init` no tiene el hook, y en Codex un hook registrado no corre
+ * hasta que el usuario lo marca como confiable. Diferir ahí sería anotar
+ * peticiones que nadie entrega y quedarse sin narrativa en silencio. Para
+ * esos casos sigue la petición en `Stop`, que molesta pero funciona.
  */
 function canDefer(agent) {
-  if (agent !== 'claude code') return false;
   try {
-    const s = JSON.parse(readFileSync(join(homedir(), '.claude', 'settings.json'), 'utf8').replace(/^﻿/, ''));
-    const grupos = s?.hooks?.UserPromptSubmit;
-    return Array.isArray(grupos) && grupos.some((g) => Array.isArray(g?.hooks)
-      && g.hooks.some((h) => /inject\.mjs"?\s+UserPromptSubmit\b/.test(String(h?.command ?? ''))));
+    return promptHookAlive(readJson(promptHookPath(), {}), agent);
   } catch {
     return false;
   }
