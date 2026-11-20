@@ -19,7 +19,7 @@ import { redact, isExcludedPath, anonymize } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
 import { branchSlug, pruneOrphanRelays, git, projectDir } from '../src/lib/paths.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
-import { shouldAsk, askText, askPayload, turnsThreshold, shouldDeliverPending, promptPayload, PENDING_TTL_MS, promptHookAlive, PROMPT_HOOK_EVENTS } from '../src/lib/ask.mjs';
+import { shouldAsk, askText, askPayload, turnsThreshold, shouldDeliverPending, promptPayload, PENDING_TTL_MS, promptHookAlive, PROMPT_HOOK_EVENTS, quotaPressure, usageSummary } from '../src/lib/ask.mjs';
 
 /** Presupuesto falso: `remaining()` fijo, no atado al reloj real. Para
  * probar decisiones de presupuesto sin depender de cuánto tarda la máquina. */
@@ -1989,5 +1989,77 @@ describe('anonymize (para lo que se publica)', () => {
   test('texto sin datos personales queda igual', () => {
     const t = 'Migrando la capa de auth a JWT en src/auth/refresh.ts:41.';
     assert.deepEqual(anonymize(t, { home: '/home/z' }), { texto: t, anonymized: 0 });
+  });
+});
+
+describe('cuota (#82)', () => {
+  const ahora = Date.parse('2026-11-20T12:00:00Z');
+  const resets = Math.floor(ahora / 1000) + 3600;
+  const uso = (cinco, siete = 10, at = '2026-11-20T11:55:00Z') => ({
+    at,
+    fiveHour: { usedPercentage: cinco, resetsAt: resets },
+    sevenDay: { usedPercentage: siete, resetsAt: resets + 86400 },
+  });
+
+  test('quotaPressure: bajo el umbral no hay presión; en el umbral sí', () => {
+    assert.equal(quotaPressure(uso(79), {}, ahora), null);
+    const p = quotaPressure(uso(80), {}, ahora);
+    assert.deepEqual([p.window, p.pct, p.resetsAt], ['5 h', 80, resets]);
+    assert.equal(p.key, `5 h:${resets}`);
+  });
+
+  test('quotaPressure: elige la ventana más gastada que pasa el umbral', () => {
+    assert.equal(quotaPressure(uso(85, 95), {}, ahora).window, '7 días');
+  });
+
+  test('quotaPressure: un dato viejo o una ventana ya renovada no cuentan', () => {
+    assert.ok(quotaPressure(uso(90), {}, ahora), 'el caso positivo no dio presión');
+    assert.equal(quotaPressure(uso(90, 10, '2026-11-20T11:30:00Z'), {}, ahora), null, 'aceptó un dato de hace 30 min');
+    const renovada = uso(90);
+    renovada.fiveHour.resetsAt = Math.floor(ahora / 1000) - 60;
+    assert.equal(quotaPressure(renovada, {}, ahora), null, 'aceptó una ventana que ya se renovó');
+    assert.equal(quotaPressure(null, {}, ahora), null);
+  });
+
+  test('askNarrativeAtQuota: false apaga, un número cambia el umbral, uno inválido usa 80', () => {
+    assert.equal(quotaPressure(uso(95), { askNarrativeAtQuota: false }, ahora), null);
+    assert.equal(quotaPressure(uso(95), { askNarrativeAtQuota: 0 }, ahora), null);
+    assert.ok(quotaPressure(uso(55), { askNarrativeAtQuota: 50 }, ahora));
+    assert.equal(quotaPressure(uso(55), { askNarrativeAtQuota: 150 }, ahora), null);
+    assert.ok(quotaPressure(uso(85), { askNarrativeAtQuota: 'x' }, ahora));
+  });
+
+  describe('shouldAsk con cuota', () => {
+    const estado = () => ({
+      agent: 'claude code', turns: 3, head: 'aaa1111', writtenAt: new Date(ahora).toISOString(),
+      facts: { dirty: [{ ruta: 'a.js' }] }, commands: [], narrative: 'algo',
+      narrativeWrittenAt: new Date(ahora - 3600_000).toISOString(),
+    });
+    const cuota = { window: '5 h', pct: 86, resetsAt: resets, key: `5 h:${resets}` };
+
+    test('pide si la cuota pasa el umbral y hubo trabajo desde la narrativa', () => {
+      assert.equal(shouldAsk({ hook_event_name: 'Stop' }, estado(), { turnsAtNarrative: 2 }, {}, ahora, cuota),
+        'la cuota de 5 h va en 86 %');
+    });
+
+    test('una vez por ventana: con la misma key ya pedida, no repite', () => {
+      assert.equal(shouldAsk({ hook_event_name: 'Stop' }, estado(),
+        { turnsAtNarrative: 2, askedQuotaKey: cuota.key }, {}, ahora, cuota), null);
+    });
+
+    test('sin trabajo después de la narrativa no pide', () => {
+      assert.equal(shouldAsk({ hook_event_name: 'Stop' }, estado(), { turnsAtNarrative: 3 }, {}, ahora, cuota), null);
+    });
+
+    test('sin cuota, la misma situación no pide (3 turnos no llegan al umbral)', () => {
+      assert.equal(shouldAsk({ hook_event_name: 'Stop' }, estado(), { turnsAtNarrative: 2 }, {}, ahora, null), null);
+    });
+  });
+
+  test('usageSummary resume las dos ventanas y cuánto tiene el dato', () => {
+    const r = usageSummary(uso(42, 13), ahora);
+    assert.match(r, /^cuota 5 h al 42 %, se renueva \d{2}:\d{2} · 7 días al 13 %/);
+    assert.match(r, /dato de hace 5 min/);
+    assert.equal(usageSummary(uso(42, 13, '2026-11-19T00:00:00Z'), ahora), null);
   });
 });

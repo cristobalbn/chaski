@@ -6,6 +6,12 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 ## [No publicado]
 
 ### Agregado
+- **La narrativa se pide antes de que se acabe la cuota** (#82, Claude Code,
+  planes Pro, Max y Ultra). `chaski init --statusline` instala una statusline
+  que envuelve la tuya (la sigue mostrando) y anota cuánto llevas de las
+  ventanas de 5 h y 7 días; cuando una pasa del 80 % (`askNarrativeAtQuota`),
+  `Stop` pide la narrativa, una vez por ventana. `chaski next` y `doctor`
+  muestran la cuota; `uninstall` devuelve tu statusline.
 - chaski se puede instalar como **plugin de Claude Code** (#80): el repositorio
   es a la vez el marketplace y el plugin (`/plugin marketplace add
   cristobalbn/chaski` y `/plugin install chaski@chaski`). Los hooks y la skill

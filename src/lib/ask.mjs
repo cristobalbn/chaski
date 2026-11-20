@@ -63,8 +63,9 @@ export const NARRATIVA_FRESCA_MIN = 20;
  * @param previo  el estado del turno anterior
  * @param config  configuración mezclada del proyecto
  * @param ahora   Date.now() inyectable, para poder probar sin esperar
+ * @param cuota   presión de cuota de quotaPressure(), o null (#82)
  */
-export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
+export function shouldAsk(ev, estado, previo, config, ahora = Date.now(), cuota = null) {
   // Apagable. Quien no quiera un turno extra nunca, pone `askNarrative: false`.
   if (config?.askNarrative === false) return null;
 
@@ -114,6 +115,13 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now()) {
   const baseTurns = mismaSesion && (previo?.turnsAtNarrative ?? 0) <= (estado.turns ?? 0)
     ? (previo?.turnsAtNarrative ?? 0) : 0;
   const turnosDesde = (estado.turns ?? 0) - baseTurns;
+  // La cuota se acaba (#82): es la razón de pedir la narrativa temprano, así
+  // que va antes que los motivos por turnos. Una vez por ventana: si ya se
+  // pidió en esta (misma `key`), no se repite aunque la cuota siga subiendo.
+  // Y solo si hubo trabajo después de la última narrativa.
+  if (cuota && cuota.key !== (previo?.askedQuotaKey ?? null) && turnosDesde >= 1) {
+    return `la cuota de ${cuota.window} va en ${cuota.pct} %`;
+  }
   if (commitsNuevos) return 'hay commits nuevos desde la última narrativa';
   if (turnosDesde >= turnsThreshold(config)) return `van ${turnosDesde} turnos desde la última narrativa`;
 
@@ -320,3 +328,55 @@ export const COMPACT_HINT = [
   'qué quedó a medias, con rutas y líneas; y el siguiente paso concreto.',
   'Los archivos tocados, los commits y los comandos los guarda chaski y no hace falta repetirlos.',
 ].join(' ');
+
+// ----------------------------------------------------------- cuota (#82)
+
+/** Umbral por defecto de `askNarrativeAtQuota`, en porcentaje de la ventana. */
+export const QUOTA_THRESHOLD = 80;
+
+/** Un dato de cuota más viejo que esto ya no describe la sesión actual. */
+export const USAGE_FRESH_MS = 15 * 60 * 1000;
+
+/**
+ * ¿La cuota de este CLI está por acabarse? Devuelve
+ * `{ window, pct, resetsAt, key }` de la ventana más gastada que pasa el
+ * umbral, o null.
+ *
+ * `uso` es la entrada de ese CLI en ~/.chaski/usage.json. Solo vale si es
+ * reciente (la statusline la renueva con cada mensaje) y si la ventana no se
+ * renovó ya (`resetsAt` en el pasado). `askNarrativeAtQuota: false` (o 0) lo
+ * apaga; un valor fuera de 1..100 usa el de defecto.
+ */
+export function quotaPressure(uso, config, ahora = Date.now()) {
+  const conf = config?.askNarrativeAtQuota;
+  if (conf === false || conf === 0) return null;
+  const umbral = Number.isInteger(conf) && conf >= 1 && conf <= 100 ? conf : QUOTA_THRESHOLD;
+  const at = Date.parse(uso?.at ?? '');
+  if (!Number.isFinite(at) || ahora - at > USAGE_FRESH_MS || at > ahora + 60_000) return null;
+  const candidatas = [['5 h', uso.fiveHour], ['7 días', uso.sevenDay]]
+    .map(([window, w]) => ({ window, pct: Math.round(Number(w?.usedPercentage)), resetsAt: w?.resetsAt ?? null }))
+    .filter((c) => Number.isFinite(c.pct) && c.pct >= umbral)
+    .filter((c) => !(Number.isFinite(c.resetsAt) && c.resetsAt * 1000 <= ahora))
+    .sort((a, b) => b.pct - a.pct);
+  if (!candidatas.length) return null;
+  const c = candidatas[0];
+  return { ...c, key: `${c.window}:${c.resetsAt ?? 'sin-fecha'}` };
+}
+
+/** Una línea legible de la cuota, para `chaski next` y `doctor`. null si no hay dato reciente. */
+export function usageSummary(uso, ahora = Date.now(), frescura = 6 * 3600 * 1000) {
+  const at = Date.parse(uso?.at ?? '');
+  if (!Number.isFinite(at) || ahora - at > frescura) return null;
+  const partes = [];
+  for (const [nombre, w] of [['5 h', uso.fiveHour], ['7 días', uso.sevenDay]]) {
+    const pct = Number(w?.usedPercentage);
+    if (!Number.isFinite(pct)) continue;
+    const resets = Number(w?.resetsAt);
+    const vence = Number.isFinite(resets) && resets * 1000 > ahora
+      ? `, se renueva ${new Date(resets * 1000).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}` : '';
+    partes.push(`${nombre} al ${Math.round(pct)} %${vence}`);
+  }
+  if (!partes.length) return null;
+  const min = Math.max(0, Math.round((ahora - at) / 60000));
+  return `cuota ${partes.join(' · ')} (dato de hace ${min} min)`;
+}
