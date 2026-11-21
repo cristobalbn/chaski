@@ -18,7 +18,7 @@ import {
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -3344,6 +3344,58 @@ describe('hallazgos de la auditoría del 2026-11-20', () => {
   });
 });
 
+test('varios procesos registran y consumen pedidos y turnos sin pisarse', async () => {
+  const m = montar('chaski-state-race-');
+  try {
+    const tambo = join(m.proyecto, '.tambo');
+    mkdirSync(tambo);
+    const pending = pathToFileURL(join(SRC, 'lib', 'pending.mjs')).href;
+    const turns = pathToFileURL(join(SRC, 'lib', 'turns.mjs')).href;
+    const helper = `
+      import { notePendingAsk, takePendingAsk } from ${JSON.stringify(pending)};
+      import { openTurn, closeTurn } from ${JSON.stringify(turns)};
+      const [mode, id] = process.argv.slice(1);
+      const cwd = process.cwd();
+      for (let i = 0; i < 6; i++) {
+        const session = id + '-' + i;
+        if (mode === 'open') {
+          if (!notePendingAsk(cwd, { session, at: new Date().toISOString(), reason: session })) process.exit(2);
+          openTurn(cwd, session, 'codex');
+        } else {
+          if (takePendingAsk(cwd, session, () => null)?.reason !== session) process.exit(3);
+          closeTurn(cwd, session);
+        }
+      }
+    `;
+    const ids = Array.from({ length: 6 }, (_, i) => String(i));
+    const run = (mode, id) => new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['--input-type=module', '-e', helper, mode, id], {
+        cwd: m.proyecto, env: m.entorno, stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      let stderr = '';
+      child.stderr.on('data', (data) => { stderr += data; });
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ id, code, stderr }));
+    });
+    const concurrent = async (mode) => {
+      const results = await Promise.all(ids.map((id) => run(mode, id)));
+      for (const result of results) assert.equal(result.code, 0, JSON.stringify(result));
+    };
+    const asksPath = join(tambo, 'pending-ask.json');
+    const turnsPath = join(tambo, 'turns-open.json');
+    const sessions = ids.flatMap((id) => Array.from({ length: 6 }, (_, i) => id + '-' + i));
+    const read = (path) => JSON.parse(readFileSync(path, 'utf8'));
+    await concurrent('open');
+    assert.deepEqual(Object.keys(read(asksPath)).sort(), sessions);
+    assert.deepEqual(Object.keys(read(turnsPath)).sort(), sessions);
+    await concurrent('close');
+    assert.equal(existsSync(asksPath), false);
+    assert.deepEqual(read(turnsPath), {});
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
 describe('varias ventanas en el mismo proyecto', () => {
   // Con un solo pedido por proyecto, el Stop de una ventana borraba el pedido
   // de la otra, que no se entregaba nunca. Ahora hay uno por sesión.
@@ -3382,6 +3434,22 @@ describe('varias ventanas en el mismo proyecto', () => {
         'entregar el pedido de A borró el de B');
       assert.match(texto(prompt(m, 'ventana-B')), /antes de responder este mensaje/);
       assert.ok(!existsSync(join(m.proyecto, '.tambo', 'pending-ask.json')), 'sin pedidos, el archivo debe desaparecer');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('Stop entrega el pedido inmediatamente si no puede anotarlo', () => {
+    const m = montar('chaski-pending-fallback-');
+    try {
+      prompt(m, 'sesion');
+      mkdirSync(join(m.proyecto, '.tambo', 'pending-ask.json'), { recursive: true });
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 99;\n');
+      const r = stop(m, 'sesion');
+      assert.equal(r.status, 0);
+      assert.match(texto(r), /antes de cerrar, guarda el relevo/);
+      const cost = JSON.parse(readFileSync(join(m.casa, '.chaski', 'cost.json'), 'utf8'));
+      assert.equal(cost.asks.at(-1).deferred ?? false, false);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

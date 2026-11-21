@@ -10,6 +10,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   conserva los cambios hechos en la configuración desde que se activó la sonda.
 - Al desinstalar la statusline se guarda primero la restauración en
   Claude Code para que un fallo de escritura permita volver a intentarlo.
+- Los pedidos y las marcas de turno se actualizan bajo un lock breve para
+  que dos hooks simultáneos conserven cambios de ambas sesiones.
 - Con varias ventanas abiertas en el mismo proyecto, el pedido de narrativa
   de una pisaba el de la otra, que no se entregaba nunca: había un solo
   espacio por proyecto. Ahora hay uno por sesión (se sigue leyendo el formato

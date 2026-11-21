@@ -15,17 +15,19 @@
 import { existsSync, rmSync } from 'node:fs';
 import { readJson, pendingAskPath } from './paths.mjs';
 import { writeAtomic } from './relay.mjs';
+import { withFileLock } from './lock.mjs';
 import { shouldDeliverPending, samePendingConversation, PENDING_TTL_MS } from './ask.mjs';
 import { isFresh } from './time.mjs';
 
 /** Todos los pedidos anotados, por sesión. Lee el formato viejo de uno solo. */
-export function readPendingAsks(cwd) {
-  const crudo = readJson(pendingAskPath(cwd), null);
-  if (!crudo || typeof crudo !== 'object' || Array.isArray(crudo)) return {};
+function readPendingAsks(path) {
+  const crudo = readJson(path, null);
+  const out = Object.create(null);
+  if (!crudo || typeof crudo !== 'object' || Array.isArray(crudo)) return out;
   if (typeof crudo.reason === 'string') {
-    return crudo.session ? { [crudo.session]: crudo } : {};
+    if (crudo.session) out[crudo.session] = crudo;
+    return out;
   }
-  const out = {};
   for (const [s, p] of Object.entries(crudo)) {
     if (p && typeof p === 'object' && typeof p.reason === 'string') out[s] = p;
   }
@@ -33,12 +35,11 @@ export function readPendingAsks(cwd) {
 }
 
 /** Escribe los pedidos; sin ninguno, borra el archivo. Los vencidos se descartan. */
-function writePendingAsks(cwd, pedidos) {
-  const ruta = pendingAskPath(cwd);
+function writePendingAsks(ruta, pedidos, now = Date.now()) {
   const vivos = Object.fromEntries(Object.entries(pedidos)
-    .filter(([, p]) => isFresh(p?.at, PENDING_TTL_MS)));
+    .filter(([, p]) => isFresh(p?.at, PENDING_TTL_MS, now)));
   if (!Object.keys(vivos).length) {
-    try { rmSync(ruta, { force: true }); } catch {}
+    rmSync(ruta, { force: true });
     return;
   }
   writeAtomic(ruta, JSON.stringify(vivos, null, 2));
@@ -48,9 +49,13 @@ function writePendingAsks(cwd, pedidos) {
 export function notePendingAsk(cwd, pedido) {
   try {
     if (!pedido?.session) return;
-    const todos = readPendingAsks(cwd);
-    todos[pedido.session] = pedido;
-    writePendingAsks(cwd, todos);
+    const path = pendingAskPath(cwd);
+    return withFileLock(path, () => {
+      const todos = readPendingAsks(path);
+      todos[pedido.session] = pedido;
+      writePendingAsks(path, todos);
+      return true;
+    });
   } catch {}
 }
 
@@ -61,11 +66,14 @@ export function notePendingAsk(cwd, pedido) {
  */
 export function markPendingSessionEnded(cwd, session) {
   try {
-    if (!session || !existsSync(pendingAskPath(cwd))) return;
-    const todos = readPendingAsks(cwd);
-    if (!todos[session] || todos[session].sessionEnded) return;
-    todos[session] = { ...todos[session], sessionEnded: true };
-    writePendingAsks(cwd, todos);
+    const path = pendingAskPath(cwd);
+    if (!session || !existsSync(path)) return;
+    withFileLock(path, () => {
+      const todos = readPendingAsks(path);
+      if (!todos[session] || todos[session].sessionEnded) return;
+      todos[session] = { ...todos[session], sessionEnded: true };
+      writePendingAsks(path, todos);
+    });
   } catch {}
 }
 
@@ -80,25 +88,29 @@ export function markPendingSessionEnded(cwd, session) {
  */
 export function takePendingAsk(cwd, session, transcriptDe, ahora = Date.now()) {
   try {
-    if (!existsSync(pendingAskPath(cwd))) return null;
-    const todos = readPendingAsks(cwd);
-    const claves = Object.keys(todos);
-    if (!claves.length) return null;
-
-    let transcript = null;
-    if (!todos[session]) transcript = transcriptDe();
-
-    let entregar = null;
-    for (const clave of claves) {
-      const p = todos[clave];
-      if (!samePendingConversation(p, session, transcript)) continue;
-      const estado = p.statePath ? readJson(p.statePath, {}) ?? {} : {};
-      if (!entregar && shouldDeliverPending(p, session, estado, ahora, transcript)) entregar = p;
-      // Entregado o ya cubierto: en los dos casos deja de estar pendiente.
-      delete todos[clave];
-    }
-    writePendingAsks(cwd, todos);
-    return entregar;
+    const path = pendingAskPath(cwd);
+    if (!existsSync(path)) return null;
+    return withFileLock(path, () => {
+      const todos = readPendingAsks(path);
+      // Resolver el transcript puede recorrer una carpeta. Solo hace falta
+      // al buscar un pedido de una sesión anterior que ya terminó.
+      const transcript = !todos[session] && Object.values(todos).some((p) => p.sessionEnded)
+        ? transcriptDe() : null;
+      let changed = false;
+      let deliver = null;
+      for (const [key, pending] of Object.entries(todos)) {
+        if (samePendingConversation(pending, session, transcript)) {
+          const state = pending.statePath ? readJson(pending.statePath, {}) ?? {} : {};
+          if (!deliver && shouldDeliverPending(pending, session, state, ahora, transcript)) deliver = pending;
+        } else if (isFresh(pending.at, PENDING_TTL_MS, ahora)) {
+          continue;
+        }
+        delete todos[key];
+        changed = true;
+      }
+      if (changed) writePendingAsks(path, todos, ahora);
+      return deliver;
+    }) ?? null;
   } catch {
     return null;
   }
