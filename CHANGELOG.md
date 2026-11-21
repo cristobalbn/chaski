@@ -5,6 +5,17 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.15] - 2026-11-21
+
+### Mejorado
+- La CLI carga el módulo del subcomando solicitado al invocarlo.
+- `why` lee el historial por bloques y conserva solo las últimas diez
+  coincidencias para mostrar.
+
+### Corregido
+- Stop detecta el reemplazo de un transcript en la misma ruta y reinicia la
+  lectura aunque el archivo nuevo sea más grande que el anterior.
+
 ## [0.1.14] - 2026-11-21
 
 ### Corregido
