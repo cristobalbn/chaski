@@ -5,6 +5,14 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.27] - 2026-11-21
+
+### Corregido
+- La limpieza de relevos huérfanos (`src/lib/maintenance.mjs`) y la liberación
+  del lock de proyecto (`src/lib/paths.mjs`) usan reintentos breves en `rmSync`
+  (`maxRetries: 3`, `retryDelay: 20`) para sobrevivir a bloqueos transitorios de
+  clientes de sincronización o antivirus en Windows (`EBUSY`).
+
 ## [0.1.26] - 2026-11-21
 
 ### Mejorado
