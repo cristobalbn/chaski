@@ -12,6 +12,9 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   anterior).
 
 ### Interno
+- Los subcomandos de la CLI pasan a módulos de instalación, diagnóstico,
+  sonda e informes. El chequeo de sintaxis descubre los módulos nuevos
+  automáticamente.
 - Refactor: la normalización del payload (`lib/payload.mjs`), los tiempos y
   vencimientos (`lib/time.mjs`), los pedidos de narrativa (`lib/pending.mjs`),
   los turnos abiertos (`lib/turns.mjs`) y la historia (`lib/history.mjs`)

@@ -262,7 +262,8 @@ herramienta existe para evitar.
 ## Estructura
 
 ```
-src/cli.mjs          ~1.200 lín. — init / doctor / next / cost / why / share / probe / uninstall / version
+src/cli.mjs          ? despacha los subcomandos
+src/commands/       ? instalación, diagnóstico, sonda, informes y statusline
 src/capture.mjs      ~640 lín.   — hook de captura (Stop, SubagentStop): orquesta git, transcripts, cuota, costos e historia
 src/statusline.mjs   ~130 lín.   — statusline opcional de Claude Code (`init --statusline`): anota rate_limits y delega en la del usuario
 src/inject.mjs       ~330 lín.   — hook de inyección (SessionStart; y UserPromptSubmit / PreInvocation, que entregan la petición de narrativa anotada): camino crítico, detecta deriva y neutraliza marcas <<< >>>
