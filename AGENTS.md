@@ -239,7 +239,7 @@ por ese test o por uno de punta a punta: la suite verde no te va a avisar.
 
 | Qué | Límite | Consecuencia de pasarse |
 |---|---|---|
-| Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Medido: ~219 ms de mediana (3 subprocesos de git en árbol limpio con upstream tras PR #37, o 4 si hay archivos sucios), y el presupuesto propio de `budget.mjs` (1.100 ms) recorta trabajo antes de llegar al límite |
+| Latencia del hook `Stop` | 1,5 s **compartido** con los otros hooks del evento | El hook se cancela y se pierde el relevo. Medido en Windows: 159 ms de mediana en árbol limpio, con dos subprocesos Git (estado y commits), y el presupuesto propio de `budget.mjs` (1.100 ms) recorta trabajo antes de llegar al límite |
 | Tamaño del relevo inyectado | 10.000 caracteres | Claude Code manda una ruta en vez del contenido. `MAX_CHARS` está en 6.000 |
 | Lectura del transcript | 8 MB por corrida | Protege el presupuesto de latencia |
 | Limpieza de huérfanos | 1 vez al día | Listar ramas es otro subproceso de git |
@@ -279,6 +279,8 @@ src/lib/pending.mjs  ~105 lín.   — pedidos de narrativa por sesión (pending-
 src/lib/turns.mjs    ~90 lín.    — turnos abiertos (turns-open.json): abrir, cerrar, avisar de los cortados
 src/lib/lock.mjs     — lock breve para actualizar archivos compartidos entre hooks
 src/lib/history.mjs  ~105 lín.   — historia de narrativas (historia/entries.jsonl) y narrativa de una rama ya fusionada
+src/lib/maintenance.mjs — poda diaria dentro del presupuesto y listado de relevos huérfanos
+src/lib/activity.mjs  — latidos de captura y de entrega de narrativa
 src/lib/budget.mjs   ~65 lín.    — reloj global y timeouts derivados por subproceso (STOP_HOOK_BUDGET_MS = 1100)
 src/capturar.mjs     ~25 lín.    — puente de compatibilidad hacia capture.mjs
 src/leer.mjs         ~20 lín.    — puente de compatibilidad hacia inject.mjs

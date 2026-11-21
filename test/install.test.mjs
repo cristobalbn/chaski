@@ -20,6 +20,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { branchSlug } from '../src/lib/paths.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const SRC = join(AQUI, '..', 'src');
@@ -139,6 +140,95 @@ test('la configuración combina las capas y aísla las listas con tipo incorrect
     assert.deepEqual(JSON.parse(result), {
       askNarrative: 'auto', redact: ['GLOBAL', 'LOCAL'], excludePaths: ['global/', 'project/'],
     });
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test('la poda pospuesta conserva la marca diaria y protege una rama con tag homónimo', () => {
+  const m = montar('chaski-maintenance-');
+  try {
+    const branch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+    m.g('tag', branch);
+    const states = join(m.proyecto, '.tambo', 'branches');
+    const active = join(states, branch);
+    const orphan = join(states, 'rama-borrada');
+    for (const dir of [active, orphan]) {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'estado.json'), '{}');
+      const old = new Date(Date.now() - 40 * 86_400_000);
+      utimesSync(dir, old, old);
+    }
+    const source = pathToFileURL(join(SRC, 'lib', 'maintenance.mjs')).href;
+    const run = (budget) => execFileSync(process.execPath, ['--input-type=module', '-e', `
+      import { pruneOnSchedule } from ${JSON.stringify(source)};
+      pruneOnSchedule(process.cwd(), {}, ${budget});
+    `], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+    const mark = join(m.casa, '.chaski', 'ultima-limpieza');
+    run('{ remaining: () => 50 }');
+    assert.equal(existsSync(orphan), true);
+    assert.equal(existsSync(mark), false);
+    run('null');
+    assert.equal(existsSync(active), true);
+    assert.equal(existsSync(orphan), false);
+    assert.ok(Number(readFileSync(mark, 'utf8')) > 0);
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test('un relevo en la ruta antigua de una rama con tag se recupera en la ruta canónica', () => {
+  const m = montar('chaski-legacy-ref-');
+  try {
+    const branch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+    m.g('config', 'core.warnAmbiguousRefs', 'true');
+    m.g('tag', branch);
+    const oldBranch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+    assert.notEqual(oldBranch, branch);
+    const dir = join(m.proyecto, '.tambo', 'branches', branchSlug(oldBranch));
+    mkdirSync(dir, { recursive: true });
+    const narrative = 'Recuperar la decisión de la rama anterior';
+    writeFileSync(join(dir, 'estado.json'), JSON.stringify({
+      narrative, facts: { branch: oldBranch }, writtenAt: new Date().toISOString(), agent: 'codex',
+    }));
+    writeFileSync(join(dir, 'relevo.md'), narrative);
+    const run = (script, event) => execFileSync(process.execPath, [join(SRC, script), event, 'codex'], {
+      cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: JSON.stringify({ cwd: m.proyecto, session_id: 'new' }),
+    });
+    const startup = run('inject.mjs', 'SessionStart');
+    assert.match(startup, /Recuperar la decisión/);
+    assert.doesNotMatch(startup, /el relevo se escribió en/i);
+    run('capture.mjs', 'Stop');
+    const canonical = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'branches', branchSlug(branch), 'estado.json'), 'utf8'));
+    assert.equal(canonical.facts.branch, branch);
+    assert.equal(canonical.narrative, narrative);
+    assert.match(run('inject.mjs', 'SessionStart'), /Recuperar la decisión/);
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test('Stop actualiza el latido vencido y reutiliza el reciente', () => {
+  const m = montar('chaski-heartbeat-');
+  try {
+    const global = join(m.casa, '.chaski');
+    mkdirSync(global);
+    const path = join(global, 'latidos.json');
+    const write = (age) => {
+      const at = new Date(Date.now() - age).toISOString();
+      writeFileSync(path, JSON.stringify({ 'claude code': at }));
+      return at;
+    };
+    const read = () => JSON.parse(readFileSync(path, 'utf8'))['claude code'];
+    const stop = () => execFileSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+      cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: JSON.stringify({ cwd: m.proyecto, session_id: 't' }),
+    });
+    const fresh = write(5_000);
+    stop();
+    assert.equal(read(), fresh);
+    const old = write(120_000);
+    stop();
+    assert.ok(read() > old);
   } finally {
     rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
@@ -2883,6 +2973,11 @@ describe('statusline que anota la cuota (#82)', () => {
       assert.equal(r.stdout.trim(), 'Opus 5.5');
       assert.ok(!existsSync(join(m.casa, '.chaski', 'usage.json')));
       assert.equal(statusline(m, 'no es json').stdout.trim(), 'chaski', 'una entrada rota dejó la barra en blanco');
+      const missing = statusline(m, JSON.stringify({ rate_limits: { five_hour: { used_percentage: null } } }));
+      assert.equal(missing.stdout.trim(), 'chaski');
+      assert.equal(existsSync(join(m.casa, '.chaski', 'usage.json')), false);
+      const zero = statusline(m, JSON.stringify({ rate_limits: { five_hour: { used_percentage: 0 } } }));
+      assert.match(zero.stdout, /0 %/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

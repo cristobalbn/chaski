@@ -12,14 +12,15 @@
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { readOnlyRelayPath, readOnlyStatePath, readOnlyTambo, readJson, currentBranch, git, projectDir, loadConfig, promptHookPath, silencedByPlugin } from './lib/paths.mjs';
+import { readOnlyBranchDir, legacyBranchState, readOnlyTambo, readJson, currentBranch, git, projectDir, loadConfig, silencedByPlugin } from './lib/paths.mjs';
 import { readStdinJson, canonicalAgent, sessionOf, cwdOf, transcriptOf } from './lib/payload.mjs';
-import { askText, promptPayload, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
-import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged, writeAtomic } from './lib/relay.mjs';
+import { askText, promptPayload } from './lib/ask.mjs';
+import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged } from './lib/relay.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
 import { takePendingAsk } from './lib/pending.mjs';
 import { openTurn, interruptedTurns } from './lib/turns.mjs';
 import { mergedBranchNarrative } from './lib/history.mjs';
+import { recordPromptActivity } from './lib/activity.mjs';
 
 main();
 
@@ -53,15 +54,20 @@ function main() {
     // Sin estados de rama no hay relevo. Evita lanzar Git en el primer arranque.
     if (!existsSync(join(readOnlyTambo(cwd), 'branches'))) return;
     const ramaActual = currentBranch(cwd, budget);
-    // Solo lectura: abrir una sesión no debe crear `.tambo/` en un proyecto
-    // donde chaski nunca capturó.
-    const ruta = readOnlyRelayPath(cwd, ramaActual);
-    if (!existsSync(ruta)) return;
+    const canonical = readOnlyBranchDir(cwd, ramaActual);
+    const canonicalRelay = join(canonical, 'relevo.md');
+    const canonicalExists = existsSync(canonicalRelay);
+    const legacy = canonicalExists ? null : legacyBranchState(cwd, ramaActual, budget);
+    if (!canonicalExists && !legacy) return;
+    const dir = legacy?.dir ?? canonical;
+    const ruta = legacy ? join(dir, 'relevo.md') : canonicalRelay;
+    if (legacy && !existsSync(ruta)) return;
 
     let md = readFileSync(ruta, 'utf8');
     if (!md.trim()) return;
 
-    const estado = readJson(readOnlyStatePath(cwd, ramaActual), {}) ?? {};
+    const estado = readJson(join(dir, 'estado.json'), {}) ?? {};
+    const branchForDrift = legacy?.branch ?? ramaActual;
 
     // Sesión retomada (`source: resume`, Claude Code y Codex) cuyo relevo
     // escribió ella misma: el agente ya tiene el historial completo, y el
@@ -82,7 +88,7 @@ function main() {
     );
     if (resume) {
       const avisos = [
-        detectDrift(cwd, estado, budget, ramaActual),
+        detectDrift(cwd, estado, budget, branchForDrift),
         interruptedTurns(cwd, estado, sessionOf(ev)),
       ].filter(Boolean);
       if (!avisos.length) return;
@@ -137,7 +143,7 @@ function main() {
     // Si el repo se movió desde que se escribió el relevo, hay que decirlo:
     // un relevo desactualizado presentado como verdad es peor que nada.
     // La deriva lleva nombres de rama y mensajes de commit: también se neutraliza.
-    const deriva = detectDrift(cwd, estado, budget, ramaActual);
+    const deriva = detectDrift(cwd, estado, budget, branchForDrift);
     if (deriva) partes.push('', neutralizeMarks(deriva));
 
     const cortados = interruptedTurns(cwd, estado, sessionOf(ev));
@@ -174,7 +180,7 @@ function deliverPending(ev, agent) {
   try {
     // Prueba de vida ANTES de mirar si hay algo que entregar: es lo que le
     // permite a capture.mjs diferir la petición la próxima vez. Ver ask.mjs.
-    recordAlive(agent);
+    recordPromptActivity(agent);
     const cwd = cwdOf(ev);
     const sesion = sessionOf(ev);
     openTurn(cwd, sesion, agent);
@@ -190,23 +196,6 @@ function deliverPending(ev, agent) {
   } finally {
     process.exitCode = 0;
   }
-}
-
-/**
- * Marca que el hook de entrega de este CLI corre. Se reescribe a lo sumo cada
- * 10 minutos: en Antigravity el hook corre antes de cada llamada al modelo, y
- * escribir en cada una sería trabajo y contención por nada.
- */
-function recordAlive(agent) {
-  if (!PROMPT_HOOK_EVENTS[agent]) return;
-  try {
-    const ruta = promptHookPath();
-    const r = readJson(ruta, {}) ?? {};
-    const previo = Date.parse(r[agent] ?? '');
-    if (Number.isFinite(previo) && Date.now() - previo < 10 * 60_000 && previo <= Date.now()) return;
-    r[agent] = new Date().toISOString();
-    writeAtomic(ruta, JSON.stringify(r, null, 2));
-  } catch {}
 }
 
 /**

@@ -5,7 +5,12 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.13] - 2026-11-21
+
 ### Mejorado
+- La limpieza diaria usa el presupuesto de captura. Si se pospone, el
+  siguiente turno puede retomarla. Los latidos se escriben como máximo
+  una vez por minuto y las lecturas globales evitan crear directorios.
 - Los filtros de rutas y secretos se compilan una vez por lectura.
   El relevo cuenta las redacciones de comandos al procesar el transcript.
 - El arranque evita consultar Git en proyectos sin relevo. Los subagentes
@@ -15,6 +20,10 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   seguimiento, y el diff con upstream si el árbol está limpio.
 
 ### Corregido
+- Captura, lectura y poda usan el mismo nombre de rama si hay un tag homónimo.
+  La captura recupera los relevos escritos con el nombre abreviado anterior.
+  La statusline distingue
+  un porcentaje de cuota ausente de un cero real.
 - Las rutas de Git conservan espacios, tabuladores y flechas literales. La
   comprobación con upstream incluye los archivos fuera de los primeros 50
   que se guardan en el relevo.

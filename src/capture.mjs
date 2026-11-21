@@ -12,12 +12,13 @@
 //     lib/facts.mjs) en vez de dejar que el hook se cancele y se pierda el
 //     relevo entero.
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
-import { readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { branchDir, readJson, readOnlyTambo, readOnlyBranchDir, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, loadConfig, promptHookPath, silencedByPlugin, usagePath } from './lib/paths.mjs';
+import { branchDir, readJson, readOnlyTambo, readOnlyBranchDir, legacyBranchState, acquireLock, globalDir, git, currentBranch, existsSync, projectDir, loadConfig, promptHookPath, silencedByPlugin, usagePath } from './lib/paths.mjs';
 import { notePendingAsk, markPendingSessionEnded } from './lib/pending.mjs';
 import { closeTurn } from './lib/turns.mjs';
 import { recordHistory } from './lib/history.mjs';
+import { pruneOnSchedule } from './lib/maintenance.mjs';
+import { recordCaptureActivity } from './lib/activity.mjs';
 import { withFileLock } from './lib/lock.mjs';
 import { gitFacts, readGitSnapshot } from './lib/facts.mjs';
 import { transcriptFacts } from './lib/transcript.mjs';
@@ -95,7 +96,9 @@ function main() {
     const dir = branchDir(cwd, branch);
     const rutaEstado = join(dir, 'estado.json');
     const rutaRelevo = join(dir, 'relevo.md');
-    const previo = readJson(rutaEstado, {}) ?? {};
+    const current = readJson(rutaEstado, null);
+    const legacy = current || existsSync(rutaEstado) ? null : legacyBranchState(cwd, branch, budget);
+    const previo = current ?? (legacy ? readJson(join(legacy.dir, 'estado.json'), null) : null) ?? {};
 
     // La marca de agua pertenece a UNA sesión y a UN transcript. Si cambia
     // cualquiera de los dos, se lee desde el principio: arrastrar el offset
@@ -246,7 +249,7 @@ function main() {
       ? cuota.key : (previo.askedQuotaKey ?? null);
     writeAtomic(rutaRelevo, md);
     writeAtomic(rutaEstado, JSON.stringify(estado, null, 2));
-    heartbeat(estado.agent);
+    recordCaptureActivity(estado.agent);
     recordQuota(ev, estado, config);
     if (narrativaNueva && estado.narrative) recordHistory(cwd, estado, config);
     let diferida = false;
@@ -284,7 +287,9 @@ function main() {
     }
 
     if (motivo || (narrativaNueva && estado.narrative)) recordCost(estado, motivo, narrativaNueva, diferida);
-    occasionalPrune(cwd, config);
+    pruneOnSchedule(cwd, {
+      factsOnly: config.pruneAfterDays, withNarrative: config.pruneNarrativeAfterDays,
+    }, budget);
 
     // Aviso para quien mire stderr (doctor, una terminal, logs del CLI). El
     // relevo mismo ya lo dice -- esto es la copia para quien no lo abra.
@@ -529,58 +534,6 @@ function liveTasks(ev) {
       kind: t.type ?? null,
     }))
     .slice(0, 6);
-}
-
-/**
- * Limpieza de relevos de ramas borradas, una vez al día como máximo.
- *
- * No va en cada turno: listar las ramas es otro subproceso de git, y el
- * presupuesto del hook `Stop` es de 1,5 s compartido. Una vez al día alcanza
- * de sobra para algo que acumula unos KB por rama.
- */
-function occasionalPrune(cwd, config) {
-  try {
-    const marca = join(globalDir(), 'ultima-limpieza');
-    const ahora = Date.now();
-    if (existsSync(marca)) {
-      const previa = parseInt(readFileSync(marca, 'utf8'), 10);
-      if (Number.isFinite(previa) && ahora - previa < 86_400_000) return;
-    }
-    writeAtomic(marca, String(ahora));
-    pruneOrphanRelays(cwd, {
-      factsOnly: config?.pruneAfterDays,
-      withNarrative: config?.pruneNarrativeAfterDays,
-    });
-  } catch {}
-}
-
-/**
- * Latido por CLI: doctor avisa si alguno dejó de ejecutar su hook.
- *
- * El nombre llega normalizado porque un mismo CLI entraba por dos vías con dos
- * grafías: `cmd()` de cli.mjs pasa `claude-code` como argumento —con guión,
- * porque el shell parte los argumentos por espacio— y `detectAgent()`, que es
- * el camino de respaldo cuando no hay argumento, devuelve `claude code`. El
- * archivo acababa con las dos claves para la misma herramienta, y la
- * atribución del relevo cambiaba de grafía según qué evento la hubiera
- * escrito. Al escribir se funden las variantes y se conserva la más reciente,
- * para que los archivos que ya quedaron con las dos converjan solos.
- */
-function heartbeat(agent) {
-  try {
-    const ruta = join(globalDir(), 'latidos.json');
-    const l = readJson(ruta, {}) ?? {};
-    const name = canonicalAgent(agent);
-    const ahora = new Date().toISOString();
-    for (const k of Object.keys(l)) {
-      if (k !== name && canonicalAgent(k) === name) {
-        if (l[k] > ahora) l[name] = l[k];
-        delete l[k];
-      }
-    }
-    l[name] = l[name] > ahora ? l[name] : ahora;
-    writeAtomic(ruta, JSON.stringify(l, null, 2));
-  } catch {}
 }
 
 /**
