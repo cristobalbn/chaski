@@ -512,7 +512,8 @@ eso el modelo es el último recurso y no el primero.
 | Archivo | Cuándo corre | Qué hace |
 |---|---|---|
 | `src/capture.mjs` | hook `Stop` en los tres CLIs; también `SessionEnd`, `PreCompact`, `SubagentStop` y `StopFailure` en Claude Code | Lee el transcript desde una marca de agua (hasta dónde ya leyó) y git; escribe `relevo.md`, `estado.json` y `.tambo/historia/` |
-| `src/inject.mjs` | hook `SessionStart` | Imprime el relevo; lo que imprime entra al contexto del agente |
+| `src/inject.mjs` | hook `SessionStart`; y `UserPromptSubmit` / `PreInvocation` | En `SessionStart` imprime el relevo; en cada mensaje entrega la petición de narrativa anotada y registra el turno abierto |
+| `src/statusline.mjs` | statusline opcional de Claude Code (`init --statusline`) | Anota `rate_limits` en `~/.chaski/usage.json` y delega en la statusline previa del usuario |
 | `src/cli.mjs` | a mano | `init`, `doctor`, `next`, `cost`, `why`, `share`, `version`, `uninstall`, `probe` |
 | `skill/SKILL.md` | al pedir «relevo» | Instrucciones para que el agente escriba la narrativa |
 
@@ -727,10 +728,11 @@ presupuestos de latencia y tamaño, y las trampas conocidas de cada CLI.
 El más importante: **cero dependencias de runtime**. La herramienta se ejecuta
 sola en cada turno, así que un árbol de npm sería superficie de ataque.
 
-Agregar soporte para otro CLI implica añadir su entrada e instalador en `CLIS`
-(`src/cli.mjs`), su extractor en `src/lib/facts.mjs`, su formato de petición en
-`src/lib/ask.mjs` y su fixture en `test/fixtures/`. Para capturar los payloads
-reales de los hooks, usa `chaski probe`
+Agregar soporte para otro CLI implica añadir su entrada en `CLIS`
+(`src/commands/hook-config.mjs`) y su instalador en `src/commands/install.mjs`,
+su extractor en `src/lib/transcript.mjs` (`src/lib/transcripts/`), su formato
+de petición en `src/lib/ask.mjs` y su fixture en `test/fixtures/`. Para capturar
+los payloads reales de los hooks, usa `chaski probe`
 ([cómo](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#capturar-payloads-chaski-probe)).
 
 ### Para contribuir o auditar el código

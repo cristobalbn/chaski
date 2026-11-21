@@ -28,7 +28,7 @@ export function readStdinJson() {
  * forma legible, que es la que encabeza el relevo.
  */
 export function canonicalAgent(agent) {
-  const n = String(agent ?? '').trim().toLowerCase().replace(/-/g, ' ');
+  const n = (typeof agent === 'string' ? agent : '').trim().toLowerCase().replace(/[-_\s]+/g, ' ');
   if (n === 'claude' || n === 'claude code') return 'claude code';
   if (n === 'codex' || n === 'codex cli') return 'codex';
   if (n === 'agy' || n === 'antigravity' || n === 'antigravity cli') return 'agy';

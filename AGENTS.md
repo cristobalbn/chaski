@@ -262,23 +262,27 @@ herramienta existe para evitar.
 ## Estructura
 
 ```
-src/cli.mjs          ? despacha los subcomandos
-src/commands/       ? instalación, diagnóstico, sonda, informes y statusline
-src/capture.mjs      ~640 lín.   — hook de captura (Stop, SubagentStop): orquesta git, transcripts, cuota, costos e historia
-src/statusline.mjs   ~130 lín.   — statusline opcional de Claude Code (`init --statusline`): anota rate_limits y delega en la del usuario
-src/inject.mjs       ~330 lín.   — hook de inyección (SessionStart; y UserPromptSubmit / PreInvocation, que entregan la petición de narrativa anotada): camino crítico, detecta deriva y neutraliza marcas <<< >>>
+src/cli.mjs          — despacha los subcomandos
+src/commands/        — instalación, diagnóstico, sonda, informes y statusline
+src/capture.mjs      ~615 lín.   — hook de captura (Stop, SubagentStop): orquesta git, transcripts, cuota, costos e historia
+src/statusline.mjs   ~150 lín.   — statusline opcional de Claude Code (`init --statusline`): anota rate_limits y delega en la del usuario
+src/inject.mjs       ~350 lín.   — hook de inyección (SessionStart; y UserPromptSubmit / PreInvocation, que entregan la petición de narrativa anotada): camino crítico, detecta deriva y neutraliza marcas <<< >>>
 src/lib/facts.mjs     — hechos desde git (status, log, diff, upstream)
 src/lib/transcript.mjs — lectura incremental de JSONL y despacho a `lib/transcripts/`
-src/lib/paths.mjs    ~340 lín.   — rutas, slugs de ramas (branchSlug), lock por mkdir, loadConfig, detección de entorno
-src/lib/relay.mjs    ~410 lín.   — render de Markdown endurecido (vallas, código en línea), preámbulo, firma HMAC SHA-256 y writeAtomic
-src/lib/ask.mjs      ~200 lín.   — petición proactiva de narrativa (shouldAsk), debounces y payloads por CLI
-src/lib/secrets.mjs  ~160 lín.   — filtro de secretos, etiquetas <private> y rutas excluidas antes de escribir a disco
-src/lib/payload.mjs  ~80 lín.    — normalización del payload de los hooks (sesión, cwd, transcript, evento, agente), compartida por capture e inject
+src/lib/paths.mjs    ~450 lín.   — rutas, slugs de ramas (branchSlug), lock por mkdir, loadConfig, detección de entorno
+src/lib/relay.mjs    ~410 lín.   — render de Markdown endurecido (vallas, código en línea) y preámbulo
+src/lib/relay-store.mjs          — publicación atómica y recuperación firmada de estado.json y relevo.md
+src/lib/signatures.mjs           — firma y verificación HMAC SHA-256 local
+src/lib/conversations.mjs        — estado por conversación/ventana dentro de la misma rama (`conversations`)
+src/lib/probe-log.mjs            — captura redactada de la forma de payloads para `chaski probe`
+src/lib/ask.mjs      ~440 lín.   — petición proactiva de narrativa (shouldAsk), debounces, cuota y payloads por CLI
+src/lib/secrets.mjs  ~275 lín.   — filtro de secretos, etiquetas <private> y rutas excluidas antes de escribir a disco
+src/lib/payload.mjs  ~90 lín.    — normalización del payload de los hooks (sesión, cwd, transcript, evento, agente), compartida por capture e inject
 src/lib/time.mjs     ~40 lín.    — antigüedad legible (ageText), vencimientos (MODEL_TEXT_TTL_MS = 72 h) e isFresh
 src/lib/pending.mjs  ~105 lín.   — pedidos de narrativa por sesión (pending-ask.json): anotar, marcar fin de sesión, tomar el que toca
 src/lib/turns.mjs    ~90 lín.    — turnos abiertos (turns-open.json): abrir, cerrar, avisar de los cortados
 src/lib/lock.mjs     — lock breve para actualizar archivos compartidos entre hooks
-src/lib/history.mjs  ~105 lín.   — historia de narrativas (historia/entries.jsonl) y narrativa de una rama ya fusionada
+src/lib/history.mjs  ~130 lín.   — historia de narrativas (historia/entries.jsonl) y narrativa de una rama ya fusionada
 src/lib/maintenance.mjs — poda diaria dentro del presupuesto y listado de relevos huérfanos
 src/lib/activity.mjs  — latidos de captura y de entrega de narrativa
 src/lib/budget.mjs   ~65 lín.    — reloj global y timeouts derivados por subproceso (STOP_HOOK_BUDGET_MS = 1100)
@@ -294,7 +298,7 @@ hooks/hooks.json     hooks del plugin: forma exec (`node` + `args` con ${CLAUDE_
 - **En el proyecto (`.tambo/`, en `.gitignore`):**
   - `.tambo/branches/<slug>/estado.json` — hechos, narrativa, marca de agua y firma HMAC.
     - **Regla de `<slug>` (`branchSlug` en `src/lib/paths.mjs`)**: si el nombre de la rama (`git rev-parse --abbrev-ref HEAD`) solo tiene `[a-zA-Z0-9._-]` y hasta 60 caracteres (ej. `main`), `<slug>` es la rama tal cual. Si tiene `/` u otros caracteres o pasa de 60 letras (ej. `feat/pagos`), reemplaza fuera de `[a-zA-Z0-9._-]` por `-`, recorta a 60 caracteres y añade un sufijo FNV-1a de 6 caracteres en base 36 (`feat-pagos-<hash6>`). Para obtener la ruta exacta desde Node: `node -e "import('./src/lib/paths.mjs').then(m=>console.log(m.statePath(process.cwd())))"`.
-    - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy"`), `session`, `transcript`, `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ ruta, mas, menos, nuevo }] (máx. 50), dirtyTotal, dirtyUnknown (opcional), commits, upstream: { ref, ahead, collisions } | null, trimmed }`; `ahead` = commits del upstream que no tienes), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ kind, reason, conclusion, at }]`, máx. 6, vencen a las 72 h), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre el Markdown), `relay` (copia firmada de Markdown y firma anterior para recuperar una publicación interrumpida), `askedAt`, `askedReason`, `turnsAtNarrative`, `narrativeStamp`, `lastReply` (`{ text, at }`: última respuesta del agente tomada del transcript, redactada, máx. ~700 caracteres, vence a las 72 h; se renderiza solo si hubo turnos después de la narrativa).
+    - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy"`), `session`, `transcript`, `transcriptIdentity` (opcional), `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ ruta, mas, menos, nuevo }] (máx. 50), dirtyTotal (cuando isRepo), dirtyUnknown (opcional), commits, upstream: { ref, ahead, collisions } | null, trimmed }`; `ahead` = commits del upstream que no tienes), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ kind, reason, conclusion, at }]`, máx. 6, vencen a las 72 h), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre el Markdown), `relay` (copia firmada de Markdown y firma anterior para recuperar una publicación interrumpida), `askedAt`, `askedReason`, `askedQuotaKey`, `turnsAtNarrative`, `narrativeStamp`, `narrativeSession`, `historyStamp`, `conversations` (estados de otras sesiones/ventanas en la misma rama), `lastReply` (`{ text, at }`: última respuesta del agente tomada del transcript, redactada, máx. ~700 caracteres, vence a las 72 h; se renderiza solo si hubo turnos después de la narrativa).
     - **Campos exclusivos del agente (al guardar narrativa)**: `narrative` (string Markdown), `narrativeAuthor` (`"claude code" | "codex" | "agy"`), `narrativeWrittenAt` (ISO 8601 UTC actual, posterior a `writtenAt`).
   - `.tambo/branches/<slug>/relevo.md` — Markdown renderizado desde `estado.json` por `render()` (`src/lib/relay.mjs`), firmado con HMAC e inyectado por `inject.mjs`. Nunca se edita a mano.
   - `.tambo/pending-ask.json` — pedidos de narrativa anotados por `Stop`, **uno por sesión** (`{ "<session>": { session, transcript, at, reason, statePath, hasSkill, sessionEnded? } }`; se lee también el formato anterior de un solo pedido; `capture.mjs` marca `sessionEnded` en el `SessionEnd` de esa sesión). La consume `inject.mjs` en el `UserPromptSubmit` (Claude Code, Codex) o `PreInvocation` (agy) siguiente de la misma sesión y la borra. Ver `src/lib/ask.mjs`.
@@ -317,7 +321,7 @@ hooks/hooks.json     hooks del plugin: forma exec (`node` + `args` con ${CLAUDE_
 
 - `src/capture.mjs` y `src/inject.mjs`: **siempre `0`** (invariante 4; cualquier fallo interno escribe una línea en `stderr` y sale con `0`).
 - `chaski doctor`, `next`, `cost`, `why`, `uninstall`, `probe`, `version`: **siempre `0`**.
-- `chaski init`: devuelve **`1`** si algún CLI instalado falló al configurarse, si se ejecuta desde el caché temporal de `npx` o si `AGENTS.md` tiene marcadores `<!-- chaski:requests:... -->` corruptos; `0` en caso contrario.
+- `chaski init`: devuelve **`1`** si algún CLI instalado o `--statusline` falló al configurarse, si se ejecuta desde el caché temporal de `npx` o si `AGENTS.md` tiene marcadores `<!-- chaski:requests:... -->` corruptos; `0` en caso contrario.
 - `chaski share`: devuelve **`1`** si la rama actual no tiene narrativa en `estado.json` o si el usuario no confirma (cualquier respuesta distinta de `s`/`si`/`sí`/`y`/`yes`, incluido stdin vacío); `0` solo si publica.
 
 ## Al escribir código aquí

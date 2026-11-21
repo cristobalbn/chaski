@@ -5,6 +5,26 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.34] - 2026-11-21
+
+### Corregido
+- `chaski cost`, `chaski next`, `chaski doctor`, `statusline.mjs` y `capture.mjs`
+  (`recordQuota`, `recordCost`) validan objetos planos y marcas de tiempo en
+  `~/.chaski/cost.json`, `quota.json`, `usage.json` y `latidos.json`, normalizan
+  alias de agentes (`claude-code`, `Claude_Code`, `Antigravity`) y descartan
+  fechas futuras o valores fuera de rango de `Date`.
+- `chaski why` usa un comparador estricto transitivo para entradas con y sin
+  fecha y no recorta la lista antes de ordenar, evitando que más de 50 archivos
+  en `decisiones/` desplacen narrativas recientes de `.tambo/historia/`.
+- `installClaude` y `chaski probe` toleran valores corruptos o no-array en
+  `~/.claude/settings.json → hooks`, y `withFileLock` (`src/lib/lock.mjs`)
+  reintenta adquirir el lock tras limpiar un lock huérfano incluso con
+  `timeout = 0`.
+- `scripts/check.mjs` verifica sintaxis en `src/`, `test/` y `scripts/`, cero
+  dependencias en `package.json` y paridad de versión con
+  `.claude-plugin/plugin.json`; actualizados `README.md`, `CONTRIBUTING.md`,
+  `AGENTS.md` y los tests de paridad documental en `test/install.test.mjs`.
+
 ## [0.1.33] - 2026-11-21
 
 ### Corregido

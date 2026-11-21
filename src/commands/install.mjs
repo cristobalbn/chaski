@@ -207,9 +207,9 @@ function installClaude(ruta, { viaPlugin = false } = {}) {
   if (viaPlugin) {
     // Solo se quitan los nuestros. Sin archivo, o sin hooks nuestros, no hay
     // nada que escribir: init no lo toca (null, ver el bucle de init).
-    if (!existsSync(ruta)) return null;
+    if (!existsSync(ruta) || !s.hooks || typeof s.hooks !== 'object' || Array.isArray(s.hooks)) return null;
     let quitados = 0;
-    for (const ev of Object.keys(s.hooks ?? {})) {
+    for (const ev of Object.keys(s.hooks)) {
       if (!Array.isArray(s.hooks[ev])) continue;
       const antes = s.hooks[ev].length;
       s.hooks[ev] = s.hooks[ev].filter((g) => !isChaskiHookGroup(g));
@@ -220,12 +220,13 @@ function installClaude(ruta, { viaPlugin = false } = {}) {
     if (s.hooks && !Object.keys(s.hooks).length) delete s.hooks;
     return JSON.stringify(s, null, 2);
   }
-  s.hooks = s.hooks ?? {};
+  if (!s.hooks || typeof s.hooks !== 'object' || Array.isArray(s.hooks)) s.hooks = {};
   const poner = (event, script) => {
     const comando = cmd(script, event, 'claude code');
+    const prev = Array.isArray(s.hooks[event]) ? s.hooks[event] : [];
     s.hooks[event] = [
       // Se conservan los hooks de otras herramientas; solo se quitan los nuestros.
-      ...(s.hooks[event] ?? []).filter((g) => !isChaskiHookGroup(g)),
+      ...prev.filter((g) => !isChaskiHookGroup(g)),
       { hooks: [{ type: 'command', command: comando, timeout: 10 }] },
     ];
   };

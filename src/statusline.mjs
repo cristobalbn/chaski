@@ -66,10 +66,12 @@ function recordUsage(ev) {
   if (unchanged(readJson(path, null)?.[agent])) return;
   globalDir();
   withFileLock(path, () => {
-    const usage = readJson(path, {}) ?? {};
+    const rawUsage = readJson(path, {});
+    const usage = rawUsage && typeof rawUsage === 'object' && !Array.isArray(rawUsage) ? rawUsage : {};
     const previous = usage[agent];
     const ahead = Date.parse(previous?.at ?? '') - now;
-    if (unchanged(previous) || (ahead > 0 && ahead < 60_000)) return;
+    const same = sameWindow(previous?.fiveHour, next.fiveHour) && sameWindow(previous?.sevenDay, next.sevenDay);
+    if (unchanged(previous) || (same && ahead > 0 && ahead < 60_000)) return;
     writeAtomic(path, JSON.stringify({ ...usage, [agent]: { at: new Date(now).toISOString(), ...next } }, null, 2));
   }, 40);
 }

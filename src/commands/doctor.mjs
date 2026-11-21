@@ -43,7 +43,8 @@ export function doctor() {
   }
 
   console.log('\nLatidos (última vez que cada CLI ejecutó el hook)');
-  const latRaw = readJson(join(readOnlyGlobalDir(), 'latidos.json'), {}) ?? {};
+  const rawLat = readJson(join(readOnlyGlobalDir(), 'latidos.json'), {});
+  const latRaw = rawLat && typeof rawLat === 'object' && !Array.isArray(rawLat) ? rawLat : {};
   const lat = Object.create(null);
   for (const [a, iso] of Object.entries(latRaw)) {
     if (typeof iso !== 'string' || !Number.isFinite(Date.parse(iso))) continue;
@@ -104,7 +105,11 @@ export function doctor() {
       if (rota) {
         console.log(`  ⚠ claude code: statusline apunta a una ruta que no existe (${rota}) — ejecuta \`chaski init --statusline\``);
       } else {
-        const resumen = usageSummary((readJson(usagePath(), {}) ?? {})['claude code'], Date.now(), Infinity);
+        const rawUsage = readJson(usagePath(), {});
+        const usageObj = rawUsage && typeof rawUsage === 'object' && !Array.isArray(rawUsage) ? rawUsage : {};
+        const claudeUsage = usageObj['claude code']
+          ?? Object.entries(usageObj).find(([k]) => canonicalAgent(k) === 'claude code')?.[1];
+        const resumen = usageSummary(claudeUsage, Date.now(), Infinity);
         console.log(`  ${pad('claude code')} ${resumen ?? 'statusline instalada; todavía sin dato (solo planes Pro, Max y Ultra, tras la primera respuesta)'}`);
       }
     }

@@ -13,13 +13,28 @@ import { pad } from './common.mjs';
 import { CLIS, isInstalled } from './hook-config.mjs';
 import { projectContext } from './project.mjs';
 
+function normalizeAgentMap(raw) {
+  const out = Object.create(null);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [k, v] of Object.entries(raw)) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+    const key = canonicalAgent(k);
+    const prevAt = Date.parse(out[key]?.at ?? '');
+    const nextAt = Date.parse(v.at ?? '');
+    if (!out[key] || (Number.isFinite(nextAt) && (!Number.isFinite(prevAt) || nextAt >= prevAt))) {
+      out[key] = v;
+    }
+  }
+  return out;
+}
+
 export function next() {
   const { cwd } = projectContext();
   console.log('\nchaski next\n');
   const branch = currentBranch(cwd);
   const rama = branch ?? 'sin-rama';
   const estado = readBranchState(cwd, branch);
-  const quota = readJson(join(readOnlyGlobalDir(), 'quota.json'), {}) ?? {};
+  const quota = normalizeAgentMap(readJson(join(readOnlyGlobalDir(), 'quota.json'), {}));
   const writtenMs = Date.parse(estado.writtenAt ?? '');
   const edadRelevo = Number.isFinite(writtenMs)
     ? Math.max(0, Math.round((Date.now() - writtenMs) / 60000))
@@ -28,14 +43,17 @@ export function next() {
     ? `relevo al día (hace ${edadRelevo} min)`
     : 'sin relevo todavía';
 
-  const usage = readJson(usagePath(), {}) ?? {};
+  const usage = normalizeAgentMap(readJson(usagePath(), {}));
+  const now = Date.now();
   const filas = [];
   for (const [name, cli] of Object.entries(CLIS)) {
     const instalado = isInstalled(cli.bin);
     const q = quota[name];
     // Cuota real, si la statusline de chaski la anotó (#82).
     const uso = usageSummary(usage[name]);
-    const minsAgotado = q?.at ? Math.round((Date.now() - new Date(q.at).getTime()) / 60000) : null;
+    const qAt = Date.parse(q?.at ?? '');
+    const validQAt = Number.isFinite(qAt) && qAt <= now + 60_000;
+    const minsAgotado = validQAt ? Math.max(0, Math.round((now - qAt) / 60000)) : null;
     // Un registro de agotamiento de más de 12 h ya expiró en cualquier ventana
     // de cuota de consumidor.
     const agotado = Boolean(q && minsAgotado !== null && minsAgotado < 720);
@@ -55,7 +73,10 @@ export function next() {
     if (!f.instalado) {
       console.log(`  ${flecha} ${pad(f.name)} no instalado`);
     } else if (f.agotado) {
-      const motivo = f.q.message || f.q.reason || 'rate_limit';
+      const rawMotivo = typeof f.q.message === 'string' && f.q.message.trim()
+        ? f.q.message
+        : (typeof f.q.reason === 'string' && f.q.reason.trim() ? f.q.reason : 'rate_limit');
+      const motivo = rawMotivo.replace(/\s+/g, ' ').trim();
       console.log(`  ${flecha} ${pad(f.name)} agotado · hace ${f.minsAgotado} min (${motivo})`);
     } else {
       console.log(`  ${flecha} ${pad(f.name)} disponible · ${detalleRelevo}${f.uso ? ` · ${f.uso}` : ''}`);
@@ -154,19 +175,26 @@ export function cost() {
   console.log('Gasto externo');
   console.log('  0 tokens · $0.00 (chaski no invoca modelos ni APIs externas)\n');
 
-  const c = readJson(join(readOnlyGlobalDir(), 'cost.json'), { asks: [], narratives: [] }) ?? {};
-  const asks = Array.isArray(c.asks) ? c.asks : [];
-  const narratives = Array.isArray(c.narratives) ? c.narratives : [];
-  const hace7d = Date.now() - 7 * 86_400_000;
+  const rawCost = readJson(join(readOnlyGlobalDir(), 'cost.json'), { asks: [], narratives: [] });
+  const c = rawCost && typeof rawCost === 'object' && !Array.isArray(rawCost) ? rawCost : {};
+  const isEntry = (x) => Boolean(x && typeof x === 'object' && !Array.isArray(x));
+  const asks = Array.isArray(c.asks) ? c.asks.filter(isEntry) : [];
+  const narratives = Array.isArray(c.narratives) ? c.narratives.filter(isEntry) : [];
+  const now = Date.now();
+  const hace7d = now - 7 * 86_400_000;
+  const in7d = (x) => {
+    const t = Date.parse(x?.at ?? '');
+    return Number.isFinite(t) && t >= hace7d && t <= now + 60_000;
+  };
 
-  const asks7d = asks.filter((x) => new Date(x.at).getTime() >= hace7d);
-  const narr7d = narratives.filter((x) => new Date(x.at).getTime() >= hace7d);
+  const asks7d = asks.filter(in7d);
+  const narr7d = narratives.filter(in7d);
 
   // Desde #73 la mayoría de las peticiones se difieren: llegan junto con el
   // mensaje siguiente del usuario y no agregan un turno. Contarlas como
   // «turnos extra» exageraba el costo; se separan.
-  const enStop = (l) => l.filter((x) => !x.deferred);
-  const diferidas = (l) => l.filter((x) => x.deferred);
+  const enStop = (l) => l.filter((x) => !x?.deferred);
+  const diferidas = (l) => l.filter((x) => Boolean(x?.deferred));
 
   console.log('Peticiones de narrativa (últimos 7 días / histórico)');
   console.log(`  ${pad('en Stop')} ${enStop(asks7d).length} en 7d · ${enStop(asks).length} total — cada una agrega un turno`);
@@ -200,7 +228,6 @@ export async function why(args) {
     if (terminos.length && !terminos.every((t) => texto.includes(t))) return;
     const ms = Date.parse(entry.at ?? '');
     coincidencias.push({ ...entry, _ms: Number.isFinite(ms) ? ms : null, _seq: seq++ });
-    if (coincidencias.length > 50) coincidencias.shift();
   };
 
   // También revisa el estado vivo de cada rama por si una narrativa se
@@ -267,7 +294,11 @@ export async function why(args) {
 
   const ordenadas = [...coincidencias]
     .sort((a, b) => {
-      if (a._ms !== null && b._ms !== null && a._ms !== b._ms) return a._ms - b._ms;
+      if (a._ms !== b._ms) {
+        if (a._ms === null) return -1;
+        if (b._ms === null) return 1;
+        return a._ms - b._ms;
+      }
       return a._seq - b._seq;
     })
     .slice(-10)

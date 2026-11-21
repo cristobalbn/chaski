@@ -546,12 +546,25 @@ function recordQuota(ev, estado, config) {
     const ruta = join(globalDir(), 'quota.json');
     const name = canonicalAgent(estado.agent);
     const sealed = estado.sealedAtLimit;
-    if (!sealed && (ev.hook_event_name !== 'Stop' || !readJson(ruta, null)?.[name])) return;
+    const initial = readJson(ruta, null);
+    const hasForAgent = initial && typeof initial === 'object' && !Array.isArray(initial)
+      && Object.keys(initial).some((k) => canonicalAgent(k) === name);
+    if (!sealed && (ev.hook_event_name !== 'Stop' || !hasForAgent)) return;
     // Dos proyectos pueden informar sobre el mismo CLI al mismo tiempo.
     withFileLock(ruta, () => {
-      const quota = readJson(ruta, {}) ?? {};
-      const previous = quota[name];
-      if (previous?.at > estado.writtenAt || (!sealed && !previous)) return;
+      const rawQuota = readJson(ruta, {});
+      const quota = rawQuota && typeof rawQuota === 'object' && !Array.isArray(rawQuota) ? rawQuota : {};
+      let previous = quota[name];
+      for (const k of Object.keys(quota)) {
+        if (k !== name && canonicalAgent(k) === name) {
+          if (!previous) previous = quota[k];
+          delete quota[k];
+        }
+      }
+      const prevMs = Date.parse(previous?.at ?? '');
+      const currMs = Date.parse(estado.writtenAt ?? '');
+      if ((Number.isFinite(prevMs) && Number.isFinite(currMs) && prevMs > currMs && prevMs <= Date.now() + 60_000)
+          || (!sealed && !previous)) return;
       if (sealed) {
         const raw = String(ev.error_message ?? ev.error ?? '').trim();
         const message = redact(raw, config).texto.slice(0, 200) || null;
@@ -572,7 +585,8 @@ function recordCost(estado, motivo, narrativaNueva, diferida = false) {
   try {
     const ruta = join(globalDir(), 'cost.json');
     withFileLock(ruta, () => {
-      const c = readJson(ruta, { asks: [], narratives: [] }) ?? { asks: [], narratives: [] };
+      const raw = readJson(ruta, { asks: [], narratives: [] });
+      const c = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : { asks: [], narratives: [] };
       const agent = canonicalAgent(estado.agent);
       const branch = estado.facts?.branch ?? 'sin-rama';
       if (motivo) {
@@ -583,9 +597,9 @@ function recordCost(estado, motivo, narrativaNueva, diferida = false) {
         }].slice(-500);
       }
       if (narrativaNueva && estado.narrative) {
-        const author = canonicalAgent(estado.narrativeAuthor ?? estado.agent);
+        const author = canonicalAgent(estado.narrativeAuthor || estado.agent);
         c.narratives = [...(Array.isArray(c.narratives) ? c.narratives : []), {
-          at: estado.narrativeWrittenAt ?? estado.writtenAt, agent: author, branch,
+          at: estado.narrativeWrittenAt || estado.writtenAt, agent: author, branch,
         }].slice(-500);
       }
       writeAtomic(ruta, JSON.stringify(c, null, 2));
