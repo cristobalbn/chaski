@@ -190,21 +190,27 @@ export function globalDir() {
  * no hace falta nada más. Devuelve una función para liberarlo, o null si otro
  * proceso lo tiene. Un lock más viejo que maxEdadMs se considera huérfano.
  */
-export function acquireLock(cwd, maxEdadMs = 30000) {
+export function acquireLock(cwd, maxEdadMs = 30000, waitMs = 0) {
   const lock = join(tambo(cwd), '.lock');
-  const crear = () => { mkdirSync(lock); };
-  try {
-    crear();
-  } catch {
+  const deadline = performance.now() + waitMs;
+  let sleeper;
+  while (true) {
     try {
-      if (Date.now() - statSync(lock).mtimeMs > maxEdadMs) {
-        rmSync(lock, { recursive: true, force: true });
-        crear();
-      } else {
-        return null;
-      }
-    } catch {
-      return null;
+      mkdirSync(lock);
+      break;
+    } catch (error) {
+      if (error.code !== 'EEXIST') return null;
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > maxEdadMs) {
+          rmSync(lock, { recursive: true, force: true });
+          mkdirSync(lock);
+          break;
+        }
+      } catch {}
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) return null;
+      sleeper ??= new Int32Array(new SharedArrayBuffer(4));
+      Atomics.wait(sleeper, 0, 0, Math.min(10, remaining));
     }
   }
   try { writeFileSync(join(lock, 'pid'), String(process.pid)); } catch {}
@@ -415,9 +421,9 @@ export const TRANSCRIPT_FALLBACK_MS = 15 * 60 * 1000;
  * chaski no leía nada después de un resume —ni comandos, ni turnos, ni la
  * última respuesta— y tampoco podía reconocer la conversación retomada.
  *
- * Si la ruta existe, es esa. Si no, el `.jsonl` modificado más recientemente
- * de la misma carpeta, siempre que se haya escrito en los últimos 15 min: es
- * la conversación activa. Si nada cumple, la ruta tal cual llegó.
+ * Si la ruta existe, es esa. Si falta, se usa un JSONL de la misma carpeta
+ * solo cuando es el único archivo modificado en los últimos 15 min. Con
+ * varias ventanas no se puede distinguir la sesión por antigüedad.
  */
 export function resolveTranscript(ruta, ahora = Date.now()) {
   if (!ruta || typeof ruta !== 'string') return ruta ?? null;
@@ -425,14 +431,16 @@ export function resolveTranscript(ruta, ahora = Date.now()) {
     if (existsSync(ruta)) return ruta;
     if (!/\.jsonl$/i.test(ruta)) return ruta;
     const dir = dirname(ruta);
-    let mejor = null;
+    let candidate = null;
     for (const nombre of readdirSync(dir)) {
       if (!/\.jsonl$/i.test(nombre)) continue;
       const p = join(dir, nombre);
-      const t = statSync(p).mtimeMs;
-      if (ahora - t <= TRANSCRIPT_FALLBACK_MS && (!mejor || t > mejor.t)) mejor = { p, t };
+      const stat = statSync(p, { throwIfNoEntry: false });
+      if (!stat?.isFile() || ahora - stat.mtimeMs > TRANSCRIPT_FALLBACK_MS) continue;
+      if (candidate) return ruta;
+      candidate = p;
     }
-    return mejor ? mejor.p : ruta;
+    return candidate ?? ruta;
   } catch {
     return ruta;
   }

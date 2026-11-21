@@ -189,11 +189,28 @@ sobrevive, el turno se cortó: interrupción, ventana cerrada o cuelgue.
 
 | | |
 |---|---|
-| Cuándo se avisa | Al arrancar una sesión **distinta**, si el turno cortado empezó **después** de la última captura: solo entonces el relevo es de antes de algo que el agente nuevo no ve. Una captura posterior lo deja de avisar |
+| Cuándo se avisa | Al arrancar una sesión distinta. La marca sigue visible si otra ventana publica un relevo |
 | Qué dice | Qué CLI cortó el turno y hace cuánto, y que revise `git status` y `git diff` antes de seguir |
-| Dónde no se crea | En un proyecto sin `.tambo/`: el hook corre en cada mensaje de cualquier proyecto |
+| Dónde se registra | En proyectos con `.tambo/`. `init` lo prepara para registrar el primer turno |
 | Vencimiento | 72 h |
 | Costo | Una escritura por turno (en agy, por turno y no por llamada al modelo) |
+
+### Varias ventanas y worktrees
+
+| Escenario | Comportamiento |
+|---|---|
+| Dos conversaciones alternan en la misma rama | El relevo conserva la marca de lectura y el plazo de cada pedido. Muestra hasta tres respuestas de otras conversaciones, acotadas a 240 caracteres. Los hechos de Git describen el árbol compartido |
+| Dos `Stop` llegan a la vez | Se espera hasta 220 ms según el presupuesto del hook. Si vence, el próximo `Stop` de esa conversación puede recuperar su transcript desde la marca anterior |
+| Cambias de rama tras `Stop` | El pedido diferido indica el `estado.json` de la rama del turno anterior |
+| Dos directorios creados con `git worktree` | Cada árbol tiene su propio `.tambo/` y conserva sus archivos modificados y su narrativa. [Git worktree](https://git-scm.com/docs/git-worktree) |
+| Dos guardados manuales de narrativa en una rama | El campo de narrativa activa es compartido. Los worktrees permiten mantener una narrativa y archivos independientes por tarea |
+
+Los checkpoints de hasta ocho conversaciones anteriores se guardan en el
+mismo `estado.json` y vencen a las 72 h. Un archivo por conversación requeriría
+coordinar su publicación con el relevo firmado. Una cola con un proceso
+persistente permitiría reintentos incluso si se cierra la última ventana, con
+un ciclo de instalación y recuperación propio. El diseño actual mantiene una
+sola publicación del estado y deja el reintento en el siguiente `Stop`.
 
 ## Límites conocidos: detalle y mediciones
 
@@ -273,6 +290,10 @@ el sistema los informa. Un reemplazo en la misma ruta se lee desde el inicio
 aplicando el límite habitual. Los estados anteriores empiezan a guardar ese
 identificador en la primera captura que consigue abrir el transcript.
 [Estadísticas de archivos en Node.js](https://nodejs.org/api/fs.html#class-fsstats)
+
+Si Claude Code envía una ruta que aún no existe al retomar, se usa otra ruta
+solo cuando hay un único JSONL reciente. Si hay varios, se preserva la ruta
+informada y no se atribuyen comandos a esa conversación hasta tener su archivo.
 
 Los datos de los CLI se convierten a hechos dentro de los adaptadores. El
 lector común decide cuántos bytes consumir y el render recibe datos ya

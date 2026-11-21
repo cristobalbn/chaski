@@ -89,7 +89,7 @@ function main() {
     if (resume) {
       const avisos = [
         detectDrift(cwd, estado, budget, branchForDrift),
-        interruptedTurns(cwd, estado, sessionOf(ev)),
+        interruptedTurns(cwd, sessionOf(ev)),
       ].filter(Boolean);
       if (!avisos.length) return;
       const salida = [
@@ -146,7 +146,7 @@ function main() {
     const deriva = detectDrift(cwd, estado, budget, branchForDrift);
     if (deriva) partes.push('', neutralizeMarks(deriva));
 
-    const cortados = interruptedTurns(cwd, estado, sessionOf(ev));
+    const cortados = interruptedTurns(cwd, sessionOf(ev));
     if (cortados) partes.push('', neutralizeMarks(cortados));
 
     const heredada = mergedBranchNarrative(cwd, estado, budget);

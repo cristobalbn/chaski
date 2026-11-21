@@ -2911,7 +2911,21 @@ describe('turnos que empezaron y no terminaron', () => {
     cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
     input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'SessionStart', source: 'startup' }),
   });
-  const AVISO = /turno cortado después de este relevo/;
+  const AVISO = /hay turnos abiertos de otras conversaciones/;
+
+  test('un proyecto inicializado anota la ventana abierta antes del primer Stop', () => {
+    const m = montar('chaski-primer-turno-');
+    try {
+      m.correr('init');
+      const open = turno(m, 'agy', 'PreInvocation', 'primera');
+      assert.equal(open.stderr, '');
+      assert.ok(existsSync(join(m.proyecto, '.tambo', 'turns-open.json')));
+      stop(m, 'segunda');
+      assert.match(arranque(m, 'tercera').stdout, AVISO);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 
   test('un turno sin Stop se avisa en la sesión siguiente, con el CLI que lo cortó', () => {
     const m = montar('chaski-cortado-');
@@ -2972,7 +2986,7 @@ describe('turnos que empezaron y no terminaron', () => {
     }
   });
 
-  test('una captura posterior al corte deja de avisar: el relevo ya es de después', () => {
+  test('una captura de otra ventana mantiene el aviso hasta que cierra el turno', () => {
     const m = montar('chaski-posterior-');
     try {
       writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 1;\n');
@@ -2980,6 +2994,8 @@ describe('turnos que empezaron y no terminaron', () => {
       turno(m, 'claude-code', 'UserPromptSubmit', 'cortada');
       assert.match(arranque(m, 'nueva').stdout, AVISO, 'el caso positivo no avisó; el test no probaría nada');
       stop(m, 'otra-sesion');
+      assert.match(arranque(m, 'nueva').stdout, AVISO);
+      stop(m, 'cortada');
       assert.doesNotMatch(arranque(m, 'nueva').stdout, AVISO);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
@@ -3524,6 +3540,25 @@ describe('tras un resume, Claude Code manda la ruta de un transcript que no exis
     }
   });
 
+  test('una ruta ausente con dos transcripts recientes no elige el de otra ventana', () => {
+    const m = montar('chaski-resume-ambiguo-');
+    try {
+      const { dir, real, fantasma } = preparar(m);
+      const other = join(dir, 'otra-ventana.jsonl');
+      writeFileSync(other, readFileSync(real));
+      stop(m, 'otra-ventana', other);
+      assert.ok(estadoDe(m).commands.length > 0);
+      const result = stop(m, 'id-nuevo', fantasma);
+      assert.equal(result.stderr, '');
+      const state = estadoDe(m);
+      assert.equal(state.transcript, fantasma);
+      assert.equal(state.turns, 0);
+      assert.deepEqual(state.commands, []);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   test('al retomar con la ruta fantasma no se repite el relevo de esa conversación', () => {
     const m = montar('chaski-resume-fantasma-');
     try {
@@ -3952,15 +3987,52 @@ describe('varias ventanas en el mismo proyecto', () => {
   // Con un solo pedido por proyecto, el Stop de una ventana borraba el pedido
   // de la otra, que no se entregaba nunca. Ahora hay uno por sesión.
   const transcript = join(AQUI, 'fixtures', 'claude-code.transcript.jsonl');
-  const prompt = (m, session) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'UserPromptSubmit', 'claude-code'], {
+  const prompt = (m, session, path = transcript) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'UserPromptSubmit', 'claude-code'], {
     cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
-    input: JSON.stringify({ session_id: session, cwd: m.proyecto, prompt: 'x', transcript_path: transcript }),
+    input: JSON.stringify({ session_id: session, cwd: m.proyecto, prompt: 'x', transcript_path: path }),
   });
-  const stop = (m, session) => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+  const stop = (m, session, path = transcript) => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
     cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
-    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: transcript }),
+    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: path }),
   });
   const texto = (r) => JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
+
+  test('al alternar ventanas mantiene sus offsets y sus respuestas sin mezclarlos', () => {
+    const m = montar('chaski-checkpoints-');
+    try {
+      const a = join(m.raiz, 'a.jsonl');
+      const b = join(m.raiz, 'b.jsonl');
+      const dialog = (response) => [
+        { type: 'user', message: { content: 'continúa' } },
+        { type: 'assistant', message: { content: [{ type: 'text', text: response }] } },
+      ].map((line) => JSON.stringify(line) + '\n').join('');
+      writeFileSync(a, dialog('Ventana A trabajó en las colas.'));
+      writeFileSync(b, dialog('Ventana B trabajó en las alertas.'));
+      writeFileSync(join(m.proyecto, 'chaski.json'), JSON.stringify({ askNarrative: false }));
+      const branch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const dir = join(m.proyecto, '.tambo', 'branches', branch);
+      const capture = (session, path) => {
+        const result = stop(m, session, path);
+        assert.equal(result.status, 0);
+        assert.equal(result.stderr, '');
+        return JSON.parse(readFileSync(join(dir, 'estado.json'), 'utf8'));
+      };
+      const before = capture('ventana-A', a);
+      assert.equal(before.turns, 1);
+      const other = capture('ventana-B', b);
+      assert.match(other.lastReply.text, /alertas/);
+      assert.match(readFileSync(join(dir, 'relevo.md'), 'utf8'), /Respuestas de otras conversaciones[\s\S]+colas/);
+      const after = capture('ventana-A-retomada', a);
+      assert.equal(after.turns, before.turns);
+      assert.equal(after.offset, before.offset);
+      assert.deepEqual(after.lastReply, before.lastReply, 'releyó y fechó de nuevo la respuesta anterior');
+      appendFileSync(a, dialog('Colas verificadas.'));
+      assert.equal(capture('ventana-A-retomada', a).turns, 2);
+      assert.deepEqual(capture('ventana-B', b).lastReply, other.lastReply);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 
   test('cada ventana recibe su propio pedido de narrativa', () => {
     const m = montar('chaski-dos-ventanas-');
@@ -3969,23 +4041,87 @@ describe('varias ventanas en el mismo proyecto', () => {
       prompt(m, 'ventana-B');
       writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 99;\n');
       stop(m, 'ventana-A');
-      // La segunda ventana cierra su turno: con el formato viejo, esto pisaba
-      // el pedido de la primera. El debounce es por relevo (rama), así que se
-      // limpia para que la segunda también anote el suyo.
+      const otherTranscript = join(m.raiz, 'ventana-b.jsonl');
+      writeFileSync(otherTranscript, readFileSync(transcript));
+      stop(m, 'ventana-B', otherTranscript);
       const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
       const rutaEstado = join(m.proyecto, '.tambo', 'branches', rama, 'estado.json');
-      const e = JSON.parse(readFileSync(rutaEstado, 'utf8'));
-      e.askedAt = null;
-      writeFileSync(rutaEstado, JSON.stringify(e));
-      stop(m, 'ventana-B');
       const pedidos = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'pending-ask.json'), 'utf8'));
       assert.deepEqual(Object.keys(pedidos).sort(), ['ventana-A', 'ventana-B']);
 
+      const e = JSON.parse(readFileSync(rutaEstado, 'utf8'));
+      e.narrative = 'Trabajo de la ventana B';
+      e.narrativeAuthor = 'claude code';
+      e.narrativeWrittenAt = new Date().toISOString();
+      writeFileSync(rutaEstado, JSON.stringify(e));
       assert.match(texto(prompt(m, 'ventana-A')), /antes de responder este mensaje/);
       assert.ok(JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'pending-ask.json'), 'utf8'))['ventana-B'],
         'entregar el pedido de A borró el de B');
-      assert.match(texto(prompt(m, 'ventana-B')), /antes de responder este mensaje/);
+      assert.equal(prompt(m, 'ventana-B', otherTranscript).stdout, '', 'B ya guardó su narrativa');
       assert.ok(!existsSync(join(m.proyecto, '.tambo', 'pending-ask.json')), 'sin pedidos, el archivo debe desaparecer');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('un pedido diferido conserva la ruta anterior si la ventana cambió de rama', () => {
+    const m = montar('chaski-pedido-cambio-rama-');
+    try {
+      m.correr('init');
+      const branch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const expected = join(m.proyecto, '.tambo', 'branches', branch, 'estado.json');
+      assert.equal(prompt(m, 'sesion').stdout, '');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 93;\n');
+      assert.equal(stop(m, 'sesion').stdout, '');
+      assert.ok(existsSync(expected));
+      m.g('switch', '-c', 'otra-rama');
+      const result = texto(prompt(m, 'sesion'));
+      assert.match(result, /Usa la skill `relevo`/);
+      assert.ok(result.includes(expected), result);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('dos worktrees del mismo repositorio conservan sus propios cambios locales', () => {
+    const m = montar('chaski-worktrees-');
+    try {
+      const path = join(m.raiz, 'otro-worktree');
+      const original = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      m.g('worktree', 'add', '-b', 'lado', path);
+      const captureTree = (cwd, branch, file) => {
+        writeFileSync(join(cwd, file), 'contenido local');
+        const result = stop({ ...m, proyecto: cwd }, 'sesion');
+        assert.equal(result.status, 0);
+        assert.equal(result.stderr, '');
+        const state = join(cwd, '.tambo', 'branches', branch, 'estado.json');
+        return JSON.parse(readFileSync(state, 'utf8')).facts.dirty.map(({ ruta }) => ruta);
+      };
+      const one = captureTree(m.proyecto, original, 'trabajo-principal.txt');
+      const two = captureTree(path, 'lado', 'trabajo-lateral.txt');
+      assert.ok(one.includes('trabajo-principal.txt'));
+      assert.ok(two.includes('trabajo-lateral.txt'));
+      assert.ok(!one.includes('trabajo-lateral.txt'));
+      assert.ok(!two.includes('trabajo-principal.txt'));
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('si la otra captura no libera el lock, sale con aviso y el próximo Stop puede guardar', () => {
+    const m = montar('chaski-captura-ocupada-');
+    try {
+      const root = join(m.proyecto, '.tambo');
+      const lock = join(root, '.lock');
+      mkdirSync(lock, { recursive: true });
+      const skipped = stop(m, 'ventana');
+      assert.equal(skipped.status, 0);
+      assert.match(skipped.stderr, /captura pendiente/);
+      rmSync(lock, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      const published = stop(m, 'ventana');
+      assert.equal(published.status, 0);
+      assert.equal(published.stderr, '');
+      assert.ok(existsSync(join(root, 'branches')));
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

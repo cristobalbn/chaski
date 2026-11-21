@@ -24,6 +24,7 @@ import { gitFacts, readGitSnapshot } from './lib/facts.mjs';
 import { transcriptFacts } from './lib/transcript.mjs';
 import { writeAtomic } from './lib/atomic.mjs';
 import { publishRelay } from './lib/relay-store.mjs';
+import { previousConversation, saveConversation } from './lib/conversations.mjs';
 import { redact } from './lib/secrets.mjs';
 import { shouldAsk, askText, askPayload, promptHookAlive, COMPACT_HINT, quotaPressure } from './lib/ask.mjs';
 import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
@@ -87,10 +88,13 @@ function main() {
       process.stdout.write(COMPACT_HINT + '\n');
     }
 
-    // Un solo escritor. Si otro proceso tiene el lock, este turno se saltea:
-    // el siguiente lo recupera, porque la marca de agua no avanzó.
-    liberar = acquireLock(cwd);
-    if (!liberar) return ok();
+    // Una espera breve absorbe dos Stop cercanos sin gastar el presupuesto de
+    // Git. Si vence, esta conversación conserva su propia marca para reintentar.
+    liberar = acquireLock(cwd, undefined, Math.max(0, Math.min(220, budget.remaining() - 400)));
+    if (!liberar) {
+      process.stderr.write('chaski: captura pendiente, otra ventana está guardando el relevo\n');
+      return ok();
+    }
 
     const snapshot = readGitSnapshot(cwd, budget);
     const branch = snapshot.branch;
@@ -100,28 +104,15 @@ function main() {
     const legacy = current || existsSync(rutaEstado) ? null : legacyBranchState(cwd, branch, budget);
     const previo = current ?? (legacy ? readJson(join(legacy.dir, 'estado.json'), null) : null) ?? {};
 
-    // La marca de agua pertenece a UNA sesión y a UN transcript. Si cambia
-    // cualquiera de los dos, se lee desde el principio: arrastrar el offset
-    // de ayer a un transcript nuevo haría que se saltee todo el trabajo de
-    // hoy hasta ese byte. El caso aparece al volver a trabajar al día
-    // siguiente, que es justo cuando el relevo importa.
-    //
-    // Pero «la misma sesión» no es «el mismo session_id»: al retomar
-    // (`--resume`, `/resume`), Claude Code le da a la conversación un id nuevo
-    // y sigue escribiendo en el MISMO transcript. Comparando solo el id, cada
-    // reinicio parecía una sesión nueva: se releía el transcript entero (6 MB
-    // en una sesión larga) y los turnos de toda la conversación quedaban
-    // contados como posteriores a la narrativa. El transcript compartido es lo
-    // que identifica la conversación; el id solo, cuando no hay transcript.
-    const mismoTranscript = Boolean(previo.transcript && ev.transcript_path
-      && previo.transcript === ev.transcript_path);
-    const mismaSesion = mismoTranscript
-      || Boolean(previo.session && ev.session_id && previo.session === ev.session_id && !ev.transcript_path);
-    const desde = mismoTranscript ? (previo.offset ?? 0) : 0;
-
-    const previousCommands = mismaSesion && Array.isArray(previo.commands) ? previo.commands : [];
-    const transcriptIdentity = mismoTranscript ? (previo.transcriptIdentity ?? null) : null;
-    const t = transcriptFacts(ev.transcript_path, desde, config, budget, previousCommands, transcriptIdentity);
+    const conversacion = previousConversation(previo, ev.__agente, ev.session_id, ev.transcript_path);
+    // Algunos eventos omiten la ruta. Conserva la marca, pero solo vuelve a
+    // leer cuando el CLI vuelve a informar su transcript.
+    const transcript = ev.transcript_path ?? conversacion?.transcript ?? null;
+    const mismoTranscript = Boolean(transcript && transcript === conversacion?.transcript);
+    const offset = mismoTranscript ? (conversacion.offset ?? 0) : 0;
+    const commands = Array.isArray(conversacion?.commands) ? conversacion.commands : [];
+    const identity = mismoTranscript ? conversacion.transcriptIdentity : null;
+    const t = transcriptFacts(ev.transcript_path, offset, config, budget, commands, identity);
     const g = gitFacts(cwd, config, budget, snapshot);
     const headFromLog = g.commits?.[0]?.split(' ')[0] || null;
 
@@ -131,12 +122,12 @@ function main() {
       agent: ev.__agente ?? 'desconocido',
       session: ev.session_id ?? null,
       // La ruta del transcript se guarda para poder invalidar la marca de agua.
-      transcript: ev.transcript_path ?? null,
+      transcript,
       ...(t.identity ? { transcriptIdentity: t.identity } : {}),
       offset: t.offset,
       // Los turns se acumulan dentro de una sesión; en una nueva se reinician,
       // o el relevo diría "1.200 turns" de trabajo que ya no está en contexto.
-      turns: (mismaSesion && !t.reset ? (previo.turns ?? 0) : 0) + t.turns,
+      turns: (t.reset ? 0 : (conversacion?.turns ?? 0)) + t.turns,
       facts: g,
       // El log da el SHA corto. Si se recorta, status ya dio el SHA completo.
       head: g.isRepo ? (headFromLog ?? snapshot.head ?? null) : null,
@@ -196,7 +187,7 @@ function main() {
     const payloadReply = ev.hook_event_name === 'Stop' && typeof ev.last_assistant_message === 'string'
       ? ev.last_assistant_message.trim() : '';
     estado.lastReply = replyFrom(payloadReply || t.lastMessage, config, estado.writtenAt)
-      ?? freshReply(previo.lastReply);
+      ?? (t.reset ? null : freshReply(conversacion?.lastReply));
 
     // Cuántos turnos tenía el relevo cuando se escribió la narrativa: es con
     // esto que se mide si quedó atrás, y lo anota el código, no el modelo.
@@ -225,8 +216,11 @@ function main() {
     // petición creía que iban mil turnos. La base de ahora puede atrasar la
     // próxima petición unos turnos; nunca inventa trabajo que no hubo. Sin
     // narrativa todavía, la base sí es 0: todo el trabajo es posterior a ella.
-    const previosEnSesion = mismaSesion && !t.reset && (previo.turnsAtNarrative ?? 0) <= (estado.turns ?? 0)
-      ? (previo.turnsAtNarrative ?? 0) : (estado.narrative ? (estado.turns ?? 0) : 0);
+    const baseAnterior = conversacion?.turnsAtNarrative ?? 0;
+    const mismaNarrativa = (conversacion?.narrativeStamp ?? null) === (previo.narrativeStamp ?? null);
+    const previosEnSesion = conversacion && !t.reset && baseAnterior <= estado.turns
+      ? (mismaNarrativa ? baseAnterior : (conversacion.turns ?? 0))
+      : (estado.narrative ? estado.turns : 0);
     estado.turnsAtNarrative = narrativaNueva ? (estado.turns ?? 0) : previosEnSesion;
     estado.narrativeStamp = estado.narrativeWrittenAt ?? null;
 
@@ -240,17 +234,19 @@ function main() {
     const cuota = ev.hook_event_name === 'Stop'
       ? quotaPressure((readJson(usagePath(), {}) ?? {})[estado.agent], config) : null;
     const motivo = ev.hook_event_name === 'Stop'
-      ? shouldAsk(ev, estado, previo, config, Date.now(), cuota) : null;
+      ? shouldAsk(ev, estado, { ...conversacion, head: previo.head }, config, Date.now(), cuota) : null;
     if (motivo) {
       estado.askedAt = estado.writtenAt;
       estado.askedReason = motivo;
     } else {
-      estado.askedAt = previo.askedAt ?? null;
-      estado.askedReason = previo.askedReason ?? null;
+      estado.askedAt = conversacion?.askedAt ?? null;
+      estado.askedReason = conversacion?.askedReason ?? null;
     }
     // Una petición por ventana de cuota: se recuerda en cuál se pidió.
     estado.askedQuotaKey = motivo && cuota && motivo.startsWith('la cuota')
-      ? cuota.key : (previo.askedQuotaKey ?? null);
+      ? cuota.key : (conversacion?.askedQuotaKey ?? null);
+    const otrasConversaciones = saveConversation(estado, previo);
+    if (otrasConversaciones.length) estado.conversations = otrasConversaciones;
     publishRelay(dir, estado, config, previo);
     recordCaptureActivity(estado.agent);
     recordQuota(ev, estado, config);
@@ -280,7 +276,8 @@ function main() {
         // #73: no se imprime nada. Lo entrega inject.mjs con el mensaje
         // siguiente del usuario, antes de la respuesta. Ver ask.mjs.
         diferida = notePendingAsk(cwd, {
-          session: estado.session, transcript: estado.transcript, at: estado.writtenAt, reason: motivo, statePath: rutaEstado, hasSkill,
+          agent: estado.agent, session: estado.session, transcript: estado.transcript,
+          at: estado.writtenAt, reason: motivo, statePath: rutaEstado, hasSkill,
         }) === true;
       }
       if (!diferida) {

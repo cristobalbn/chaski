@@ -162,7 +162,10 @@ export function askText(motivo, haySkill = true, rutaEstado = null, { beforeRepl
   const linea = beforeReply
     ? `chaski: antes de responder este mensaje, guarda el relevo del trabajo anterior — ${motivo}. Después responde con normalidad.`
     : `chaski: antes de cerrar, guarda el relevo de este trabajo — ${motivo}.`;
-  if (haySkill) return `${linea} Usa la skill \`relevo\`.`;
+  if (haySkill) {
+    const destino = beforeReply && rutaEstado ? ` Guarda la narrativa en \`${rutaEstado}\`.` : '';
+    return `${linea} Usa la skill \`relevo\`.${destino}`;
+  }
   // La ruta va absoluta y resuelta (#48). La plantilla `<rama>` + "en la raíz
   // del repositorio" dejaba al agent adivinando justo en los casos en que no
   // tiene skill: sin repo (la carpeta es `sin-rama`), con el repo en una
@@ -317,7 +320,11 @@ export function shouldDeliverPending(pending, sessionId, estado, ahora = Date.no
   const at = Date.parse(pending.at ?? '');
   if (!Number.isFinite(at) || ahora - at > PENDING_TTL_MS || at > ahora + 60_000) return false;
   const narrada = Date.parse(estado?.narrativeWrittenAt ?? '');
-  if (Number.isFinite(narrada) && narrada >= at) return false;
+  // Un resumen de una ventana distinta no contesta este pedido. Las entradas
+  // de versiones anteriores conservan la lógica previa hasta que se consuman.
+  const attributed = !pending.agent || (estado?.session === pending.session
+    && (!estado.narrativeAuthor || estado.narrativeAuthor === pending.agent));
+  if (attributed && Number.isFinite(narrada) && narrada >= at) return false;
   return true;
 }
 
