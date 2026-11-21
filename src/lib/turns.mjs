@@ -11,6 +11,7 @@
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { readJson, openTurnsPath } from './paths.mjs';
+import { canonicalAgent } from './payload.mjs';
 import { writeAtomic } from './atomic.mjs';
 import { ageText, MODEL_TEXT_TTL_MS } from './time.mjs';
 import { withFileLock } from './lock.mjs';
@@ -56,7 +57,8 @@ export function interruptedTurns(cwd, sesionActual) {
       const at = Date.parse(t?.at ?? '');
       if (s === sesionActual || !Number.isFinite(at) || at > ahora || ahora - at > MODEL_TEXT_TTL_MS) continue;
       const hace = ageText(at, ahora);
-      lineas.push(`- Un turno de ${String(t.agent ?? 'otro agente').replace(/[^\w .-]/g, '')} empezó hace ${hace} y no terminó: se interrumpió, se cerró la ventana o se cortó (o sigue en curso en otra ventana).`);
+      const nombre = t?.agent ? canonicalAgent(t.agent) : 'otro agente';
+      lineas.push(`- Un turno de ${String(nombre).replace(/[^\w .-]/g, '')} empezó hace ${hace} y no terminó: se interrumpió, se cerró la ventana o se cortó (o sigue en curso en otra ventana).`);
       if (lineas.length === 3) break;
     }
     if (!lineas.length) return null;

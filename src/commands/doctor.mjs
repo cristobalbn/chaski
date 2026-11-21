@@ -136,10 +136,14 @@ export function doctor() {
     const edad = estado.writtenAt ? Math.round((Date.now() - new Date(estado.writtenAt).getTime()) / 60000) : null;
     console.log(`  ${pad('relevo')} ${md.length} caracteres${edad !== null ? `, escrito hace ${edad} min` : ''}`);
     console.log(`  ${pad('firma')} ${estado.signature ? (recovered ? 'válida — vista recuperada del estado' : isValidSignature(md, estado.signature) ? 'válida' : 'NO VALIDA — editado fuera de chaski') : 'sin firma'}`);
-    console.log(`  ${pad('narrativa')} ${estado.narrative ? `sí, por ${estado.narrativeAuthor ?? '?'}` : 'no — escribe «relevo» en el chat del agente'}`);
+    const autorNarrativa = estado.narrative
+      ? (estado.narrativeAuthor || estado.agent ? canonicalAgent(estado.narrativeAuthor ?? estado.agent) : '?')
+      : null;
+    console.log(`  ${pad('narrativa')} ${estado.narrative ? `sí, por ${autorNarrativa}` : 'no — escribe «relevo» en el chat del agente'}`);
     const heredada = latestMergedBranchEntry(cwd, estado);
     if (heredada) {
-      console.log(`  ${pad('rama fusionada')} narrativa más reciente de ${heredada.branch} (por ${heredada.author ?? '?'})`);
+      const autorHeredado = heredada.author ? canonicalAgent(heredada.author) : '?';
+      console.log(`  ${pad('rama fusionada')} narrativa más reciente de ${heredada.branch} (por ${autorHeredado})`);
     }
   } else {
     console.log(`  ${pad('relevo')} todavía no existe para esta rama`);

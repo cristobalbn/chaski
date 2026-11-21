@@ -5,6 +5,16 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.24] - 2026-11-21
+
+### Mejorado
+- El filtro de secretos (`src/lib/secrets.mjs`) detecta y redacta flags de línea
+  de comando con nombres sensibles seguidos de espacio o `=` (`--token <valor>`,
+  `--api-key=<valor>`, `--password <valor>`, `--secret`, `--access-key`),
+  conservando el nombre del flag.
+- `chaski doctor`, `chaski why` y el aviso de turnos abiertos (`interruptedTurns`)
+  normalizan con `canonicalAgent()` los autores e identificadores de agente.
+
 ## [0.1.23] - 2026-11-21
 
 ### Mejorado
