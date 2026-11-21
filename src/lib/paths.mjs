@@ -164,8 +164,10 @@ export function readOnlyRelayPath(cwd, branch = undefined) { return join(readOnl
 export function readOnlyStatePath(cwd, branch = undefined) { return join(readOnlyBranchDir(cwd, branch), 'estado.json'); }
 
 /** Config y estado global de chaski, fuera de cualquier proyecto. */
+export function readOnlyGlobalDir() { return join(homedir(), '.chaski'); }
+
 export function globalDir() {
-  const dir = join(homedir(), '.chaski');
+  const dir = readOnlyGlobalDir();
   mkdirSync(dir, { recursive: true });
   return dir;
 }

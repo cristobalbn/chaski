@@ -6,6 +6,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 ## [No publicado]
 
 ### Corregido
+- Se inicializa una sola clave de firma aunque arranquen varios proyectos
+  a la vez. Verificar una firma ya no crea la clave.
 - La sonda de Codex convive con los hooks normales. `probe --clean`
   conserva los cambios hechos en la configuración desde que se activó la sonda.
 - Al desinstalar la statusline se guarda primero la restauración en

@@ -79,6 +79,44 @@ function montar(prefijo) {
   return { raiz, proyecto, casa, bin, g, entorno, correr };
 }
 
+test('la firma usa una sola clave al iniciar varios procesos con el mismo HOME', async () => {
+  const casa = mkdtempSync(join(tmpdir(), 'chaski-key-race-'));
+  try {
+    const env = { ...process.env, HOME: casa, USERPROFILE: casa };
+    const relay = pathToFileURL(join(SRC, 'lib', 'relay.mjs')).href;
+    const helper = `
+      import { sign, isValidSignature } from ${JSON.stringify(relay)};
+      const [mode, signature] = process.argv.slice(1);
+      const text = 'relevo de prueba';
+      if (mode === 'sign') console.log(sign(text));
+      else console.log(isValidSignature(text, signature), isValidSignature(text + ' alterado', signature));
+    `;
+    const baseArgs = ['--input-type=module', '-e', helper];
+    const run = (...args) => execFileSync(process.execPath, [...baseArgs, ...args], { env, encoding: 'utf8' }).trim();
+    assert.equal(run('verify', '0'.repeat(16)), 'false false');
+    assert.equal(existsSync(join(casa, '.chaski')), false);
+    const signInChild = () => new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [...baseArgs, 'sign'], { env, stdio: ['ignore', 'pipe', 'inherit'] });
+      let output = '';
+      child.stdout.on('data', (chunk) => { output += chunk; });
+      child.on('error', reject);
+      child.on('close', (code) => {
+        if (code !== 0) reject(new Error('sign terminó con código ' + code));
+        else resolve(output.trim());
+      });
+    });
+    const signatures = await Promise.all(Array.from({ length: 6 }, signInChild));
+    assert.equal(new Set(signatures).size, 1);
+    assert.match(signatures[0], /^[0-9a-f]{16}$/);
+    assert.equal(run('verify', signatures[0]), 'true false');
+    const keyFile = join(casa, '.chaski', 'clave');
+    assert.match(readFileSync(keyFile, 'utf8'), /^[0-9a-f]{64}$/);
+    if (process.platform !== 'win32') assert.equal(statSync(keyFile).mode & 0o777, 0o600);
+  } finally {
+    rmSync(casa, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
 test('la configuración combina las capas y aísla las listas con tipo incorrecto', () => {
   const m = montar('chaski-config-layers-');
   try {

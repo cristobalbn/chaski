@@ -6,12 +6,13 @@
 //   2. Presupuesto duro de tamaño. No es una buena práctica: por encima de
 //      10.000 caracteres, Claude Code deja de inyectar el contenido y manda
 //      solo una ruta, así que un relevo gordo simplemente no funciona.
-import { writeFileSync, renameSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
+import { writeFileSync, renameSync, readFileSync, unlinkSync } from 'node:fs';
 import { createHmac, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
-import { globalDir } from './paths.mjs';
+import { globalDir, readOnlyGlobalDir } from './paths.mjs';
 import { redact } from './secrets.mjs';
 import { ageText } from './time.mjs';
+import { withFileLock } from './lock.mjs';
 
 export const MAX_CHARS = 6000; // ~1.500 tokens, con margen bajo el techo de 10.000
 
@@ -20,9 +21,9 @@ export const MAX_CHARS = 6000; // ~1.500 tokens, con margen bajo el techo de 10.
  * un lector nunca ve un archivo a medio escribir — y los clientes de
  * sincronización (OneDrive, Dropbox) no alcanzan a bloquear el destino.
  */
-export function writeAtomic(ruta, contenido) {
+export function writeAtomic(ruta, contenido, { mode } = {}) {
   const tmp = `${ruta}.${process.pid}.tmp`;
-  writeFileSync(tmp, contenido, 'utf8');
+  writeFileSync(tmp, contenido, { encoding: 'utf8', mode });
 
   // En Windows el rename falla si otro proceso tiene el destino abierto, y
   // suele ser momentáneo: un antivirus, un cliente de sincronización, otro
@@ -55,19 +56,45 @@ function sleep(ms) {
   }
 }
 
-/** Clave local para sign. Nunca se versiona: vive en ~/.chaski/. */
+/** Clave local para firmar. Dos proyectos pueden arrancar a la vez. */
 function signingKey() {
-  const ruta = join(globalDir(), 'clave');
-  if (!existsSync(ruta)) writeFileSync(ruta, randomBytes(32).toString('hex'), { mode: 0o600 });
-  return readFileSync(ruta, 'utf8').trim();
+  const path = join(globalDir(), 'clave');
+  const readKey = () => {
+    try { return readFileSync(path, 'utf8').trim(); }
+    catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return null;
+    }
+  };
+  const existing = readKey();
+  if (existing) return existing;
+  const created = withFileLock(path, () => {
+    const key = readKey();
+    if (key) return key;
+    const generated = randomBytes(32).toString('hex');
+    writeAtomic(path, generated, { mode: 0o600 });
+    return generated;
+  });
+  const key = created ?? readKey();
+  if (!key) throw new Error('no se pudo inicializar la clave del relevo');
+  return key;
 }
 
-export function sign(texto) {
-  return createHmac('sha256', signingKey()).update(texto).digest('hex').slice(0, 16);
+function signatureOf(text, key) {
+  return createHmac('sha256', key).update(text).digest('hex').slice(0, 16);
 }
 
-export function isValidSignature(texto, signature) {
-  try { return signature === sign(texto); } catch { return false; }
+export function sign(text) {
+  return signatureOf(text, signingKey());
+}
+
+export function isValidSignature(text, signature) {
+  try {
+    const key = readFileSync(join(readOnlyGlobalDir(), 'clave'), 'utf8').trim();
+    return Boolean(key) && signature === signatureOf(text, key);
+  } catch {
+    return false;
+  }
 }
 
 /**
