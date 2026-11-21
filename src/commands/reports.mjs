@@ -72,8 +72,11 @@ export function next() {
 function summarizePending(narrative) {
   if (!narrative) return null;
   const lineas = String(narrative).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const clave = lineas.find((l) => /^(\*\*|-|\d+\.)?\s*(pendiente|siguiente paso|en vuelo|a medias|falta)\b/i.test(l));
-  const elegida = (clave ?? lineas.find((l) => !l.startsWith('#'))) || null;
+  const patron = /^([*#>-]|\d+\.)*\s*(pendiente|siguiente paso|en vuelo|a medias|falta)\b/i;
+  const soloTitulo = /^([*#>-]|\d+\.)*\s*(pendiente|siguiente paso|en vuelo|a medias|falta)\s*[:*—-]*\s*$/i;
+  const idx = lineas.findIndex((l) => patron.test(l));
+  const clave = idx === -1 ? null : (soloTitulo.test(lineas[idx]) ? lineas[idx + 1] : lineas[idx]);
+  const elegida = (clave ?? lineas.find((l) => !l.startsWith('#') && !/^\*\*[^*]+\*\*\s*:?\s*$/.test(l))) || null;
   return elegida ? elegida.replace(/^[-*#>\s]+/, '').slice(0, 120) : null;
 }
 

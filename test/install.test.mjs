@@ -2111,6 +2111,13 @@ describe('comandos next, cost, why y share', () => {
       writeFileSync(rutaEstado, JSON.stringify(conTotal, null, 2));
       assert.match(salida, /Terminar refresh\.ts:41/, 'no mostró el paso pendiente de la narrativa');
 
+      // Si el encabezado va en su propia línea (**A medias**\n...), toma la línea siguiente.
+      conTotal.narrative = '**Tarea**\nRotar refresh tokens.\n\n**A medias**\nValidar rotación en refresh.ts:41.';
+      writeFileSync(rutaEstado, JSON.stringify(conTotal, null, 2));
+      const salidaMultilinea = m.correr('next');
+      assert.match(salidaMultilinea, /# pendiente: Validar rotación en refresh\.ts:41\./);
+      assert.doesNotMatch(salidaMultilinea, /# pendiente: A medias\*\*/);
+
       // Cuando Claude Code vuelve a completar un Stop normal, sale de agotados.
       capturar(m, 'claude-code', {
         session_id: 's2', cwd: m.proyecto, hook_event_name: 'Stop',
