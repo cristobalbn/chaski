@@ -5,6 +5,16 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.28] - 2026-11-21
+
+### Mejorado
+- `chaski doctor` informa el estado de la petición de narrativa y de latidos
+  de Claude Code también cuando el plugin está habilitado solo en el proyecto
+  (`.claude/settings.json` o `.claude/settings.local.json`) sin que exista aún
+  `~/.claude/settings.json`.
+- `promptHookAlive` y `recordPromptActivity` normalizan y migran alias en
+  `~/.chaski/prompt-hook.json` igual que en `latidos.json`.
+
 ## [0.1.27] - 2026-11-21
 
 ### Corregido

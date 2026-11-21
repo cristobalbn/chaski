@@ -57,7 +57,7 @@ export function doctor() {
   // Un CLI con hooks registrados que nunca estampó heartbeat es el síntoma de un
   // paso pendiente, no de un bug. Se diagnostica aquí en lugar de dejar al
   // usuario adivinando por qué .tambo/ sigue vacío.
-  const sinLatido = cliStatus.filter(({ name, events }) => events?.length
+  const sinLatido = cliStatus.filter(({ name, events }) => ((name === 'claude code' && plugin) || events?.length)
     && !Object.keys(lat).some((key) => canonicalAgent(key) === name));
   for (const { name } of sinLatido) {
     console.log(`\n  ⚠ ${name}: hooks registrados pero nunca ejecutados.`);
@@ -76,8 +76,8 @@ export function doctor() {
   // respuesta, y sin esta línea el usuario no tendría cómo saber por qué.
   console.log('\nPetición de narrativa (antes de la respuesta o después)');
   const vivos = readJson(promptHookPath(), {}) ?? {};
-  for (const { name, hasConfig, events } of cliStatus) {
-    if (!hasConfig) continue;
+  for (const { name, installed, hasConfig, events } of cliStatus) {
+    if (!hasConfig && !(name === 'claude code' && plugin && installed)) continue;
     const evento = PROMPT_HOOK_EVENTS[name];
     const registrado = (name === 'claude code' && plugin) || events?.includes(evento);
     let nota;

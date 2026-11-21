@@ -3975,9 +3975,10 @@ describe('hallazgos de la auditoría del 2026-11-20', () => {
       assert.ok(JSON.stringify(JSON.parse(readFileSync(ruta, 'utf8')).hooks ?? {}).includes('capture.mjs'),
         'quitó los hooks de todos los proyectos por un plugin activo en uno solo');
       // Caso positivo: activo para el usuario, sí se quitan.
-      const s = JSON.parse(readFileSync(ruta, 'utf8'));
-      s.enabledPlugins = { 'chaski@chaski': true };
-      writeFileSync(ruta, JSON.stringify(s));
+      // Y si solo está activo en el proyecto sin ~/.claude/settings.json, doctor igual muestra su fila de petición.
+      rmSync(ruta, { force: true });
+      assert.match(m.correr('doctor'), /Petición de narrativa[\s\S]*claude code\s+después de la respuesta hasta que UserPromptSubmit corra/);
+      writeFileSync(ruta, JSON.stringify({ enabledPlugins: { 'chaski@chaski': true } }));
       m.correr('init');
       assert.ok(!JSON.stringify(JSON.parse(readFileSync(ruta, 'utf8')).hooks ?? {}).includes('capture.mjs'));
     } finally {
