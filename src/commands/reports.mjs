@@ -211,7 +211,8 @@ export async function why(args) {
     // Una copia archivada prevalece sobre la misma narrativa en estado.json,
     // incluso cuando la búsqueda no coincide con el autor archivado.
     if (live.size) live.delete(JSON.stringify([entry.branch, entry.narrative]));
-    addMatch({ ...entry, fuente: 'historia' });
+    const author = entry.author ? canonicalAgent(entry.author) : '?';
+    addMatch({ ...entry, author, fuente: 'historia' });
   }
   for (const entry of live.values()) addMatch(entry);
 

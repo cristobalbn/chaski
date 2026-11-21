@@ -805,6 +805,8 @@ describe('filtro de secretos', () => {
     ['clave privada', p('-----BEGIN RSA ', 'PRIVATE KEY-----\nMIIEoggg\n-----END RSA ', 'PRIVATE KEY-----'),
       'MIIEoggg'],
     ['asignación de secreto', p('DATABASE_PASS', 'WORD=sup3rs3cr3t0_largo'), 'sup3rs3cr3t0_largo'],
+    ['flag CLI de secreto con espacio', p('deploy --api-token ', 'mi_token_secreto_123'), 'mi_token_secreto_123'],
+    ['flag CLI de secreto con =', p('login --password=', 'clavesecreta987'), 'clavesecreta987'],
     ['URL con credencial', p('postgres://usuario:', 'clave123456', '@host:5432/db'), 'clave123456'],
     ['cabecera Authorization', p('Authorization: Bearer ', 'abcdefghijklmnopqrstuvwxyz123456'),
       'abcdefghijklmnopqrstuvwxyz123456'],

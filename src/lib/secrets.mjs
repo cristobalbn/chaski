@@ -36,7 +36,9 @@ const PATTERNS = [
   [/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g, 'clave-privada'],
 
   // Asignaciones con nombre sensible: TOKEN=..., api_secret: "...", PASSWORD = '...'
-  [/\b([A-Za-z_][A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY|CREDENTIAL|ACCESS_KEY)[A-Za-z0-9_]*)\s*[:=]\s*["']?([^\s"',;]{8,})["']?/gi, 'asignacion'],
+  [/\b([A-Za-z_][A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY|CREDENTIAL|ACCESS_KEY)[A-Za-z0-9_]*)\s*[:=]\s*["']?([^\s"',;\][]{8,})["']?/gi, 'asignacion'],
+  // Flags de línea de comando con nombre sensible: --token xxx, --api-key=xxx, --password 'xxx'
+  [/((?:^|[\s"'`])--[A-Za-z0-9-]*(?:secret|token|password|passwd|api-?key|private-?key|access-?key)[A-Za-z0-9-]*(?:\s*=\s*|\s+))["']?([^\s"',;\][]{8,})["']?/gi, 'flag-secreto'],
 
   // URL con credenciales embebidas
   [/\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s:/@]+)@/gi, 'url-con-credencial'],
@@ -148,6 +150,7 @@ function redactText(texto, patterns) {
       // En asignaciones, URLs y cabeceras se conserva la parte no secreta
       // para que el texto siga siendo legible.
       if (etiqueta === 'asignacion') return `${grupos[0]}=[redactado: secreto]`;
+      if (etiqueta === 'flag-secreto') return `${grupos[0]}[redactado: secreto]`;
       if (etiqueta === 'url-con-credencial') return `${grupos[0]}${grupos[1]}:[redactado]@`;
       if (etiqueta === 'cabecera-auth') return `${grupos[0]}[redactado]`;
       return `[redactado: ${etiqueta}]`;
