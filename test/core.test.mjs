@@ -1085,6 +1085,31 @@ describe('facts de git en casos que rompían', () => {
     });
   });
 
+  test('conserva espacios y delimitadores de rutas literales', { skip: process.platform === 'win32' }, () => {
+    conRepo((dir, g) => {
+      const names = ['inicio => final.txt', 'origen -> destino.txt', ' con\ttab.txt '];
+      for (const name of names) writeFileSync(join(dir, name), 'original\n');
+      g('add', '-A');
+      g('commit', '-qm', 'inicial');
+      for (const name of names) writeFileSync(join(dir, name), 'original\nextra\n');
+      const stats = gitFacts(dir, {}).dirty;
+      assert.deepEqual(stats.map(({ ruta }) => ruta).sort(), names.sort());
+      assert.ok(stats.every(({ mas, menos }) => mas === 1 && menos === 0));
+    });
+  });
+
+  test('un repo sin commits conserva el relevo bajo sin-rama y lista los archivos staged', () => {
+    conRepo((dir, g) => {
+      writeFileSync(join(dir, 'primer.txt'), 'primera línea\n');
+      g('add', 'primer.txt');
+      const facts = gitFacts(dir, {});
+      assert.equal(facts.isRepo, true);
+      assert.equal(facts.branch, null);
+      assert.deepEqual(facts.commits, []);
+      assert.deepEqual(facts.dirty, [{ ruta: 'primer.txt', mas: 1, menos: 0, nuevo: false }]);
+    });
+  });
+
   test('el estado no crece sin límite con muchos archivos dirty', () => {
     // Pasaba tras un npm install sin gitignore, o generando código: miles de
     // archivos hacían un estado.json de más de un megabyte, reescrito entero
@@ -1284,25 +1309,14 @@ describe('presupuesto de tiempo del hook', () => {
       });
     });
 
-    test('si "rev-parse" no responde a tiempo, sigue siendo un repo y se declara', () => {
-      // Lo encontró el CI de Windows: con un runner lento, el primer git
-      // pasaba del presupuesto, currentBranch() volvía null y gitFacts lo
-      // tomaba por "no es un repo". El relevo decía "Sin repositorio git" y
-      // perdía la lista de archivos. Aquí es determinista: el presupuesto está
-      // en cero solo para la primera consulta, la de la rama.
+    test('si Git no responde a tiempo, distingue el repositorio de una carpeta sin git', () => {
       conRepoSucio(4, (dir) => {
-        let llamadas = 0;
-        const primeraSinTiempo = {
-          remaining: () => (llamadas++ === 0 ? 0 : 5000),
-          expired: () => false,
-          elapsed: () => 0,
-        };
-        const h = gitFacts(dir, {}, primeraSinTiempo);
-        assert.equal(h.branch, null, 'el fixture no dejó la rama sin leer; el test no probaría nada');
-        assert.equal(h.isRepo, true, 'tomó una rama sin respuesta por "no es un repo"');
-        assert.equal(h.dirty.length, 4, 'perdió la lista de archivos sucios');
-        assert.ok(h.trimmed.some((t) => /rev-parse/.test(t)), 'no declaró que la rama no se pudo leer');
-        const md = render({ writtenAt: new Date().toISOString(), agent: 't', facts: h, trimmed: h.trimmed });
+        const facts = gitFacts(dir, {}, fakeBudget(0));
+        assert.equal(facts.branch, null);
+        assert.equal(facts.isRepo, true);
+        assert.equal(facts.dirtyUnknown, true);
+        assert.ok(facts.trimmed.some((step) => /rama actual/.test(step)));
+        const md = render({ writtenAt: new Date().toISOString(), agent: 't', facts, trimmed: facts.trimmed });
         assert.doesNotMatch(md, /Sin repositorio git/);
       });
     });

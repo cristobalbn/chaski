@@ -113,14 +113,14 @@ export function currentBranch(cwd, budget = null) {
  * aunque la estimación de costo de quien la llamó haya sido optimista.
  */
 export function git(cwd, args, opciones = {}) {
-  const { timeout = 4000, budget = null } =
+  const { timeout = 4000, budget = null, raw = false } =
     typeof opciones === 'number' ? { timeout: opciones } : opciones;
   // Sin tiempo ni para que valga la pena intentarlo: ni se spawnea.
   if (budget && budget.remaining() <= MIN_GIT_CALL_MS) return null;
   const timeoutEfectivo = effectiveTimeout(timeout, budget);
   const root = projectDir(cwd);
   try {
-    return execFileSync('git', [
+    const stdout = execFileSync('git', [
       // Sin esto, git escapa en octal cualquier ruta con acentos: un
       // `café.txt` llegaba al relevo como `caf\303\251.txt`. Importa en
       // cualquier proyecto en español.
@@ -130,7 +130,8 @@ export function git(cwd, args, opciones = {}) {
       cwd: root, encoding: 'utf8', timeout: timeoutEfectivo,
       stdio: ['ignore', 'pipe', 'ignore'],
       maxBuffer: 16 * 1024 * 1024,
-    }).trim();
+    });
+    return raw ? stdout : stdout.trim();
   } catch {
     return null;
   }
