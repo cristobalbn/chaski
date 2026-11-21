@@ -268,6 +268,12 @@ de entregar cada registro JSONL al adaptador correspondiente. Los contratos
 de Claude Code, Codex y Antigravity tienen adaptadores y fixtures propios.
 El ordinal de un rollout de Codex es opcional. [Decodificador de Codex](https://github.com/openai/codex/blob/main/codex-rs/rollout/src/lib.rs)
 
+La marca guarda también el dispositivo y el identificador del archivo cuando
+el sistema los informa. Un reemplazo en la misma ruta se lee desde el inicio
+aplicando el límite habitual. Los estados anteriores empiezan a guardar ese
+identificador en la primera captura que consigue abrir el transcript.
+[Estadísticas de archivos en Node.js](https://nodejs.org/api/fs.html#class-fsstats)
+
 Los datos de los CLI se convierten a hechos dentro de los adaptadores. El
 lector común decide cuántos bytes consumir y el render recibe datos ya
 normalizados. El límite de 8 MB y las comprobaciones de tiempo permiten

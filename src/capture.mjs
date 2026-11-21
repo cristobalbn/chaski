@@ -120,7 +120,8 @@ function main() {
     const desde = mismoTranscript ? (previo.offset ?? 0) : 0;
 
     const previousCommands = mismaSesion && Array.isArray(previo.commands) ? previo.commands : [];
-    const t = transcriptFacts(ev.transcript_path, desde, config, budget, previousCommands);
+    const transcriptIdentity = mismoTranscript ? (previo.transcriptIdentity ?? null) : null;
+    const t = transcriptFacts(ev.transcript_path, desde, config, budget, previousCommands, transcriptIdentity);
     const g = gitFacts(cwd, config, budget, snapshot);
     const headFromLog = g.commits?.[0]?.split(' ')[0] || null;
 
@@ -131,6 +132,7 @@ function main() {
       session: ev.session_id ?? null,
       // La ruta del transcript se guarda para poder invalidar la marca de agua.
       transcript: ev.transcript_path ?? null,
+      ...(t.identity ? { transcriptIdentity: t.identity } : {}),
       offset: t.offset,
       // Los turns se acumulan dentro de una sesión; en una nueva se reinician,
       // o el relevo diría "1.200 turns" de trabajo que ya no está en contexto.

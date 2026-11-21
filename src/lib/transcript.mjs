@@ -7,14 +7,16 @@ import { extractCodex } from './transcripts/codex.mjs';
 const MAX_TRANSCRIPT_BYTES = 8 * 1024 * 1024;
 
 /** Hechos del transcript desde la marca de agua anterior. */
-export function transcriptFacts(path, offset = 0, config = null, budget = null, previousCommands = []) {
+export function transcriptFacts(path, offset = 0, config = null, budget = null, previousCommands = [], previousIdentity = null) {
   const res = { commands: previousCommands.slice(-12).map((command) => ({ ...command })), filesRead: [], lastMessage: null, offset, turns: 0, redactions: 0 };
+  if (previousIdentity) res.identity = previousIdentity;
   if (!path) return res;
   if (budget?.expired()) return { ...res, trimmed: true };
 
-  const chunk = readTranscriptChunk(path, offset);
+  const chunk = readTranscriptChunk(path, offset, previousIdentity);
   if (!chunk) return res;
-  const { buffer, from, trimmed, reset } = chunk;
+  const { buffer, from, trimmed, reset, identity } = chunk;
+  res.identity = identity;
   if (reset) {
     res.commands = [];
     res.reset = true;
@@ -69,21 +71,24 @@ export function transcriptFacts(path, offset = 0, config = null, budget = null, 
   return res;
 }
 
-function readTranscriptChunk(path, offset) {
+function readTranscriptChunk(path, offset, previousIdentity) {
   try {
     // Tamaño y lectura del mismo descriptor: si el transcript se reemplaza
     // entre ambas operaciones, no se mezclan versiones del archivo.
     const fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
     try {
-      const stat = fstatSync(fd);
+      const stat = fstatSync(fd, { bigint: true });
       if (!stat.isFile()) return null;
-      const { size } = stat;
-      const reset = offset > size;
+      const size = Number(stat.size);
+      // Un reemplazo puede conservar ruta y tamaño. BigInt evita redondear
+      // identificadores de archivo de Windows antes de compararlos.
+      const identity = stat.ino !== 0n ? `${stat.dev}:${stat.ino}` : null;
+      const reset = offset > size || Boolean(identity && previousIdentity && identity !== previousIdentity);
       const start = Number.isSafeInteger(offset) && offset >= 0 && !reset ? offset : 0;
       const from = Math.max(start, size - MAX_TRANSCRIPT_BYTES);
       const buffer = Buffer.allocUnsafe(size - from);
       const read = buffer.length ? readSync(fd, buffer, 0, buffer.length, from) : 0;
-      return { buffer: buffer.subarray(0, read), from, trimmed: from > start, reset };
+      return { buffer: buffer.subarray(0, read), from, trimmed: from > start, reset, identity };
     } finally {
       closeSync(fd);
     }

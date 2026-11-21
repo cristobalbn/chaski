@@ -1,11 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { readOnlyGlobalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath } from '../lib/paths.mjs';
 import { usageSummary } from '../lib/ask.mjs';
 import { writeAtomic } from '../lib/atomic.mjs';
 import { withFileLock } from '../lib/lock.mjs';
-import { redact, anonymize } from '../lib/secrets.mjs';
+import { createRedactor, redact, anonymize } from '../lib/secrets.mjs';
 import { pad } from './common.mjs';
 import { CLIS, isInstalled } from './hook-config.mjs';
 import { projectContext } from './project.mjs';
@@ -116,38 +116,36 @@ export function cost() {
 
 // ------------------------------------------------------------------ why
 
-export function why(args) {
+export async function why(args) {
   const { cwd } = projectContext();
   const filtro = args.join(' ').trim().toLowerCase();
   console.log(`\nchaski why${filtro ? ` — "${filtro}"` : ''}\n`);
 
   const tambo = readOnlyTambo(cwd);
-  const entradas = [];
-  const histRuta = join(tambo, 'historia', 'entries.jsonl');
-  if (existsSync(histRuta)) {
-    for (const linea of readFileSync(histRuta, 'utf8').split(/\r?\n/).filter(Boolean)) {
-      try {
-        const e = JSON.parse(linea);
-        if (e?.narrative) entradas.push({ fuente: 'historia', ...e });
-      } catch {}
-    }
-  }
+  const coincidencias = [];
+  const addMatch = (entry) => {
+    if (filtro && !`${entry.branch ?? ''} ${entry.author ?? ''} ${entry.narrative}`.toLowerCase().includes(filtro)) return;
+    coincidencias.push(entry);
+    if (coincidencias.length > 10) coincidencias.shift();
+  };
 
   // También revisa el estado vivo de cada rama por si una narrativa se
   // escribió a mano en estado.json y todavía no pasó por otra captura.
+  const live = new Map();
   const branchesDir = join(tambo, 'branches');
   if (existsSync(branchesDir)) {
-    const config = loadConfig(cwd);
+    const redactNarrative = createRedactor(loadConfig(cwd));
     for (const dir of readdirSync(branchesDir)) {
       const est = readJson(join(branchesDir, dir, 'estado.json'), null);
       if (!est?.narrative) continue;
       // La narrativa de estado.json la escribe el agente tal cual: se redacta
       // al mostrarla, como en el relevo (secretos y <private>). La de
       // historia/ ya se redactó al archivarse.
-      const texto = redact(String(est.narrative).trim(), config).texto;
+      const texto = redactNarrative(String(est.narrative).trim()).texto;
       const branch = est.facts?.branch ?? dir;
-      if (entradas.some((e) => e.branch === branch && e.narrative === texto)) continue;
-      entradas.push({
+      const key = JSON.stringify([branch, texto]);
+      if (live.has(key)) continue;
+      live.set(key, {
         fuente: 'rama',
         at: est.narrativeWrittenAt ?? est.writtenAt ?? null,
         author: est.narrativeAuthor ?? est.agent ?? '?',
@@ -158,12 +156,20 @@ export function why(args) {
     }
   }
 
+  for await (const entry of historyEntries(join(tambo, 'historia', 'entries.jsonl'))) {
+    // Una copia archivada prevalece sobre la misma narrativa en estado.json,
+    // incluso cuando la búsqueda no coincide con el autor archivado.
+    if (live.size) live.delete(JSON.stringify([entry.branch, entry.narrative]));
+    addMatch({ ...entry, fuente: 'historia' });
+  }
+  for (const entry of live.values()) addMatch(entry);
+
   const decDir = join(cwd, 'decisiones');
   if (existsSync(decDir)) {
     for (const f of readdirSync(decDir).filter((n) => n.endsWith('.md')).sort()) {
       try {
         const txt = readFileSync(join(decDir, f), 'utf8').trim();
-        entradas.push({
+        addMatch({
           fuente: `decisiones/${f}`,
           at: f.slice(0, 10),
           author: 'equipo',
@@ -175,11 +181,6 @@ export function why(args) {
     }
   }
 
-  const coincidencias = filtro
-    ? entradas.filter((e) =>
-      `${e.branch ?? ''} ${e.author ?? ''} ${e.narrative ?? ''}`.toLowerCase().includes(filtro))
-    : entradas;
-
   if (!coincidencias.length) {
     console.log(filtro
       ? `  No encontré decisiones que mencionen "${filtro}".\n`
@@ -187,12 +188,36 @@ export function why(args) {
     return;
   }
 
-  for (const e of coincidencias.slice(-10).reverse()) {
-    const fecha = (e.at ?? '').slice(0, 16).replace('T', ' ') || 'sin fecha';
+  for (const e of coincidencias.reverse()) {
+    const fecha = String(e.at ?? '').slice(0, 16).replace('T', ' ') || 'sin fecha';
     const head = e.head ? ` · ${e.head}` : '';
     console.log(`── ${fecha} · ${e.branch} · por ${e.author}${head} (${e.fuente})`);
     console.log(e.narrative.trim());
     console.log('');
+  }
+}
+
+async function* historyEntries(path) {
+  const parse = (line) => {
+    try {
+      const entry = JSON.parse(line);
+      return typeof entry?.narrative === 'string' && entry.narrative ? entry : null;
+    } catch { return null; }
+  };
+  let partial = '';
+  try {
+    for await (const chunk of createReadStream(path, { encoding: 'utf8' })) {
+      const lines = (partial + chunk).split('\n');
+      partial = lines.pop();
+      for (const line of lines) {
+        const entry = parse(line);
+        if (entry) yield entry;
+      }
+    }
+    const entry = parse(partial);
+    if (entry) yield entry;
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
   }
 }
 
