@@ -5,6 +5,12 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.18] - 2026-11-21
+
+### Corregido
+- `chaski next` toma la línea siguiente cuando la narrativa escribe `**A medias**`
+  o `**Siguiente paso**` como encabezado en una línea separada.
+
 ## [0.1.17] - 2026-11-21
 
 ### Corregido
