@@ -189,22 +189,32 @@ test('un relevo en la ruta antigua de una rama con tag se recupera en la ruta ca
     assert.notEqual(oldBranch, branch);
     const dir = join(m.proyecto, '.tambo', 'branches', branchSlug(oldBranch));
     mkdirSync(dir, { recursive: true });
-    const narrative = 'Recuperar la decisión de la rama anterior';
+    const narrative = 'Pendiente: recuperar la decisión de la rama anterior';
     writeFileSync(join(dir, 'estado.json'), JSON.stringify({
-      narrative, facts: { branch: oldBranch }, writtenAt: new Date().toISOString(), agent: 'codex',
+      narrative, narrativeAuthor: 'codex', facts: { branch: oldBranch }, writtenAt: new Date().toISOString(), agent: 'codex',
     }));
     writeFileSync(join(dir, 'relevo.md'), narrative);
+    assert.match(m.correr('doctor'), /narrativa\s+sí, por codex/);
+    assert.match(m.correr('next'), /# pendiente: Pendiente: recuperar la decisión/);
+    assert.match(m.correr('share', '--yes'), /Publicado en decisiones\//);
     const run = (script, event) => execFileSync(process.execPath, [join(SRC, script), event, 'codex'], {
       cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input: JSON.stringify({ cwd: m.proyecto, session_id: 'new' }),
     });
     const startup = run('inject.mjs', 'SessionStart');
-    assert.match(startup, /Recuperar la decisión/);
+    assert.match(startup, /recuperar la decisión/i);
     assert.doesNotMatch(startup, /el relevo se escribió en/i);
+    const commitToken = ['ghp', '_', 'b'.repeat(36)].join('');
+    writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 2;\n');
+    m.g('add', '-A');
+    m.g('commit', '-qm', `fix: rotar ${commitToken}`);
     run('capture.mjs', 'Stop');
-    const canonical = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'branches', branchSlug(branch), 'estado.json'), 'utf8'));
+    const canonicalRaw = readFileSync(join(m.proyecto, '.tambo', 'branches', branchSlug(branch), 'estado.json'), 'utf8');
+    assert.ok(!canonicalRaw.includes(commitToken), 'el token del commit llegó a estado.json');
+    assert.match(canonicalRaw, /redactado/);
+    const canonical = JSON.parse(canonicalRaw);
     assert.equal(canonical.facts.branch, branch);
     assert.equal(canonical.narrative, narrative);
-    assert.match(run('inject.mjs', 'SessionStart'), /Recuperar la decisión/);
+    assert.match(run('inject.mjs', 'SessionStart'), /recuperar la decisión/i);
   } finally {
     rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
@@ -1081,8 +1091,12 @@ describe('promoción de subagents', () => {
       const token = ['sk', '-', 'a'.repeat(32)].join('');
       m.capturar({
         cwd: m.proyecto, session_id: 'padre', hook_event_name: 'SubagentStop',
-        agent_id: 'sub-1', last_assistant_message: `Usé la clave ${token} para probar.`,
+        agent_id: 'sub-1', agent_type: `Explore-${token}`, stop_reason: `error-${token}`,
+        last_assistant_message: `Usé la clave ${token} para probar.`,
       });
+      const estado = JSON.stringify(m.leerEstado());
+      assert.ok(!estado.includes(token), 'el token llegó a estado.json en subagents');
+      assert.match(estado, /redactado/);
       const todo = m.leerRelevo() + JSON.stringify(m.leerEstado());
       assert.ok(!todo.includes(token), 'se filtró un secreto desde un subagente');
       assert.match(todo, /redactado/);
@@ -2112,11 +2126,14 @@ describe('comandos next, cost, why y share', () => {
       assert.match(salida, /Terminar refresh\.ts:41/, 'no mostró el paso pendiente de la narrativa');
 
       // Si el encabezado va en su propia línea (**A medias**\n...), toma la línea siguiente.
-      conTotal.narrative = '**Tarea**\nRotar refresh tokens.\n\n**A medias**\nValidar rotación en refresh.ts:41.';
+      const tokenNext = ['ghp', '_', 'a'.repeat(36)].join('');
+      conTotal.narrative = `**Tarea**\nRotar refresh tokens.\n\n**A medias**\nValidar rotación en refresh.ts:41 con <private>interno</private> y ${tokenNext}.`;
       writeFileSync(rutaEstado, JSON.stringify(conTotal, null, 2));
       const salidaMultilinea = m.correr('next');
-      assert.match(salidaMultilinea, /# pendiente: Validar rotación en refresh\.ts:41\./);
+      assert.match(salidaMultilinea, /# pendiente: Validar rotación en refresh\.ts:41 con \[privado\] y \[redactado: token-github\]\./);
       assert.doesNotMatch(salidaMultilinea, /# pendiente: A medias\*\*/);
+      assert.ok(!salidaMultilinea.includes(tokenNext));
+      assert.ok(!salidaMultilinea.includes('interno'));
 
       // Cuando Claude Code vuelve a completar un Stop normal, sale de agotados.
       capturar(m, 'claude-code', {

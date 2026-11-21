@@ -5,6 +5,23 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.19] - 2026-11-21
+
+### Mejorado
+- El filtro de secretos detecta tokens de Hugging Face (`hf_`), PyPI (`pypi-`),
+  Supabase (`sbp_`, `sb_secret_`), Shopify (`shpat_`, `shpss_`, `shpca_`, `shppa_`),
+  Databricks (`dapi`), bots de Telegram, secretos de webhook de Stripe (`whsec_`)
+  y cabeceras `X-API-Key` / `Api-Key`.
+
+### Corregido
+- Antigravity completa el código de salida de comandos que cruzan una captura
+  incremental y de tareas en segundo plano que terminan en `SYSTEM_MESSAGE`.
+- Los asuntos de commits en `facts.commits` y en el aviso de deriva, los campos
+  `agent_type` y `stop_reason` de `SubagentStop` y el resumen de pendiente de
+  `chaski next` pasan por el filtro de secretos y etiquetas `<private>`.
+- `chaski doctor`, `chaski next` y `chaski share` recuperan el relevo en la ruta
+  abreviada anterior cuando la rama coincide con un tag homónimo.
+
 ## [0.1.18] - 2026-11-21
 
 ### Corregido

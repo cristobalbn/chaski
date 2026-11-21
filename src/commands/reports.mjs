@@ -1,7 +1,7 @@
 import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { readOnlyGlobalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath } from '../lib/paths.mjs';
+import { readOnlyGlobalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath, legacyBranchState } from '../lib/paths.mjs';
 import { usageSummary } from '../lib/ask.mjs';
 import { writeAtomic } from '../lib/atomic.mjs';
 import { withFileLock } from '../lib/lock.mjs';
@@ -14,7 +14,7 @@ export function next() {
   const { cwd } = projectContext();
   console.log('\nchaski next\n');
   const branch = currentBranch(cwd);
-  const estado = readJson(readOnlyStatePath(cwd, branch), {}) ?? {};
+  const estado = readBranchState(cwd, branch);
   const quota = readJson(join(readOnlyGlobalDir(), 'quota.json'), {}) ?? {};
   const edadRelevo = estado.writtenAt
     ? Math.max(0, Math.round((Date.now() - new Date(estado.writtenAt).getTime()) / 60000))
@@ -62,11 +62,19 @@ export function next() {
   if (estado.lastFile) {
     console.log(`  # último archivo tocado: ${estado.lastFile}`);
   }
-  const pendiente = summarizePending(estado.narrative);
+  const narrativaRedactada = estado.narrative ? redact(String(estado.narrative), loadConfig(cwd)).texto : null;
+  const pendiente = summarizePending(narrativaRedactada);
   if (pendiente) {
     console.log(`  # pendiente: ${pendiente}`);
   }
   console.log('');
+}
+
+function readBranchState(cwd, branch) {
+  const canonical = readOnlyStatePath(cwd, branch);
+  if (existsSync(canonical)) return readJson(canonical, {}) ?? {};
+  const legacy = legacyBranchState(cwd, branch);
+  return legacy ? (readJson(join(legacy.dir, 'estado.json'), {}) ?? {}) : {};
 }
 
 function summarizePending(narrative) {
@@ -232,7 +240,7 @@ export function share(args) {
   const temaArgs = args.filter((a) => a !== '--yes').join(' ').trim();
 
   const branch = currentBranch(cwd);
-  const estado = readJson(readOnlyStatePath(cwd, branch), {}) ?? {};
+  const estado = readBranchState(cwd, branch);
   if (!estado.narrative || !String(estado.narrative).trim()) {
     console.error('\nchaski share: la rama actual no tiene narrativa para publicar.');
     console.error('Escribe «relevo» en tu agente antes de compartir una decisión.\n');

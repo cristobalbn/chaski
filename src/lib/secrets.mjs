@@ -22,6 +22,14 @@ const PATTERNS = [
   [/\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b/g, 'clave-sendgrid'],
   [/\bsk_live_[A-Za-z0-9]{16,}\b/g, 'clave-stripe'],
   [/\brk_live_[A-Za-z0-9]{16,}\b/g, 'clave-stripe'],
+  [/\bwhsec_[A-Za-z0-9]{24,}\b/g, 'secreto-webhook-stripe'],
+  [/\bhf_[A-Za-z0-9]{30,}\b/g, 'token-huggingface'],
+  [/\bpypi-[A-Za-z0-9_-]{32,}\b/g, 'token-pypi'],
+  [/\bsbp_[a-f0-9]{32,}\b/g, 'token-supabase'],
+  [/\bsb_secret_[A-Za-z0-9_-]{20,}\b/g, 'token-supabase'],
+  [/\bshp(?:at|ss|ca|pa)_[a-fA-F0-9]{32}\b/g, 'token-shopify'],
+  [/\bdapi[a-f0-9]{32}\b/g, 'token-databricks'],
+  [/\b\d{8,10}:[A-Za-z0-9_-]{35}\b/g, 'token-telegram'],
 
   // Formatos estructurados
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, 'jwt'],
@@ -33,8 +41,9 @@ const PATTERNS = [
   // URL con credenciales embebidas
   [/\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s:/@]+)@/gi, 'url-con-credencial'],
 
-  // Cabecera Authorization
+  // Cabeceras Authorization y X-API-Key
   [/\b(Authorization\s*:\s*(?:Bearer|Basic|token)\s+)([A-Za-z0-9._~+/=-]{12,})/gi, 'cabecera-auth'],
+  [/\b((?:x-)?api-key\s*:\s*)([A-Za-z0-9._~+/=-]{16,})/gi, 'cabecera-auth'],
 ];
 
 // Patrones de usuario largos no aportan nada que uno corto no haga, y sí
