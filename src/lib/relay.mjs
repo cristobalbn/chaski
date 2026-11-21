@@ -1,4 +1,4 @@
-// Render y escritura del relevo.
+// Render del relevo.
 //
 // Dos invariantes se sostienen aquí:
 //   1. El Markdown se renderiza desde estado.json. La narrative vive en su
@@ -6,115 +6,10 @@
 //   2. Presupuesto duro de tamaño. No es una buena práctica: por encima de
 //      10.000 caracteres, Claude Code deja de inyectar el contenido y manda
 //      solo una ruta, así que un relevo gordo simplemente no funciona.
-import { writeFileSync, renameSync, readFileSync, statSync, chmodSync, unlinkSync } from 'node:fs';
-import { createHmac, randomBytes } from 'node:crypto';
-import { join } from 'node:path';
-import { globalDir, readOnlyGlobalDir } from './paths.mjs';
 import { redact } from './secrets.mjs';
 import { ageText } from './time.mjs';
-import { withFileLock } from './lock.mjs';
 
 export const MAX_CHARS = 6000; // ~1.500 tokens, con margen bajo el techo de 10.000
-
-/**
- * Escritura atómica: archivo temporal y rename. El rename es atómico, así que
- * un lector nunca ve un archivo a medio escribir — y los clientes de
- * sincronización (OneDrive, Dropbox) no alcanzan a bloquear el destino.
- */
-export function writeAtomic(ruta, contenido, { mode } = {}) {
-  const tmp = `${ruta}.${process.pid}.tmp`;
-  // El temporal reemplaza el inodo anterior. Conserva sus permisos para
-  // que reescribir una configuración privada no la vuelva legible por otros.
-  if (mode === undefined && process.platform !== 'win32') {
-    const previous = statSync(ruta, { throwIfNoEntry: false });
-    if (previous) mode = previous.mode & 0o777;
-  }
-  writeFileSync(tmp, contenido, { encoding: 'utf8', mode });
-  if (mode !== undefined && process.platform !== 'win32' && (mode & process.umask()) !== 0) {
-    try { chmodSync(tmp, mode); }
-    catch (error) {
-      try { unlinkSync(tmp); } catch {}
-      throw error;
-    }
-  }
-
-  // En Windows el rename falla si otro proceso tiene el destino abierto, y
-  // suele ser momentáneo: un antivirus, un cliente de sincronización, otro
-  // CLI leyendo el relevo. Se reintenta con esperas cortas.
-  //
-  // Lo que NO se hace es borrar el destino para forzar el rename. Esa era la
-  // versión anterior, y tenía un camino que perdía el relevo entero: si el
-  // rename fallaba después de borrar, no quedaba ni el original ni el
-  // temporal. Perder una captura es mucho menos grave que perder el relevo.
-  for (let intento = 0; intento < 5; intento++) {
-    try {
-      renameSync(tmp, ruta);
-      return;
-    } catch {
-      if (intento < 4) sleep(20 * (intento + 1));
-    }
-  }
-
-  try { unlinkSync(tmp); } catch {}
-  throw new Error(`no se pudo escribir ${ruta}: el destino sigue bloqueado`);
-}
-
-/** Espera sincrónica sin dependencias ni busy-loop. */
-function sleep(ms) {
-  try {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-  } catch {
-    const hasta = Date.now() + ms;
-    while (Date.now() < hasta) { /* sin SharedArrayBuffer disponible */ }
-  }
-}
-
-/** Clave local para firmar. Dos proyectos pueden arrancar a la vez. */
-function signingKey() {
-  const path = join(globalDir(), 'clave');
-  const readKey = () => {
-    try { return readFileSync(path, 'utf8').trim(); }
-    catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-      return null;
-    }
-  };
-  const existing = readKey();
-  if (existing) return existing;
-  const created = withFileLock(path, () => {
-    const key = readKey();
-    if (key) return key;
-    const generated = randomBytes(32).toString('hex');
-    writeAtomic(path, generated, { mode: 0o600 });
-    return generated;
-  });
-  const key = created ?? readKey();
-  if (!key) throw new Error('no se pudo inicializar la clave del relevo');
-  return key;
-}
-
-function signatureOf(text, key) {
-  return createHmac('sha256', key).update(text).digest('hex').slice(0, 16);
-}
-
-export function relaySigner() {
-  const key = signingKey();
-  return (text) => signatureOf(text, key);
-}
-
-export function sign(text) {
-  return relaySigner()(text);
-}
-
-export function isValidSignature(text, signature) {
-  if (typeof signature !== 'string' || !signature) return false;
-  try {
-    const key = readFileSync(join(readOnlyGlobalDir(), 'clave'), 'utf8').trim();
-    return Boolean(key) && signature === signatureOf(text, key);
-  } catch {
-    return false;
-  }
-}
 
 /**
  * ¿`mdFirmado` es el render de este mismo `estado` salvo la narrativa?

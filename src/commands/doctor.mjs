@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readOnlyGlobalDir, readJson, syncedFolder, tamboIsIgnored, loadConfig, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyBranchDir, stripBom } from '../lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from '../lib/ask.mjs';
-import { isValidSignature } from '../lib/relay.mjs';
+import { isValidSignature } from '../lib/signatures.mjs';
 import { readRelay } from '../lib/relay-store.mjs';
 import { orphanRelays, effectivePruneDays } from '../lib/maintenance.mjs';
 import { pkgVersion, pad } from './common.mjs';

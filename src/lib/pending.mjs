@@ -14,7 +14,7 @@
 // sesiones a la vez. Ninguna función lanza: son llamadas desde hooks.
 import { existsSync, rmSync } from 'node:fs';
 import { readJson, pendingAskPath } from './paths.mjs';
-import { writeAtomic } from './relay.mjs';
+import { writeAtomic } from './atomic.mjs';
 import { withFileLock } from './lock.mjs';
 import { shouldDeliverPending, samePendingConversation, PENDING_TTL_MS } from './ask.mjs';
 import { isFresh } from './time.mjs';

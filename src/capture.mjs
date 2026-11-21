@@ -22,7 +22,7 @@ import { recordCaptureActivity } from './lib/activity.mjs';
 import { withFileLock } from './lib/lock.mjs';
 import { gitFacts, readGitSnapshot } from './lib/facts.mjs';
 import { transcriptFacts } from './lib/transcript.mjs';
-import { writeAtomic } from './lib/relay.mjs';
+import { writeAtomic } from './lib/atomic.mjs';
 import { publishRelay } from './lib/relay-store.mjs';
 import { redact } from './lib/secrets.mjs';
 import { shouldAsk, askText, askPayload, promptHookAlive, COMPACT_HINT, quotaPressure } from './lib/ask.mjs';
@@ -190,7 +190,11 @@ function main() {
     // (invariante 2), redactado (invariante 6) y con vencimiento, como las
     // conclusiones de subagentes y por la misma razón: se inyecta en cada
     // arranque y puede repetir algo hostil que el agente leyó.
-    estado.lastReply = replyFrom(t.lastMessage, config, estado.writtenAt) ?? freshReply(previo.lastReply);
+    // Stop puede llegar antes de que el CLI escriba la respuesta en JSONL.
+    const payloadReply = ev.hook_event_name === 'Stop' && typeof ev.last_assistant_message === 'string'
+      ? ev.last_assistant_message.trim() : '';
+    estado.lastReply = replyFrom(payloadReply || t.lastMessage, config, estado.writtenAt)
+      ?? freshReply(previo.lastReply);
 
     // Cuántos turnos tenía el relevo cuando se escribió la narrativa: es con
     // esto que se mide si quedó atrás, y lo anota el código, no el modelo.

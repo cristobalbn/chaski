@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { readJsonForWrite, TAMBO, claudePluginEnabled, claudePluginEnabledForUser, CLAUDE_PLUGIN_ID } from '../lib/paths.mjs';
-import { writeAtomic } from '../lib/relay.mjs';
+import { writeAtomic } from '../lib/atomic.mjs';
 import { AQUI, pad, backup } from './common.mjs';
 import { CAPTURE, INJECT, cmd, MARCA_INI, MARCA_FIN, PROBE_START, PROBE_END, CLIS, isInstalled, isChaskiHookGroup, isProbeHookGroup, removeBlock } from './hook-config.mjs';
 import { projectContext, projectRootNote } from './project.mjs';

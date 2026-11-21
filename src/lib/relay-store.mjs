@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJson } from './paths.mjs';
-import { isValidSignature, MAX_CHARS, render, relaySigner, writeAtomic } from './relay.mjs';
+import { MAX_CHARS, render } from './relay.mjs';
+import { isValidSignature, relaySigner } from './signatures.mjs';
+import { writeAtomic } from './atomic.mjs';
 
 function readView(path) {
   try { return readFileSync(path, 'utf8'); }

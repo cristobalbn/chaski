@@ -12,7 +12,7 @@ import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { globalDir } from '../lib/paths.mjs';
-import { writeAtomic } from '../lib/relay.mjs';
+import { writeAtomic } from '../lib/atomic.mjs';
 import { AQUI } from './common.mjs';
 
 
@@ -87,11 +87,10 @@ function wrapper(script, event, agent) {
   let actual = null;
   try { actual = readFileSync(ruta, 'utf8'); } catch {}
   if (actual !== cuerpo) {
-    // Atómico (invariante 7): el hook ejecuta este archivo en cada turno y no
-    // debe encontrarlo a medio escribir. writeAtomic no preserva el modo, así
-    // que el 0755 del .sh se aplica después del rename.
-    writeAtomic(ruta, cuerpo);
-    if (!win) chmodSync(ruta, 0o755);
+    // Los hooks pueden ejecutar el wrapper desde el primer instante visible.
+    writeAtomic(ruta, cuerpo, win ? {} : { mode: 0o755 });
+  } else if (!win && (statSync(ruta).mode & 0o111) !== 0o111) {
+    chmodSync(ruta, 0o755);
   }
   return ruta.replace(/\//g, win ? '\\' : '/');
 }

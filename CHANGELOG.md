@@ -6,6 +6,10 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 ## [No publicado]
 
 ### Corregido
+- Stop conserva la respuesta final del payload si llega antes de escribirse
+  el transcript. La captura consulta Git sin actualizar su índice.
+- La escritura atómica usa temporales exclusivos, conserva la causa de los
+  errores y deja los wrappers de Unix ejecutables desde su publicación.
 - La captura confirma el estado firmado antes de publicar la vista Markdown.
   El arranque recupera ese estado si la vista falta o corresponde a la
   captura anterior. Las ediciones de la vista siguen generando un aviso.
