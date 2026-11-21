@@ -596,7 +596,8 @@ describe('la documentación no promete lo que no existe', () => {
     const docs = ['README.md', 'AGENTS.md', 'CONTRIBUTING.md'].map(leer).join('\n');
 
     const subcomandos = [...instalador.matchAll(/accion === '(\w+)'/g)].map((m) => m[1]);
-    const flags = [...instalador.matchAll(/'--(\w+)'/g)].map((m) => m[1]);
+    const comandos = readdirSync(join(SRC, 'commands')).map((f) => leer('src/commands/' + f)).join('\n');
+    const flags = [...comandos.matchAll(/'--(\w+)'/g)].map((m) => m[1]);
 
     // Al revés de lo intuitivo: se parte del código y se verifica la doc. Un
     // comando sin documentar es un hueco, pero un comando documentado que no
@@ -634,9 +635,10 @@ describe('la documentación no promete lo que no existe', () => {
     // git escapa en octal cualquier ruta con acentos, y eso ya produjo un bug.
     // La regla vale para flags, claves y nombres de archivo generados.
     const instalador = leer('src/cli.mjs');
+    const comandos = readdirSync(join(SRC, 'commands')).map((f) => leer('src/commands/' + f)).join('\n');
     const identificadores = [
       ...[...instalador.matchAll(/accion === '([^']+)'/g)].map((m) => m[1]),
-      ...[...instalador.matchAll(/'--([^']+)'/g)].map((m) => m[1]),
+      ...[...comandos.matchAll(/'--([^']+)'/g)].map((m) => m[1]),
       ...[...leer('src/capture.mjs').matchAll(/config\?\.(\w+)/g)].map((m) => m[1]),
     ];
     for (const id of identificadores) {
@@ -864,11 +866,11 @@ describe('puntos de entrada', () => {
     });
   }
 
-  test('cli.mjs registra exactamente esos tres scripts', () => {
+  test('el instalador registra exactamente esos tres scripts', () => {
     // Si alguien agrega un tercer punto de entrada, tiene que entrar también
     // en la lista de arriba y en el invariante 8 de AGENTS.md.
-    const cli = readFileSync(join(SRC, 'cli.mjs'), 'utf8');
-    const registrados = [...cli.matchAll(/resolve\(AQUI, '([\w.-]+)'\)/g)].map((m) => m[1]);
+    const configHooks = readFileSync(join(SRC, 'commands', 'hook-config.mjs'), 'utf8');
+    const registrados = [...configHooks.matchAll(/resolve\(AQUI, '([\w.-]+)'\)/g)].map((m) => m[1]);
     assert.deepEqual([...new Set(registrados)].sort(), ['capture.mjs', 'inject.mjs', 'statusline.mjs']);
   });
 });
@@ -1928,13 +1930,24 @@ describe('contrato de empaquetado npm y sincronización con GitHub', () => {
   const raiz = join(AQUI, '..');
   const pkg = JSON.parse(readFileSync(join(raiz, 'package.json'), 'utf8'));
 
-  test('npm run check verifica todos los archivos .mjs de src/ y src/lib/', () => {
-    const checkCmd = pkg.scripts?.check ?? '';
-    const mjsRaiz = readdirSync(SRC).filter((f) => f.endsWith('.mjs')).map((f) => `src/${f}`);
-    const mjsLib = readdirSync(join(SRC, 'lib')).filter((f) => f.endsWith('.mjs')).map((f) => `src/lib/${f}`);
-    for (const rel of [...mjsRaiz, ...mjsLib]) {
-      assert.ok(checkCmd.includes(rel),
-        `package.json scripts.check no verifica "${rel}"`);
+  test('npm run check detecta sintaxis inv\u00e1lida en m\u00f3dulos anidados de src/', () => {
+    const temp = mkdtempSync(join(tmpdir(), 'chaski-check-'));
+    try {
+      const check = join(temp, pkg.scripts.check.replace(/^node /, ''));
+      mkdirSync(dirname(check), { recursive: true });
+      writeFileSync(check, readFileSync(join(raiz, 'scripts', 'check.mjs')));
+      const dir = join(temp, 'src', 'commands', 'nested');
+      mkdirSync(dir, { recursive: true });
+      const fixture = join(dir, 'broken.mjs');
+      const run = () => spawnSync(process.execPath, [check], { encoding: 'utf8' });
+      writeFileSync(fixture, 'export const broken = ;');
+      const invalid = run();
+      assert.equal(invalid.status, 1);
+      assert.match(invalid.stderr, /broken\.mjs/);
+      writeFileSync(fixture, 'export const broken = false;');
+      assert.equal(run().status, 0);
+    } finally {
+      rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
