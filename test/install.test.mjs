@@ -4405,7 +4405,7 @@ describe('varias ventanas en el mismo proyecto', () => {
     const m = montar('chaski-hooks-31-');
     try {
       // 1. Stop de agy sellado por límite de cuota no debe pedir narrativa.
-      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 1;\n');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 999;\n');
       const rLimite = spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'agy'], {
         cwd: m.proyecto,
         env: m.entorno,
