@@ -267,7 +267,8 @@ src/commands/       ? instalación, diagnóstico, sonda, informes y statusline
 src/capture.mjs      ~640 lín.   — hook de captura (Stop, SubagentStop): orquesta git, transcripts, cuota, costos e historia
 src/statusline.mjs   ~130 lín.   — statusline opcional de Claude Code (`init --statusline`): anota rate_limits y delega en la del usuario
 src/inject.mjs       ~330 lín.   — hook de inyección (SessionStart; y UserPromptSubmit / PreInvocation, que entregan la petición de narrativa anotada): camino crítico, detecta deriva y neutraliza marcas <<< >>>
-src/lib/facts.mjs    ~570 lín.   — extracción defensiva de hechos desde git (status, log, diff, upstream) y transcripts
+src/lib/facts.mjs     — hechos desde git (status, log, diff, upstream)
+src/lib/transcript.mjs — lectura incremental y adaptadores de transcript
 src/lib/paths.mjs    ~340 lín.   — rutas, slugs de ramas (branchSlug), lock por mkdir, loadConfig, detección de entorno
 src/lib/relay.mjs    ~410 lín.   — render de Markdown endurecido (vallas, código en línea), preámbulo, firma HMAC SHA-256 y writeAtomic
 src/lib/ask.mjs      ~200 lín.   — petición proactiva de narrativa (shouldAsk), debounces y payloads por CLI
