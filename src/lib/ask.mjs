@@ -385,6 +385,12 @@ export const USAGE_FRESH_MS = 15 * 60 * 1000;
  * renovó ya (`resetsAt` en el pasado). `askNarrativeAtQuota: false` (o 0) lo
  * apaga; un valor fuera de 1..100 usa el de defecto.
  */
+function finiteNumber(value) {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function quotaPressure(uso, config, ahora = Date.now()) {
   const conf = config?.askNarrativeAtQuota;
   if (conf === false || conf === 0) return null;
@@ -392,9 +398,12 @@ export function quotaPressure(uso, config, ahora = Date.now()) {
   const at = Date.parse(uso?.at ?? '');
   if (!Number.isFinite(at) || ahora - at > USAGE_FRESH_MS || at > ahora + 60_000) return null;
   const candidatas = [['5 h', uso.fiveHour], ['7 días', uso.sevenDay]]
-    .map(([window, w]) => ({ window, pct: Math.round(Number(w?.usedPercentage)), resetsAt: w?.resetsAt ?? null }))
+    .map(([window, w]) => {
+      const pct = finiteNumber(w?.usedPercentage);
+      return { window, pct: pct === null ? NaN : Math.round(pct), resetsAt: finiteNumber(w?.resetsAt) };
+    })
     .filter((c) => Number.isFinite(c.pct) && c.pct >= umbral)
-    .filter((c) => !(Number.isFinite(c.resetsAt) && c.resetsAt * 1000 <= ahora))
+    .filter((c) => !(c.resetsAt !== null && c.resetsAt * 1000 <= ahora))
     .sort((a, b) => b.pct - a.pct);
   if (!candidatas.length) return null;
   const c = candidatas[0];
@@ -404,14 +413,17 @@ export function quotaPressure(uso, config, ahora = Date.now()) {
 /** Una línea legible de la cuota, para `chaski next` y `doctor`. null si no hay dato reciente. */
 export function usageSummary(uso, ahora = Date.now(), frescura = 6 * 3600 * 1000) {
   const at = Date.parse(uso?.at ?? '');
-  if (!Number.isFinite(at) || ahora - at > frescura) return null;
+  if (!Number.isFinite(at) || ahora - at > frescura || at > ahora + 60_000) return null;
   const partes = [];
   for (const [nombre, w] of [['5 h', uso.fiveHour], ['7 días', uso.sevenDay]]) {
-    const pct = Number(w?.usedPercentage);
-    if (!Number.isFinite(pct)) continue;
-    const resets = Number(w?.resetsAt);
-    const vence = Number.isFinite(resets) && resets * 1000 > ahora
-      ? `, se renueva ${new Date(resets * 1000).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}` : '';
+    const pct = finiteNumber(w?.usedPercentage);
+    if (pct === null) continue;
+    const resets = finiteNumber(w?.resetsAt);
+    const vencida = resets !== null && resets * 1000 <= ahora;
+    if (vencida && Number.isFinite(frescura)) continue;
+    const vence = resets !== null && resets * 1000 > ahora
+      ? `, se renueva ${new Date(resets * 1000).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}`
+      : (vencida ? ' (ya renovada)' : '');
     partes.push(`${nombre} al ${Math.round(pct)} %${vence}`);
   }
   if (!partes.length) return null;

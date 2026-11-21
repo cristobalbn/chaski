@@ -2384,6 +2384,15 @@ describe('cuota (#82)', () => {
     assert.match(r, /^cuota 5 h al 42 %, se renueva \d{2}:\d{2} · 7 días al 13 %/);
     assert.match(r, /dato de hace 5 min/);
     assert.equal(usageSummary(uso(42, 13, '2026-11-19T00:00:00Z'), ahora), null);
+
+    // No convierte usedPercentage: null en 0 %, y omite ventanas ya renovadas en frescura finita.
+    const conNullYVencida = {
+      at: new Date(ahora - 60_000).toISOString(),
+      fiveHour: { usedPercentage: 95, resetsAt: Math.floor(ahora / 1000) - 60 },
+      sevenDay: { usedPercentage: null, resetsAt: null },
+    };
+    assert.equal(usageSummary(conNullYVencida, ahora), null);
+    assert.match(usageSummary(conNullYVencida, ahora, Infinity), /5 h al 95 % \(ya renovada\)/);
   });
 });
 

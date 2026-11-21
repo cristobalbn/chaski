@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readOnlyGlobalDir, readJson, syncedFolder, tamboIsIgnored, loadConfig, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyBranchDir, legacyBranchState, currentBranch, stripBom } from '../lib/paths.mjs';
+import { readOnlyGlobalDir, readJson, syncedFolder, tamboIsIgnored, loadConfig, promptHookPath, claudePluginEnabled, claudePluginEnabledForUser, CLAUDE_PLUGIN_ID, usagePath, readOnlyBranchDir, legacyBranchState, currentBranch, stripBom } from '../lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from '../lib/ask.mjs';
 import { canonicalAgent } from '../lib/payload.mjs';
 import { isValidSignature } from '../lib/signatures.mjs';
@@ -17,6 +17,7 @@ export function doctor() {
   console.log(`\nchaski doctor (v${pkgVersion()})\n`);
 
   const plugin = claudePluginEnabled(cwd);
+  const pluginUser = claudePluginEnabledForUser();
   const cliStatus = Object.entries(CLIS).map(([name, cli]) => {
     const installed = isInstalled(cli.bin);
     const hasConfig = installed && existsSync(cli.config);
@@ -28,7 +29,7 @@ export function doctor() {
 
   console.log('CLIs y hooks');
   for (const status of cliStatus) {
-    console.log(`  ${pad(status.name)} ${describeHooks(status, plugin)}`);
+    console.log(`  ${pad(status.name)} ${describeHooks(status, plugin, pluginUser)}`);
     if (!(status.cli.formato === 'json-claude' && plugin)) {
       for (const missing of status.missingPaths) {
         console.log(`  ⚠ ${status.name}: hook registrado apunta a una ruta que no existe (${missing}) — ejecuta init`);
@@ -45,6 +46,7 @@ export function doctor() {
   const latRaw = readJson(join(readOnlyGlobalDir(), 'latidos.json'), {}) ?? {};
   const lat = Object.create(null);
   for (const [a, iso] of Object.entries(latRaw)) {
+    if (typeof iso !== 'string' || !Number.isFinite(Date.parse(iso))) continue;
     const k = canonicalAgent(a);
     if (!lat[k] || Date.parse(iso) > Date.parse(lat[k])) lat[k] = iso;
   }
@@ -57,7 +59,8 @@ export function doctor() {
   // Un CLI con hooks registrados que nunca estampó heartbeat es el síntoma de un
   // paso pendiente, no de un bug. Se diagnostica aquí en lugar de dejar al
   // usuario adivinando por qué .tambo/ sigue vacío.
-  const sinLatido = cliStatus.filter(({ name, events }) => ((name === 'claude code' && plugin) || events?.length)
+  const sinLatido = cliStatus.filter(({ name, installed, events }) => installed
+    && ((name === 'claude code' && plugin) || events?.length)
     && !Object.keys(lat).some((key) => canonicalAgent(key) === name));
   for (const { name } of sinLatido) {
     console.log(`\n  ⚠ ${name}: hooks registrados pero nunca ejecutados.`);
@@ -161,12 +164,13 @@ export function doctor() {
   console.log(`  ${pad('llamadas')} chaski NO invoca claude -p, codex exec ni agy -p\n`);
 }
 
-function describeHooks({ installed, hasConfig, cli, events }, plugin) {
+function describeHooks({ installed, hasConfig, cli, events }, plugin, pluginUser = false) {
   if (!installed) return 'no instalado';
   if (cli.formato === 'json-claude' && plugin) {
-    return `vía plugin ${CLAUDE_PLUGIN_ID}` + (events?.length
+    if (!events?.length) return `vía plugin ${CLAUDE_PLUGIN_ID}`;
+    return `vía plugin ${CLAUDE_PLUGIN_ID}` + (pluginUser
       ? ' — también hay hooks en settings.json: se silencian solos, pero corre init para quitarlos'
-      : '');
+      : ' — también hay hooks en settings.json (se silencian en este proyecto; siguen activos en los demás)');
   }
   if (!hasConfig) return 'sin config — ejecuta init';
   if (events === null) return 'config ilegible — revisa el archivo';
