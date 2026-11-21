@@ -34,6 +34,7 @@ export function probe(sub) {
   for (const [name, cli] of Object.entries(CLIS)) {
     if (!isInstalled(cli.bin)) continue;
     try {
+      mkdirSync(dirname(cli.config), { recursive: true });
       backupForProbe(cli.config);
       const eventos = cli.formato === 'json-agy'
         ? ['SessionStart', 'Stop', 'PostInvocation']
@@ -47,13 +48,11 @@ export function probe(sub) {
         }
         writeAtomic(cli.config, JSON.stringify(s, null, 2));
       } else if (cli.formato === 'json-agy') {
-        mkdirSync(dirname(cli.config), { recursive: true });
         const h = readJsonForWrite(cli.config);
         h.chaskiProbe = Object.fromEntries(eventos.map((ev) =>
           [ev, [{ type: 'command', command: probeCmd(ev, name, true), timeout: 15 }]]));
         writeAtomic(cli.config, JSON.stringify(h, null, 2));
       } else {
-        mkdirSync(dirname(cli.config), { recursive: true });
         const previo = existsSync(cli.config) ? readFileSync(cli.config, 'utf8') : '';
         const lineas = [PROBE_START];
         for (const ev of eventos.slice(0, 2)) {

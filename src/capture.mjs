@@ -161,7 +161,7 @@ function main() {
       subagents: freshSubagents(previo.subagents),
       // Tareas en segundo plano que quedan corriendo. Si cambias de CLI con
       // algo a medio ejecutar, el agent nuevo tiene que saberlo.
-      backgroundTasks: liveTasks(ev),
+      backgroundTasks: liveTasks(ev, config),
       redactions: t.redactions,
       event: ev.hook_event_name ?? null,
     };
@@ -223,6 +223,9 @@ function main() {
       : (estado.narrative ? estado.turns : 0);
     estado.turnsAtNarrative = narrativaNueva ? (estado.turns ?? 0) : previosEnSesion;
     estado.narrativeStamp = estado.narrativeWrittenAt ?? null;
+    estado.narrativeSession = narrativaNueva
+      ? (previo.session ?? estado.session)
+      : (previo.narrativeSession ?? previo.session ?? null);
 
 
     // ¿Toca pedirle la narrativa al agent? Se decide ANTES de escribir, para
@@ -247,10 +250,15 @@ function main() {
       ? cuota.key : (conversacion?.askedQuotaKey ?? null);
     const otrasConversaciones = saveConversation(estado, previo);
     if (otrasConversaciones.length) estado.conversations = otrasConversaciones;
+    const historialAlDia = !estado.narrative
+      || (!narrativaNueva
+        && (estado.narrativeWrittenAt ?? null) === (previo.historyStamp ?? null)
+        && existsSync(join(readOnlyTambo(cwd), 'historia', 'entries.jsonl')))
+      || recordHistory(cwd, estado, config);
+    estado.historyStamp = historialAlDia ? (estado.narrativeWrittenAt ?? null) : (previo.historyStamp ?? null);
     publishRelay(dir, estado, config, previo);
     recordCaptureActivity(estado.agent);
     recordQuota(ev, estado, config);
-    if (narrativaNueva && estado.narrative) recordHistory(cwd, estado, config);
     let diferida = false;
 
     // La petición va por stdout y solo después de que el relevo esté escrito:
@@ -520,14 +528,14 @@ function lastTouched(g, previo) {
  * Confirmado en el payload real de Claude Code: campo `background_tasks`,
  * con id, status y description. Los otros CLIs pueden no enviarlo.
  */
-function liveTasks(ev) {
+function liveTasks(ev, config) {
   const tareas = ev.background_tasks ?? ev.backgroundTasks ?? [];
   if (!Array.isArray(tareas)) return [];
   return tareas
     .filter((t) => t && /running|pending|in_progress/i.test(t.status ?? ''))
     .map((t) => ({
-      description: String(t.description ?? t.id ?? 'sin descripción').slice(0, 120),
-      kind: t.type ?? null,
+      description: redact(String(t.description ?? t.id ?? 'sin descripción'), config).texto.slice(0, 120),
+      kind: t.type ? redact(String(t.type), config).texto.slice(0, 80) : null,
     }))
     .slice(0, 6);
 }

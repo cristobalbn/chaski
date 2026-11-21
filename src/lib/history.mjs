@@ -23,11 +23,11 @@ export function recordHistory(cwd, estado, config) {
     mkdirSync(dir, { recursive: true });
     const ruta = join(dir, 'entries.jsonl');
     const { texto } = redact(String(estado.narrative ?? '').trim(), config);
-    if (!texto) return;
+    if (!texto) return true;
     const previas = existsSync(ruta) ? readFileSync(ruta, 'utf8') : '';
     const ultima = lastHistoryEntry(previas);
     const branch = estado.facts?.branch ?? 'sin-rama';
-    if (ultima && ultima.branch === branch && ultima.narrative === texto) return;
+    if (ultima && ultima.branch === branch && ultima.narrative === texto) return true;
     const entrada = {
       at: estado.narrativeWrittenAt ?? estado.writtenAt,
       author: canonicalAgent(estado.narrativeAuthor ?? estado.agent),
@@ -37,7 +37,10 @@ export function recordHistory(cwd, estado, config) {
     };
     const nuevo = (previas ? previas.trimEnd() + '\n' : '') + JSON.stringify(entrada) + '\n';
     writeAtomic(ruta, nuevo);
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
 /**
  * La narrativa más reciente, si es de una rama que ya no existe y es más

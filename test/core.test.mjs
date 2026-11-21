@@ -91,6 +91,26 @@ describe('contrato de transcript: Claude Code', () => {
   test('registra el último mensaje del agent', () => {
     assert.match(r.lastMessage ?? '', /typecheck/);
   });
+
+  test('redacta un token antes de recortar el comando a 160 caracteres', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-comando-largo-'));
+    try {
+      const path = join(dir, 'transcript.jsonl');
+      const token = 'ghp_' + 'abcdefghijklmnopqrstuvwxyz0123456789';
+      const prefix = 'printf ' + 'x'.repeat(141) + ' ';
+      const command = prefix + token;
+      writeFileSync(path, JSON.stringify({ type: 'assistant', message: { content: [{
+        type: 'tool_use', id: 'tool', name: 'Bash', input: { command },
+      }] } }) + '\n');
+      assert.ok(command.slice(0, 160).includes('ghp_'));
+      const result = transcriptFacts(path);
+      assert.equal(result.redactions, 1);
+      assert.doesNotMatch(result.commands[0].cmd, /ghp_/);
+      assert.ok(result.commands[0].cmd.length <= 160);
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });
 
 describe('contrato de transcript: Codex', () => {

@@ -542,8 +542,12 @@ describe('probe', () => {
   test('instala la sonda, la muestra y la limpia sin reventar en ningún subcomando', () => {
     const m = montar('chaski-probe-');
     try {
+      const claude = join(m.casa, '.claude', 'settings.json');
+      assert.equal(existsSync(claude), false);
       const salidaInstalar = m.correr('probe');
       assert.match(salidaInstalar, /sonda instalada/, 'probe no instaló la sonda en ningún CLI');
+      const settings = JSON.parse(readFileSync(claude, 'utf8'));
+      assert.match(settings.hooks.Stop[0].hooks[0].command, /sonda\.mjs/);
 
       // Antes de que algo la invoque, --show debe avisar, no reventar.
       const salidaVacio = m.correr('probe', '--show');
@@ -2247,6 +2251,37 @@ describe('comandos next, cost, why y share', () => {
     }
   });
 
+  test('el historial reintenta archivar una narrativa si el archivo estuvo bloqueado', () => {
+    const m = montar('chaski-archive-retry-');
+    try {
+      const run = () => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'codex'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ cwd: m.proyecto, session_id: 'control' }),
+      });
+      assert.equal(run().stderr, '');
+      const root = join(m.proyecto, '.tambo');
+      const branch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const path = join(root, 'branches', branch, 'estado.json');
+      const history = join(root, 'historia', 'entries.jsonl');
+      const state = JSON.parse(readFileSync(path, 'utf8'));
+      const narrative = 'Separar el historial del informe';
+      writeFileSync(path, JSON.stringify({ ...state, narrative, narrativeAuthor: 'codex',
+        narrativeWrittenAt: new Date().toISOString(),
+      }));
+      mkdirSync(history, { recursive: true });
+      const blocked = run();
+      assert.equal(blocked.status, 0);
+      assert.match(readFileSync(join(root, 'branches', branch, 'relevo.md'), 'utf8'), /Separar el historial/);
+      rmSync(history, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      assert.equal(run().stderr, '');
+      assert.equal(run().stderr, '');
+      const entries = readFileSync(history, 'utf8').trim().split('\n').map(JSON.parse);
+      assert.deepEqual(entries.map((entry) => entry.narrative), [narrative]);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   test('share redacta secretos, exige confirmación y escribe archivos únicos en decisiones/', () => {
     const m = montar('chaski-share-');
     try {
@@ -2843,6 +2878,30 @@ test('Stop conserva la respuesta del payload cuando el transcript todavía no la
       });
       assert.equal(JSON.parse(readFileSync(state, 'utf8')).lastReply.text, reply);
     }
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test('los datos del payload de tareas se redactan antes de persistir', () => {
+  const m = montar('chaski-task-private-');
+  try {
+    const token = 'ghp_' + 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const task = { status: 'running', description: 'Ejecutando control ' + token, type: token };
+    assert.match(JSON.stringify(task), /ghp_/);
+    const result = spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+      cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+      input: JSON.stringify({ cwd: m.proyecto, session_id: 'task', background_tasks: [task] }),
+    });
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, '');
+    const branch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+    const dir = join(m.proyecto, '.tambo', 'branches', branch);
+    const state = readFileSync(join(dir, 'estado.json'), 'utf8');
+    const relay = readFileSync(join(dir, 'relevo.md'), 'utf8');
+    assert.match(relay, /Ejecutando control/);
+    assert.match(state, /redactado/);
+    assert.doesNotMatch(state + relay, /ghp_/);
   } finally {
     rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
@@ -4054,6 +4113,7 @@ describe('varias ventanas en el mismo proyecto', () => {
       e.narrativeAuthor = 'claude code';
       e.narrativeWrittenAt = new Date().toISOString();
       writeFileSync(rutaEstado, JSON.stringify(e));
+      assert.equal(stop(m, 'ventana-A').stderr, '');
       assert.match(texto(prompt(m, 'ventana-A')), /antes de responder este mensaje/);
       assert.ok(JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'pending-ask.json'), 'utf8'))['ventana-B'],
         'entregar el pedido de A borró el de B');

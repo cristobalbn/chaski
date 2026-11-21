@@ -322,7 +322,10 @@ export function shouldDeliverPending(pending, sessionId, estado, ahora = Date.no
   const narrada = Date.parse(estado?.narrativeWrittenAt ?? '');
   // Un resumen de una ventana distinta no contesta este pedido. Las entradas
   // de versiones anteriores conservan la lógica previa hasta que se consuman.
-  const attributed = !pending.agent || (estado?.session === pending.session
+  const narrativeSession = (estado?.narrativeWrittenAt ?? null) === (estado?.narrativeStamp ?? null)
+    ? (estado?.narrativeSession ?? estado?.session)
+    : estado?.session;
+  const attributed = !pending.agent || (narrativeSession === pending.session
     && (!estado.narrativeAuthor || estado.narrativeAuthor === pending.agent));
   if (attributed && Number.isFinite(narrada) && narrada >= at) return false;
   return true;
