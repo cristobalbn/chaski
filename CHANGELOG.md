@@ -5,6 +5,16 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Mejorado
+- La captura obtiene rama, HEAD, upstream y archivos desde una sola consulta
+  de estado a Git. Omite el diff local si todos los cambios son archivos sin
+  seguimiento, y el diff con upstream si el árbol está limpio.
+
+### Corregido
+- Las rutas de Git conservan espacios, tabuladores y flechas literales. La
+  comprobación con upstream incluye los archivos fuera de los primeros 50
+  que se guardan en el relevo.
+
 ## [0.1.12] - 2026-11-20
 
 ### Corregido

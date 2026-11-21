@@ -14,12 +14,12 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, loadConfig, promptHookPath, silencedByPlugin, usagePath } from './lib/paths.mjs';
+import { branchDir, statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, loadConfig, promptHookPath, silencedByPlugin, usagePath } from './lib/paths.mjs';
 import { notePendingAsk, markPendingSessionEnded } from './lib/pending.mjs';
 import { closeTurn } from './lib/turns.mjs';
 import { recordHistory } from './lib/history.mjs';
 import { withFileLock } from './lib/lock.mjs';
-import { gitFacts } from './lib/facts.mjs';
+import { gitFacts, readGitSnapshot } from './lib/facts.mjs';
 import { transcriptFacts } from './lib/transcript.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
@@ -90,9 +90,11 @@ function main() {
     liberar = acquireLock(cwd);
     if (!liberar) return ok();
 
-    const branch = currentBranch(cwd, budget);
-    const rutaEstado = statePath(cwd, branch);
-    const rutaRelevo = relayPath(cwd, branch);
+    const snapshot = readGitSnapshot(cwd, budget);
+    const branch = snapshot.branch;
+    const dir = branchDir(cwd, branch);
+    const rutaEstado = join(dir, 'estado.json');
+    const rutaRelevo = join(dir, 'relevo.md');
     const previo = readJson(rutaEstado, {}) ?? {};
 
     // La marca de agua pertenece a UNA sesión y a UN transcript. Si cambia
@@ -116,7 +118,7 @@ function main() {
 
     const previousCommands = mismaSesion && Array.isArray(previo.commands) ? previo.commands : [];
     const t = transcriptFacts(ev.transcript_path, desde, config, budget, previousCommands);
-    const g = gitFacts(cwd, config, budget, branch);
+    const g = gitFacts(cwd, config, budget, snapshot);
     const headFromLog = g.commits?.[0]?.split(' ')[0] || null;
 
     const estado = {
@@ -131,10 +133,8 @@ function main() {
       // o el relevo diría "1.200 turns" de trabajo que ya no está en contexto.
       turns: (mismaSesion && !t.reset ? (previo.turns ?? 0) : 0) + t.turns,
       facts: g,
-      // HEAD al momento de escribir: inject.mjs lo compara para detectar deriva.
-      // Sale del primer commit de `git log -5` sin lanzar otro subproceso; solo
-      // si el log fue recortado por presupuesto se pide con `gitHead`.
-      head: g.isRepo ? (headFromLog ?? gitHead(cwd, budget) ?? null) : null,
+      // El log da el SHA corto. Si se recorta, status ya dio el SHA completo.
+      head: g.isRepo ? (headFromLog ?? snapshot.head ?? null) : null,
       // Si algún paso de gitFacts se quedó sin presupuesto, se declara aquí
       // -en un campo de hechos, no de narrative- para que el agent siguiente
       // sepa que el relevo es incompleto por diseño y no por error silencioso.
@@ -515,8 +515,6 @@ function lastTouched(g, previo) {
   }
   return cand[0].ruta;
 }
-
-function gitHead(cwd, budget) { return git(cwd, ['rev-parse', '--short', 'HEAD'], { budget }); }
 
 /**
  * Tareas en segundo plano todavía corriendo, del payload del hook.
