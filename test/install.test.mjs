@@ -14,7 +14,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, existsSync, rmSync, readdirSync,
-  realpathSync, statSync, utimesSync,
+  realpathSync, renameSync, statSync, utimesSync,
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -1511,6 +1511,40 @@ describe('skill del relevo', () => {
 
 // ------------------------- la conclusión de un subagente sobrevive
 
+test('Stop reinicia la marca de agua si se reemplazó el transcript en la misma ruta', () => {
+  const m = montar('chaski-transcript-replace-');
+  try {
+    const path = join(m.raiz, 'transcript.jsonl');
+    const backup = join(m.raiz, 'transcript-anterior.jsonl');
+    const branch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+    const state = join(m.proyecto, '.tambo', 'branches', branch, 'estado.json');
+    const capture = () => {
+      const run = spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ cwd: m.proyecto, session_id: 's1', transcript_path: path, hook_event_name: 'Stop' }),
+      });
+      assert.equal(run.status, 0);
+      assert.equal(run.stderr, '');
+      return JSON.parse(readFileSync(state, 'utf8'));
+    };
+    const prompt = (content) => JSON.stringify({ type: 'user', message: { content } }) + '\n';
+    writeFileSync(path, prompt('primero').repeat(3));
+    assert.equal(capture().turns, 3);
+    appendFileSync(path, prompt('continúa'));
+    const original = capture();
+    assert.equal(original.turns, 4);
+    renameSync(path, backup);
+    writeFileSync(path, prompt('contenido del nuevo archivo').repeat(7));
+    assert.ok(statSync(path).size > original.offset);
+    const replaced = capture();
+    assert.equal(replaced.turns, 7);
+    assert.equal(replaced.offset, statSync(path).size);
+    assert.equal(capture().turns, 7);
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
 describe('trabajo delegado', () => {
   // Reportado desde fuera (issue #18): `promote()` guardaba la conclusión del
   // subagente y la captura del final del MISMO turno construía un estado nuevo
@@ -2134,6 +2168,31 @@ describe('comandos next, cost, why y share', () => {
       assert.match(salida, /en Stop\s+0 en 7d · 0 total/);
       assert.match(salida, /diferidas\s+1 en 7d · 1 total — sin turno extra/);
       assert.match(salida, /claude code\s+.*· 0 en Stop y 1 diferida\(s\) en 7d/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('why conserva las últimas diez coincidencias y evita repetir el estado archivado', () => {
+    const m = montar('chaski-why-tail-');
+    try {
+      const tambo = join(m.proyecto, '.tambo');
+      const dir = join(tambo, 'branches', 'main');
+      const history = join(tambo, 'historia');
+      mkdirSync(dir, { recursive: true });
+      mkdirSync(history, { recursive: true });
+      const entries = Array.from({ length: 12 }, (_, i) => ({
+        branch: 'main', author: 'codex', narrative: `decisión ${String(i).padStart(2, '0')}`,
+      }));
+      const log = entries.map((entry) => JSON.stringify(entry)).join('\r\n');
+      writeFileSync(join(history, 'entries.jsonl'), log);
+      writeFileSync(join(dir, 'estado.json'), JSON.stringify({
+        ...entries.at(-1), facts: { branch: 'main' }, narrativeAuthor: 'agy',
+      }));
+      const all = m.correr('why', 'decisión');
+      assert.deepEqual(all.match(/^decisión \d+$/gm), entries.slice(-10).reverse().map(({ narrative }) => narrative));
+      assert.match(m.correr('why', 'decisión 00'), /^decisión 00$/m);
+      assert.match(m.correr('why', 'agy'), /No encontré decisiones/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

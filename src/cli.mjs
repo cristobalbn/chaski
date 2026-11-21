@@ -1,23 +1,25 @@
 #!/usr/bin/env node
-import { pkgVersion } from './commands/common.mjs';
-import { init, uninstall } from './commands/install.mjs';
-import { doctor } from './commands/doctor.mjs';
-import { probe } from './commands/probe.mjs';
-import { next, cost, why, share } from './commands/reports.mjs';
+// Cada invocación carga solo el módulo del subcomando que va a ejecutar.
+const commands = new Map([
+  ['init', async (args) => (await import('./commands/install.mjs')).init(args)],
+  ['doctor', async () => (await import('./commands/doctor.mjs')).doctor()],
+  ['uninstall', async () => (await import('./commands/install.mjs')).uninstall()],
+  ['probe', async ([action]) => (await import('./commands/probe.mjs')).probe(action)],
+  ['next', async () => (await import('./commands/reports.mjs')).next()],
+  ['cost', async () => (await import('./commands/reports.mjs')).cost()],
+  ['why', async (args) => (await import('./commands/reports.mjs')).why(args)],
+  ['share', async (args) => (await import('./commands/reports.mjs')).share(args)],
+  ['version', async () => console.log(`chaski ${(await import('./commands/common.mjs')).pkgVersion()}`)],
+]);
 
-const accion = (process.argv[2] ?? 'doctor').toLowerCase();
+const [requested = 'doctor', ...args] = process.argv.slice(2);
+const action = requested.toLowerCase();
+const command = commands.get(['--version', '-v'].includes(action) ? 'version' : action);
 
 try {
-  if (accion === 'init') init(process.argv.slice(3));
-  else if (accion === 'doctor') doctor();
-  else if (accion === 'uninstall') uninstall();
-  else if (accion === 'probe') probe(process.argv[3]);
-  else if (accion === 'next') next();
-  else if (accion === 'cost') cost();
-  else if (accion === 'why') why(process.argv.slice(3));
-  else if (accion === 'share') share(process.argv.slice(3));
-  else if (accion === 'version' || accion === '--version' || accion === '-v') console.log(`chaski ${pkgVersion()}`);
-  else {
+  if (command) {
+    await command(args);
+  } else {
     console.log('uso: chaski [init|doctor|uninstall|probe|next|cost|why|share|version|help]  (--version, -v, --help, -h)');
     console.log('  init      registra los hooks en los CLIs instalados, ignora .tambo/ en git e instala la skill');
     console.log('            --statusline: además envuelve tu statusline de Claude Code para anotar la cuota');
@@ -30,7 +32,7 @@ try {
     console.log('  probe    captura el payload real de los hooks de cada CLI');
     console.log('  version  imprime la versión instalada de chaski');
     // Pedir ayuda no es un error; un subcomando que no existe sí.
-    process.exitCode = ['help', '--help', '-h'].includes(accion) ? 0 : 1;
+    process.exitCode = ['help', '--help', '-h'].includes(action) ? 0 : 1;
   }
 } catch (e) {
   console.error(`\nchaski: ${e?.message ?? e}`);
