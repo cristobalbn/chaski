@@ -2481,16 +2481,22 @@ describe('contrato de empaquetado npm y sincronización con GitHub', () => {
       const check = join(temp, pkg.scripts.check.replace(/^node /, ''));
       mkdirSync(dirname(check), { recursive: true });
       writeFileSync(check, readFileSync(join(raiz, 'scripts', 'check.mjs')));
+      mkdirSync(join(temp, 'test'));
+      mkdirSync(join(temp, '.claude-plugin'));
+      for (const file of ['package.json', join('.claude-plugin', 'plugin.json')]) {
+        writeFileSync(join(temp, file), readFileSync(join(raiz, file)));
+      }
       const dir = join(temp, 'src', 'commands', 'nested');
       mkdirSync(dir, { recursive: true });
       const fixture = join(dir, 'broken.mjs');
       const run = () => spawnSync(process.execPath, [check], { encoding: 'utf8' });
+      writeFileSync(fixture, 'export const broken = false;');
+      const valid = run();
+      assert.equal(valid.status, 0, valid.stderr);
       writeFileSync(fixture, 'export const broken = ;');
       const invalid = run();
-      assert.equal(invalid.status, 1);
+      assert.equal(invalid.status, 1, invalid.stderr);
       assert.match(invalid.stderr, /broken\.mjs/);
-      writeFileSync(fixture, 'export const broken = false;');
-      assert.equal(run().status, 0);
     } finally {
       rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
