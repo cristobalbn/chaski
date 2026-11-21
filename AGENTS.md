@@ -268,7 +268,7 @@ src/capture.mjs      ~640 lín.   — hook de captura (Stop, SubagentStop): orqu
 src/statusline.mjs   ~130 lín.   — statusline opcional de Claude Code (`init --statusline`): anota rate_limits y delega en la del usuario
 src/inject.mjs       ~330 lín.   — hook de inyección (SessionStart; y UserPromptSubmit / PreInvocation, que entregan la petición de narrativa anotada): camino crítico, detecta deriva y neutraliza marcas <<< >>>
 src/lib/facts.mjs     — hechos desde git (status, log, diff, upstream)
-src/lib/transcript.mjs — lectura incremental y adaptadores de transcript
+src/lib/transcript.mjs — lectura incremental de JSONL y despacho a `lib/transcripts/`
 src/lib/paths.mjs    ~340 lín.   — rutas, slugs de ramas (branchSlug), lock por mkdir, loadConfig, detección de entorno
 src/lib/relay.mjs    ~410 lín.   — render de Markdown endurecido (vallas, código en línea), preámbulo, firma HMAC SHA-256 y writeAtomic
 src/lib/ask.mjs      ~200 lín.   — petición proactiva de narrativa (shouldAsk), debounces y payloads por CLI
@@ -371,7 +371,7 @@ No son intercambiables. Lo que funciona en uno falla en silencio en otro.
 
 | | Claude Code | Codex CLI | Antigravity (`agy`) |
 |---|---|---|---|
-| Config | `~/.claude/settings.json`, o el plugin `chaski@chaski` (`hooks/hooks.json`) | `~/.codex/config.toml` | `~/.gemini/config/hooks.json` |
+| Config | `~/.claude/settings.json`, o el plugin `chaski@chaski` (`hooks/hooks.json`) | `$CODEX_HOME/config.toml` o `~/.codex/config.toml` | `~/.gemini/config/hooks.json` |
 | Organización | JSON por evento (`hooks.<Evento>`) | Bloque TOML delimitado (`[[hooks.<Evento>]]` + `[hooks.state]`) | JSON por propietario (`chaski.<Evento>`) |
 | Eventos que registra `init` | `SessionStart`, `UserPromptSubmit`, `Stop`, `SessionEnd`, `PreCompact`, `SubagentStop`, `StopFailure` | `SessionStart`, `UserPromptSubmit`, `Stop` | `SessionStart`, `Stop`, `PreInvocation` |
 | Campos del payload | snake_case | snake_case | **camelCase** |

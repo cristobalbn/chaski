@@ -188,7 +188,7 @@ function registeredEvents(cli) {
 
   let datos;
   try { datos = JSON.parse(txt); } catch { return null; }
-  if (!datos || typeof datos !== 'object') return [];
+  if (!datos || typeof datos !== 'object' || Array.isArray(datos)) return null;
 
   if (cli.formato === 'json-claude') {
     // hooks.<Evento> = [{ matcher?, hooks: [{ type, command }] }]

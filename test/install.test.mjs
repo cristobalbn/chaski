@@ -69,6 +69,7 @@ function montar(prefijo) {
     ...process.env,
     HOME: casa,
     USERPROFILE: casa,
+    CODEX_HOME: join(casa, '.codex'),
     // Los CLIs falsos van al frente, para que `isInstalled()` los encuentre.
     PATH: bin + (process.platform === 'win32' ? ';' : ':') + process.env.PATH,
     Path: bin + (process.platform === 'win32' ? ';' : ':') + (process.env.Path ?? process.env.PATH),
@@ -338,6 +339,56 @@ describe('uninstall revierte lo que init tocó', () => {
       assert.equal(readFileSync(config, 'utf8'), original,
         'init modificó una configuración que no pudo parsear');
       assert.ok(fallo, 'init no avisó de que la configuración estaba mal');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('init detecta una raíz JSON de tipo incorrecto y conserva sus bytes', () => {
+    const m = montar('chaski-json-root-');
+    try {
+      const claude = join(m.casa, '.claude', 'settings.json');
+      const agy = join(m.casa, '.gemini', 'config', 'hooks.json');
+      for (const [file, contents] of [[claude, 'null\n'], [agy, '[]\n']]) {
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, contents);
+      }
+      const r = spawnSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+      });
+      assert.equal(r.status, 1);
+      assert.match(r.stdout, /configuración debe ser un objeto/);
+      assert.equal(readFileSync(claude, 'utf8'), 'null\n');
+      assert.equal(readFileSync(agy, 'utf8'), '[]\n');
+      assert.match(m.correr('doctor'), /agy\s+config ilegible/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('la instalación, sonda y diagnóstico respetan CODEX_HOME', () => {
+    const m = montar('chaski-codex-home-');
+    try {
+      const expected = join(m.raiz, 'perfil alternativo');
+      const conventional = join(m.casa, '.codex', 'config.toml');
+      const active = join(expected, 'config.toml');
+      for (const [file, contents] of [[conventional, '# ajena\n'], [active, 'model = "prueba"\n']]) {
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, contents);
+      }
+      const run = (...args) => execFileSync(process.execPath, [join(SRC, 'cli.mjs'), ...args], {
+        cwd: m.proyecto, env: { ...m.entorno, CODEX_HOME: expected }, encoding: 'utf8',
+      });
+      run('init');
+      assert.match(readFileSync(active, 'utf8'), /codex-capture-Stop/);
+      assert.match(run('doctor'), /codex\s+registrado/);
+      run('probe');
+      assert.match(readFileSync(active, 'utf8'), /codex-sonda-Stop/);
+      run('probe', '--clean');
+      assert.doesNotMatch(readFileSync(active, 'utf8'), /codex-sonda-Stop/);
+      run('uninstall');
+      assert.equal(readFileSync(conventional, 'utf8'), '# ajena\n');
+      assert.equal(readFileSync(active, 'utf8'), 'model = "prueba"\n');
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -1703,7 +1754,7 @@ test('sin repositorio git, la petición apunta al estado.json de sin-rama (#48)'
   try {
     const r = spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
       cwd: carpeta, encoding: 'utf8',
-      env: { ...process.env, HOME: casa, USERPROFILE: casa },
+      env: { ...process.env, HOME: casa, USERPROFILE: casa, CODEX_HOME: join(casa, '.codex') },
       // Sin git no hay archivos sucios ni commits: la petición se dispara por
       // los comandos del transcript, como en la reproducción del issue.
       input: JSON.stringify({

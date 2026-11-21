@@ -6,6 +6,11 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 ## [No publicado]
 
 ### Corregido
+- El lector reconoce rollouts de Codex sin ordinal y comprueba que el
+  transcript sea un archivo regular antes de leerlo.
+- Los subcomandos recorren el perfil de Codex indicado por `CODEX_HOME`.
+- El instalador rechaza configuraciones JSON cuya raíz no sea un objeto
+  y conserva el archivo para que pueda corregirse.
 - Stop conserva la respuesta final del payload si llega antes de escribirse
   el transcript. La captura consulta Git sin actualizar su índice.
 - La escritura atómica usa temporales exclusivos, conserva la causa de los

@@ -11,6 +11,7 @@ falta leerlo.
 - [Capturar payloads (`chaski probe`)](#capturar-payloads-chaski-probe)
 - [Actualizar: por qué `init` no es opcional](#actualizar-por-qué-init-no-es-opcional)
 - [Plugin de Claude Code](#plugin-de-claude-code)
+- [Perfil de Codex](#perfil-de-codex)
 - [Puentes de compatibilidad (`capturar.mjs`, `leer.mjs`)](#puentes-de-compatibilidad-capturarmjs-leermjs)
 - [Cuota (statusline de Claude Code)](#cuota-statusline-de-claude-code)
 - [Compactación (Claude Code)](#compactación-claude-code)
@@ -118,6 +119,14 @@ que el id en `enabledPlugins` es `chaski@chaski`.
 | Activo | `enabledPlugins["chaski@chaski"]` en `~/.claude/settings.json`, `.claude/settings.json` o `.claude/settings.local.json`, con esa precedencia de menos a más específico |
 | Sin `init` | `.tambo/` se crea con su propio `.gitignore` (`*`), así que queda fuera de git igual |
 | Validar | `claude plugin validate .` y `claude plugin validate ./.claude-plugin/marketplace.json` |
+
+## Perfil de Codex
+
+Los subcomandos `init`, `doctor`, `probe` y `uninstall` usan
+`$CODEX_HOME/config.toml` cuando esa variable está definida. Para una
+instalación existente conservan el registro inline y los hashes de confianza.
+Codex combina hooks inline y `hooks.json` si ambos están presentes en la
+misma capa. [Hooks de Codex](https://learn.chatgpt.com/docs/hooks#where-codex-looks-for-hooks)
 
 ## Puentes de compatibilidad (`capturar.mjs`, `leer.mjs`)
 
@@ -243,3 +252,15 @@ de archivos cuando el índice todavía necesita actualizarse. [Git](https://git-
 Stop toma la respuesta final del payload si está disponible y conserva el
 transcript como respaldo. [Claude Code](https://code.claude.com/docs/en/hooks#stop-input) ·
 [Codex](https://learn.chatgpt.com/docs/hooks#stop)
+
+## Lectura incremental de transcripts
+
+El lector conserva una marca de agua en bytes y aplica el presupuesto antes
+de entregar cada registro JSONL al adaptador correspondiente. Los contratos
+de Claude Code, Codex y Antigravity tienen adaptadores y fixtures propios.
+El ordinal de un rollout de Codex es opcional. [Decodificador de Codex](https://github.com/openai/codex/blob/main/codex-rs/rollout/src/lib.rs)
+
+Los datos de los CLI se convierten a hechos dentro de los adaptadores. El
+lector común decide cuántos bytes consumir y el render recibe datos ya
+normalizados. El límite de 8 MB y las comprobaciones de tiempo permiten
+retomar la lectura en otra captura.

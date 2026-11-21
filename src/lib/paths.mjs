@@ -275,7 +275,11 @@ export function readJsonForWrite(ruta) {
   const bruto = readFileSync(ruta, 'utf8');
   if (!bruto.trim()) return {};
   try {
-    return JSON.parse(stripBom(bruto));
+    const value = JSON.parse(stripBom(bruto));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('la configuración debe ser un objeto');
+    }
+    return value;
   } catch (e) {
     throw new Error(
       `${ruta} no es JSON válido (${e.message}).\n` +
