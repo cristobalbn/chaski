@@ -2578,6 +2578,7 @@ describe('relevo entre clientes', () => {
       try {
         const payload = (agent, event) => {
           const fixture = join(AQUI, 'fixtures', `${agent}.payload.json`);
+          const transcript = join(AQUI, 'fixtures', `${agent}.transcript.jsonl`);
           const sample = JSON.parse(readFileSync(fixture, 'utf8'));
           return agent === 'agy'
             ? { ...sample, workspacePaths: [m.proyecto], transcriptPath: transcript }
@@ -2593,7 +2594,6 @@ describe('relevo entre clientes', () => {
           assert.equal(result.stderr, '');
           return result.stdout;
         };
-        const transcript = join(AQUI, 'fixtures', `${source}.transcript.jsonl`);
         writeFileSync(join(m.proyecto, 'chaski.json'), JSON.stringify({ askNarrative: false }));
         assert.equal(run('capture.mjs', 'Stop', source), '');
         const branch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();

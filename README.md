@@ -25,8 +25,10 @@ propio.
 El relevo automático usa hooks de los agentes locales. En la app de ChatGPT,
 la integración de OpenAI corresponde a **Codex en modo local**, con los hooks
 habilitados y aprobados para el perfil que abre el proyecto. ChatGPT web y las
-tareas en la nube quedan fuera de esta integración automática. Chaski verifica
-los contratos de los tres CLI en CI con payloads y transcripts sintéticos.
+tareas en la nube quedan fuera de esta integración automática. ChatGPT Work
+en modo completamente local admite hooks según OpenAI y queda por verificar
+como cliente de Chaski. CI verifica los contratos de los tres CLI con payloads
+y transcripts sintéticos.
 [Hooks de Codex](https://learn.chatgpt.com/docs/hooks) ·
 [Entornos de Codex](https://learn.chatgpt.com/docs/environments/modes)
 
