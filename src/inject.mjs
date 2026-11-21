@@ -10,14 +10,15 @@
 //   - Si no hay relevo, no imprime nada. Un agent no debe recibir ruido.
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
-import { readFileSync, existsSync, statSync, rmSync, openSync, readSync, closeSync } from 'node:fs';
-import { readOnlyRelayPath, readOnlyStatePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, silencedByPlugin, readOnlyTambo } from './lib/paths.mjs';
+import { readFileSync, existsSync } from 'node:fs';
+import { readOnlyRelayPath, readOnlyStatePath, readJson, currentBranch, git, projectDir, loadConfig, promptHookPath, silencedByPlugin } from './lib/paths.mjs';
 import { readStdinJson, canonicalAgent, sessionOf, cwdOf, transcriptOf } from './lib/payload.mjs';
-import { ageText, MODEL_TEXT_TTL_MS } from './lib/time.mjs';
-import { dirname, join } from 'node:path';
-import { askText, promptPayload, shouldDeliverPending, samePendingConversation, PENDING_TTL_MS, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
+import { askText, promptPayload, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged, writeAtomic } from './lib/relay.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
+import { takePendingAsk } from './lib/pending.mjs';
+import { openTurn, interruptedTurns } from './lib/turns.mjs';
+import { mergedBranchNarrative } from './lib/history.mjs';
 
 main();
 
@@ -170,157 +171,20 @@ function deliverPending(ev, agent) {
     // Prueba de vida ANTES de mirar si hay algo que entregar: es lo que le
     // permite a capture.mjs diferir la petición la próxima vez. Ver ask.mjs.
     recordAlive(agent);
+    const cwd = cwdOf(ev);
     const sesion = sessionOf(ev);
-    openTurn(cwdOf(ev), sesion, agent);
-    const ruta = pendingAskPath(cwdOf(ev));
-    if (!existsSync(ruta)) return;
-    const pending = readJson(ruta, null);
-    const estado = pending?.statePath ? readJson(pending.statePath, {}) ?? {} : {};
-    // El transcript resuelto solo se calcula si hay algo que entregar: tras un
-    // resume la ruta del payload no existe y resolverla lee la carpeta.
-    const transcript = transcriptOf(ev);
-    const entregar = shouldDeliverPending(pending, sesion, estado, Date.now(), transcript);
-    // Solo se borra la anotación de ESTA sesión (entregada o ya cubierta) o
-    // una vencida. La de otra sesión abierta en el mismo proyecto es suya.
-    const vencida = !(Date.now() - Date.parse(pending?.at ?? '') <= PENDING_TTL_MS);
-    if (entregar || samePendingConversation(pending, sesion, transcript) || vencida) {
-      try { rmSync(ruta, { force: true }); } catch {}
-    }
-    if (!entregar) return;
-    const texto = askText(String(pending.reason), pending.hasSkill !== false, pending.statePath, { beforeReply: true });
+    openTurn(cwd, sesion, agent);
+    // El transcript se resuelve solo si hace falta: tras un resume la ruta del
+    // payload no existe y resolverla lee la carpeta. Ver lib/pending.mjs.
+    const pedido = takePendingAsk(cwd, sesion, () => transcriptOf(ev));
+    if (!pedido) return;
+    const texto = askText(String(pedido.reason), pedido.hasSkill !== false, pedido.statePath, { beforeReply: true });
     const salida = promptPayload(agent, neutralizeMarks(texto));
     if (salida) process.stdout.write(JSON.stringify(salida) + '\n');
   } catch (e) {
     process.stderr.write(`chaski: no se pudo entregar la petición de relevo (${e?.message ?? e})\n`);
   } finally {
     process.exitCode = 0;
-  }
-}
-
-/**
- * Anota que esta sesión empezó un turno. capture.mjs la quita al cerrarlo
- * (closeTurn); si sobrevive, el turno se cortó, y la sesión siguiente lo
- * avisa (interruptedTurns).
- *
- * Solo en un proyecto donde chaski ya escribió algo: este hook corre en cada
- * mensaje de cualquier proyecto, y crear `.tambo/` en uno que nunca capturó
- * sería ensuciarle el árbol a alguien. Una escritura por turno, no por
- * llamada: en agy el hook corre varias veces por turno.
- */
-function openTurn(cwd, session, agent) {
-  if (!session) return;
-  try {
-    const ruta = openTurnsPath(cwd);
-    if (!existsSync(dirname(ruta))) return;
-    const abiertos = readJson(ruta, {}) ?? {};
-    // Una marca de esta sesión de hace menos de un minuto es este mismo turno
-    // (agy llama varias veces por turno). Una más vieja es de un turno anterior
-    // que no cerró: se renueva, porque la sesión sigue viva y trabajando.
-    if (abiertos[session] && Date.now() - Date.parse(abiertos[session].at ?? '') < 60_000) return;
-    const ahora = Date.now();
-    for (const [s, t] of Object.entries(abiertos)) {
-      if (!(ahora - Date.parse(t?.at ?? '') < MODEL_TEXT_TTL_MS)) delete abiertos[s];
-    }
-    abiertos[session] = { agent, at: new Date(ahora).toISOString() };
-    writeAtomic(ruta, JSON.stringify(abiertos, null, 2));
-  } catch {}
-}
-
-/**
- * Turnos de OTRAS sesiones que empezaron después del relevo y no terminaron.
- *
- * «Después del relevo» es la condición que importa: si hubo una captura
- * posterior, el relevo ya refleja el estado de después del corte. Si no, lo
- * que el agente nuevo lee es de antes de un turno que hizo algo y no llegó a
- * cerrar: puede haber archivos a medio editar o un comando a medio correr.
- * Los hechos de git se recalculan igual al arrancar; lo que puede faltar son
- * los comandos y el porqué.
- */
-function interruptedTurns(cwd, estado, sesionActual) {
-  try {
-    const abiertos = readJson(openTurnsPath(cwd), {}) ?? {};
-    const desde = Date.parse(estado?.writtenAt ?? '') || 0;
-    const ahora = Date.now();
-    const lineas = [];
-    for (const [s, t] of Object.entries(abiertos)) {
-      const at = Date.parse(t?.at ?? '');
-      if (s === sesionActual || !Number.isFinite(at) || at <= desde || ahora - at > MODEL_TEXT_TTL_MS) continue;
-      const hace = ageText(at, ahora);
-      lineas.push(`- Un turno de ${String(t.agent ?? 'otro agente').replace(/[^\w .-]/g, '')} empezó hace ${hace} y no terminó: se interrumpió, se cerró la ventana o se cortó (o sigue en curso en otra ventana).`);
-    }
-    if (!lineas.length) return null;
-    return [
-      '**ATENCIÓN: hubo un turno cortado después de este relevo.**',
-      ...lineas,
-      '',
-      'Lo que ese turno hizo no está en el relevo. Revisa `git status` y `git diff` antes de seguir: puede haber archivos a medio editar.',
-    ].join('\n');
-  } catch {
-    return null;
-  }
-}
-
-/**
- * La narrativa más reciente, si es de una rama que ya no existe y es más
- * nueva que la de la rama actual.
- *
- * El caso: se trabaja en `feat/x`, se guarda ahí la narrativa, se hace
- * squash-merge y se borra la rama. De vuelta en `main`, el relevo trae la
- * narrativa vieja de `main`, y la que describe lo último que se hizo quedó en
- * el relevo huérfano de `feat/x` (pasó el 2026-11-20). Con squash no hay
- * ancestro en común que lo delate, así que la señal es la rama borrada.
- *
- * Solo lee `.tambo/historia/` (ya redactada al escribirse) y, si hay una
- * candidata, lanza UN `git rev-parse` para ver si la rama sigue viva. No
- * copia nada al estado de la rama actual: se muestra rotulada y aparte.
- */
-function mergedBranchNarrative(cwd, estado, budget) {
-  try {
-    const ruta = join(readOnlyTambo(cwd), 'historia', 'entries.jsonl');
-    if (!existsSync(ruta)) return null;
-    // Las últimas entradas bastan: un archivo append-only puede ser largo.
-    const tam = statSync(ruta).size;
-    const desde = Math.max(0, tam - 64 * 1024);
-    const fd = openSync(ruta, 'r');
-    let texto = '';
-    try {
-      const buf = Buffer.alloc(tam - desde);
-      readSync(fd, buf, 0, buf.length, desde);
-      texto = buf.toString('utf8');
-    } finally { closeSync(fd); }
-    let ultima = null;
-    for (const linea of texto.split('\n').reverse()) {
-      try { const e = JSON.parse(linea); if (e?.narrative && e?.branch && e?.at) { ultima = e; break; } } catch {}
-    }
-    if (!ultima) return null;
-    const rama = String(ultima.branch);
-    // `HEAD` es lo que git informa en detached HEAD: no es una rama que exista
-    // ni que pueda haberse fusionado.
-    if (rama === estado.facts?.branch || rama === 'sin-rama' || rama === 'HEAD') return null;
-    const at = Date.parse(ultima.at);
-    const propia = Date.parse(estado.narrativeWrittenAt ?? '') || 0;
-    if (!Number.isFinite(at) || at <= propia || Date.now() - at > 14 * 86400_000) return null;
-    // El nombre va como argumento a git: nada que pueda leerse como opción.
-    if (!/^[\w./-]+$/.test(rama) || rama.startsWith('-')) return null;
-    // `for-each-ref` y no `rev-parse --verify`: este último sale con error
-    // tanto si la rama no existe como si git falló o se acabó el presupuesto,
-    // y git() devuelve null en los dos casos. Con for-each-ref, «no existe»
-    // es salida vacía (''), y null queda solo para «no se pudo saber», donde
-    // no se afirma nada.
-    const viva = git(cwd, ['for-each-ref', '--format=%(refname)', `refs/heads/${rama}`], { budget });
-    if (viva !== '') return null;
-    const cuerpo = String(ultima.narrative).trim();
-    const corto = cuerpo.length > 900 ? cuerpo.slice(0, 900).trimEnd() + '…' : cuerpo;
-    const hace = ageText(at);
-    return [
-      `## Narrativa más reciente: de la rama \`${rama}\` (ya no existe; probablemente se fusionó)`,
-      '',
-      `_Escrita por ${String(ultima.author ?? 'un agente').replace(/[^\w .-]/g, '')} hace ${hace}, después de la de esta rama. Contrástala con el código: describe el trabajo de esa rama._`,
-      '',
-      corto,
-    ].join('\n');
-  } catch {
-    return null;
   }
 }
 

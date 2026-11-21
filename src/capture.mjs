@@ -12,9 +12,12 @@
 //     lib/facts.mjs) en vez de dejar que el hook se cancele y se pierda el
 //     relevo entero.
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, silencedByPlugin, usagePath } from './lib/paths.mjs';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, loadConfig, promptHookPath, silencedByPlugin, usagePath } from './lib/paths.mjs';
+import { notePendingAsk, markPendingSessionEnded } from './lib/pending.mjs';
+import { closeTurn } from './lib/turns.mjs';
+import { recordHistory } from './lib/history.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
@@ -276,9 +279,9 @@ function main() {
       if (diferida) {
         // #73: no se imprime nada. Lo entrega inject.mjs con el mensaje
         // siguiente del usuario, antes de la respuesta. Ver ask.mjs.
-        writeAtomic(pendingAskPath(cwd), JSON.stringify({
+        notePendingAsk(cwd, {
           session: estado.session, transcript: estado.transcript, at: estado.writtenAt, reason: motivo, statePath: rutaEstado, hasSkill,
-        }));
+        });
       } else {
         const salida = askPayload(estado.agent, askText(motivo, hasSkill, rutaEstado));
         if (salida) process.stdout.write(JSON.stringify(salida) + '\n');
@@ -402,31 +405,6 @@ function freshSubagents(lista, ahora = Date.now()) {
   if (!Array.isArray(lista)) return null;
   const vivas = lista.filter((s) => isFresh(s?.at, MODEL_TEXT_TTL_MS, ahora));
   return vivas.length ? vivas : null;
-}
-
-/** Marca que la sesión que anotó el pedido de narrativa terminó. Nunca lanza. */
-function markPendingSessionEnded(cwd, session) {
-  if (!session) return;
-  try {
-    const ruta = pendingAskPath(cwd);
-    if (!existsSync(ruta)) return;
-    const p = readJson(ruta, null);
-    if (!p || p.session !== session || p.sessionEnded) return;
-    writeAtomic(ruta, JSON.stringify({ ...p, sessionEnded: true }));
-  } catch {}
-}
-
-/** Quita la marca de turno abierto de esta sesión. Nunca lanza. */
-function closeTurn(cwd, session) {
-  if (!session) return;
-  try {
-    const ruta = openTurnsPath(cwd);
-    if (!existsSync(ruta)) return;
-    const abiertos = readJson(ruta, {}) ?? {};
-    if (!(session in abiertos)) return;
-    delete abiertos[session];
-    writeAtomic(ruta, JSON.stringify(abiertos, null, 2));
-  } catch {}
 }
 
 /**
@@ -635,35 +613,6 @@ function recordQuota(ev, estado) {
       delete q[name];
       writeAtomic(ruta, JSON.stringify(q, null, 2));
     }
-  } catch {}
-}
-
-/**
- * Registro append-only de narrativas en `.tambo/historia/entries.jsonl`,
- * consultado por `chaski why`. Cuando la narrativa se reescribe en el relevo,
- * la anterior sigue viva aquí sin ocupar presupuesto de contexto al inyectar.
- */
-function recordHistory(cwd, estado, config) {
-  try {
-    const dir = join(tambo(cwd), 'historia');
-    mkdirSync(dir, { recursive: true });
-    const ruta = join(dir, 'entries.jsonl');
-    const { texto } = redact(String(estado.narrative ?? '').trim(), config);
-    if (!texto) return;
-    const previas = existsSync(ruta) ? readFileSync(ruta, 'utf8') : '';
-    const lineas = previas.split('\n').filter(Boolean);
-    const ultima = lineas.length ? JSON.parse(lineas[lineas.length - 1]) : null;
-    const branch = estado.facts?.branch ?? 'sin-rama';
-    if (ultima && ultima.branch === branch && ultima.narrative === texto) return;
-    const entrada = {
-      at: estado.narrativeWrittenAt ?? estado.writtenAt,
-      author: canonicalAgent(estado.narrativeAuthor ?? estado.agent),
-      branch,
-      head: estado.head ?? null,
-      narrative: texto,
-    };
-    const nuevo = (previas ? previas.trimEnd() + '\n' : '') + JSON.stringify(entrada) + '\n';
-    writeAtomic(ruta, nuevo);
   } catch {}
 }
 

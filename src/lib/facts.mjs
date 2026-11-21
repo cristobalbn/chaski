@@ -3,7 +3,7 @@
 //
 // Invariante del proyecto: el modelo NO puede escribir en estos campos.
 // El estado de los tests sale del exit code y de ningún otro lado.
-import { readFileSync, statSync, openSync, readSync, closeSync, existsSync } from 'node:fs';
+import { statSync, openSync, readSync, closeSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { git, currentBranch, projectDir } from './paths.mjs';
 import { isExcludedPath, redact } from './secrets.mjs';
