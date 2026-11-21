@@ -3001,6 +3001,15 @@ describe('el pedido de narrativa sobrevive a un resume', () => {
       assert.ok(existsSync(join(m.proyecto, '.tambo', 'pending-ask.json')), 'no anotó el pedido; el test no probaría nada');
       // Caso negativo: otra conversación (otra carpeta, nada reciente) no lo recibe.
       assert.equal(prompt('ajena', join(m.raiz, 'otra', 'x.jsonl')).stdout, '');
+      // Mientras la sesión que lo anotó siga viva, una sesión nueva sin
+      // transcript propio en la misma carpeta tampoco: sería otra ventana.
+      assert.equal(prompt('concurrente', join(dir, 'concurrente.jsonl')).stdout, '', 'entregó el pedido a una sesión concurrente');
+      assert.ok(existsSync(join(m.proyecto, '.tambo', 'pending-ask.json')), 'la sesión concurrente borró el pedido ajeno');
+      // Al reiniciar, la sesión vieja termina (SessionEnd) y la retomada lo recibe.
+      spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'SessionEnd', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 'antes', cwd: m.proyecto, hook_event_name: 'SessionEnd', transcript_path: real }),
+      });
       // La conversación retomada sí, aunque su id y su ruta sean nuevos.
       const r = prompt('despues', join(dir, 'id-nuevo.jsonl'));
       assert.equal(r.stderr, '', 'el hook ocultó un error propio');
@@ -3108,6 +3117,152 @@ describe('narrativa de una rama ya fusionada', () => {
       const r = arranque(m);
       assert.match(r.stdout, /Lo último, en la rama principal/);
       assert.doesNotMatch(r.stdout, /Trabajo viejo de la rama/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+describe('hallazgos de la auditoría del 2026-11-20', () => {
+  test('ningún hook sale con error ante un payload raro (invariante 4)', () => {
+    // inject.mjs llamaba silencedByPlugin() fuera del try: un cwd que no era
+    // texto salía con código 1 y un volcado de Node en la sesión del usuario.
+    const m = montar('chaski-payload-raro-');
+    try {
+      const raros = ['{"cwd":{"x":1},"session_id":"s"}', '{"cwd":42,"workspacePaths":"x"}', 'no es json', '[]', 'null'];
+      const casos = [
+        ['capture.mjs', 'Stop'], ['capture.mjs', 'SessionEnd'], ['capture.mjs', 'PreCompact'],
+        ['inject.mjs', 'SessionStart'], ['inject.mjs', 'UserPromptSubmit'], ['inject.mjs', 'PreInvocation'],
+        ['statusline.mjs', ''],
+      ];
+      for (const [script, evento] of casos) {
+        for (const input of raros) {
+          const args = [join(SRC, script), ...(evento ? [evento, 'claude-code'] : [])];
+          const r = spawnSync(process.execPath, args, { cwd: m.proyecto, env: m.entorno, encoding: 'utf8', input });
+          assert.equal(r.status, 0, `${script} ${evento} con ${input} salió con ${r.status}: ${r.stderr}`);
+          assert.doesNotMatch(r.stderr, /at .*\.mjs:\d+/, `${script} ${evento} volcó un stack con ${input}`);
+        }
+      }
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('init --statusline repara una statusline de chaski con rutas viejas', () => {
+    const m = montar('chaski-sl-vieja-');
+    try {
+      const ruta = join(m.casa, '.claude', 'settings.json');
+      mkdirSync(join(m.casa, '.claude'), { recursive: true });
+      const vieja = '"C:\\viejo\\node.exe" "C:\\viejo\\chaski\\src\\statusline.mjs"';
+      writeFileSync(ruta, JSON.stringify({ statusLine: { type: 'command', command: vieja, padding: 2 } }));
+      assert.match(m.correr('init', '--statusline'), /statusline\s+actualizada a las rutas de esta instalación/);
+      const s = JSON.parse(readFileSync(ruta, 'utf8')).statusLine;
+      assert.ok(s.command.includes(process.execPath), 'no se reescribió con el node actual');
+      assert.equal(s.padding, 2);
+      assert.ok(!existsSync(join(m.casa, '.chaski', 'config.json'))
+        || !JSON.parse(readFileSync(join(m.casa, '.chaski', 'config.json'), 'utf8')).statusLineCommand,
+        'guardó la statusline vieja de chaski como si fuera la del usuario');
+      assert.match(m.correr('init', '--statusline'), /statusline\s+ya instalada/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('una statusline propia llamada statusline.mjs no se toma por la de chaski', () => {
+    // Antes bastaba con el nombre del archivo: init no la envolvía y
+    // uninstall, sin nada guardado, borraba la statusline del usuario.
+    const m = montar('chaski-sl-homonima-');
+    try {
+      const ruta = join(m.casa, '.claude', 'settings.json');
+      mkdirSync(join(m.casa, '.claude'), { recursive: true });
+      const propia = 'node ~/.claude/statusline.mjs';
+      writeFileSync(ruta, JSON.stringify({ statusLine: { type: 'command', command: propia } }));
+      assert.match(m.correr('init', '--statusline'), /envuelve la tuya: node ~\/\.claude\/statusline\.mjs/);
+      m.correr('uninstall');
+      assert.equal(JSON.parse(readFileSync(ruta, 'utf8')).statusLine?.command, propia, 'uninstall perdió la statusline del usuario');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('la statusline no se llama a sí misma si la «del usuario» es de chaski', () => {
+    const m = montar('chaski-sl-recursion-');
+    try {
+      mkdirSync(join(m.casa, '.chaski'), { recursive: true });
+      writeFileSync(join(m.casa, '.chaski', 'config.json'),
+        JSON.stringify({ statusLineCommand: `"${process.execPath}" "${join(SRC, 'statusline.mjs')}"` }));
+      const r = spawnSync(process.execPath, [join(SRC, 'statusline.mjs')], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8', timeout: 15_000,
+        input: JSON.stringify({ model: { display_name: 'Opus' } }),
+      });
+      assert.equal(r.error, undefined, 'se colgó llamándose a sí misma');
+      assert.equal(r.status, 0);
+      assert.match(r.stdout, /Opus/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('init no quita los hooks globales si el plugin está activo solo en el proyecto', () => {
+    const m = montar('chaski-plugin-proyecto-');
+    try {
+      m.correr('init');
+      const ruta = join(m.casa, '.claude', 'settings.json');
+      mkdirSync(join(m.proyecto, '.claude'), { recursive: true });
+      writeFileSync(join(m.proyecto, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { 'chaski@chaski': true } }));
+      m.correr('init');
+      assert.ok(JSON.stringify(JSON.parse(readFileSync(ruta, 'utf8')).hooks ?? {}).includes('capture.mjs'),
+        'quitó los hooks de todos los proyectos por un plugin activo en uno solo');
+      // Caso positivo: activo para el usuario, sí se quitan.
+      const s = JSON.parse(readFileSync(ruta, 'utf8'));
+      s.enabledPlugins = { 'chaski@chaski': true };
+      writeFileSync(ruta, JSON.stringify(s));
+      m.correr('init');
+      assert.ok(!JSON.stringify(JSON.parse(readFileSync(ruta, 'utf8')).hooks ?? {}).includes('capture.mjs'));
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('why redacta la narrativa de estado.json antes de mostrarla', () => {
+    const m = montar('chaski-why-private-');
+    try {
+      spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 's', cwd: m.proyecto, hook_event_name: 'Stop' }),
+      });
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const ruta = join(m.proyecto, '.tambo', 'branches', rama, 'estado.json');
+      const e = JSON.parse(readFileSync(ruta, 'utf8'));
+      e.narrative = 'Cliente <private>Banco Secreto</private> pidió el cambio.';
+      writeFileSync(ruta, JSON.stringify(e));
+      const salida = m.correr('why');
+      assert.match(salida, /Cliente \[privado\] pidió el cambio/, 'no mostró la narrativa; el test no probaría nada');
+      assert.ok(!salida.includes('Banco Secreto'));
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('una narrativa escrita en detached HEAD no se muestra como de una rama borrada', () => {
+    const m = montar('chaski-head-detached-');
+    try {
+      spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 's', cwd: m.proyecto, hook_event_name: 'Stop' }),
+      });
+      mkdirSync(join(m.proyecto, '.tambo', 'historia'), { recursive: true });
+      const entrada = (branch) => JSON.stringify({ at: new Date().toISOString(), author: 'claude code', branch, head: null, narrative: `Hecho en ${branch}.` }) + '\n';
+      const hist = join(m.proyecto, '.tambo', 'historia', 'entries.jsonl');
+      const arranque = () => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'SessionStart', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 'n', cwd: m.proyecto, source: 'startup' }),
+      }).stdout;
+      // Caso positivo: una rama borrada de verdad sí aparece.
+      writeFileSync(hist, entrada('feat/borrada'));
+      assert.match(arranque(), /de la rama `feat\/borrada`/);
+      writeFileSync(hist, entrada('HEAD'));
+      assert.doesNotMatch(arranque(), /Narrativa más reciente/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

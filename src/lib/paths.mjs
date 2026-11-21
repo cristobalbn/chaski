@@ -448,6 +448,23 @@ export function claudePluginEnabled(cwd) {
 }
 
 /**
+ * ¿El plugin está activo para el USUARIO (en `~/.claude/settings.json`)?
+ *
+ * Es la que decide si `init` quita los hooks de chaski de ese mismo archivo:
+ * esos hooks valen para todos los proyectos, así que solo se quitan si el
+ * plugin también. Con el plugin activo solo en un proyecto, quitarlos dejaba
+ * sin chaski a todos los demás.
+ */
+export function claudePluginEnabledForUser() {
+  try {
+    const s = JSON.parse(readFileSync(join(homedir(), '.claude', 'settings.json'), 'utf8').replace(/^﻿/, ''));
+    return s?.enabledPlugins?.[CLAUDE_PLUGIN_ID] === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * ¿Este proceso de hook debe callarse porque el plugin ya hace su trabajo?
  *
  * Quien instaló chaski con `init` y después el plugin tiene los mismos hooks
@@ -459,6 +476,7 @@ export function claudePluginEnabled(cwd) {
  */
 export function silencedByPlugin(agent, cwd) {
   if (agent !== 'claude code' || process.env.CLAUDE_PLUGIN_ROOT) return false;
+  if (typeof cwd !== 'string' || !cwd) return false;
   return claudePluginEnabled(cwd);
 }
 

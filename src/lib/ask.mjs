@@ -296,7 +296,12 @@ export const PENDING_TTL_MS = 12 * 3600 * 1000;
  */
 export function samePendingConversation(pending, sessionId, transcript = null) {
   if (sessionId && pending?.session === sessionId) return true;
-  return Boolean(transcript && pending?.transcript && pending.transcript === transcript);
+  // Por transcript, solo si la sesión que la anotó ya terminó (SessionEnd).
+  // Si sigue viva, el «mismo transcript» puede ser solo el archivo más
+  // reciente de la carpeta (resolveTranscript) mientras otra sesión, nueva y
+  // todavía sin transcript propio, manda su primer mensaje: le entregaría el
+  // pedido ajeno y la haría narrar una conversación que no tuvo.
+  return Boolean(pending?.sessionEnded && transcript && pending?.transcript && pending.transcript === transcript);
 }
 
 /**

@@ -106,9 +106,12 @@ export function redact(texto, config = null) {
   let out = String(texto);
   let n = 0;
 
-  // Lo que el usuario marcó como privado no llega al disco, sea secreto o no
+  // Lo que el usuario marcó como privado no pasa de aquí, sea secreto o no
   // (un nombre de cliente, una cifra, una conversación): ningún patrón puede
-  // adivinar eso, así que la marca la pone quien sabe. Va primero para que
+  // adivinar eso, así que la marca la pone quien sabe. Ojo: lo que no pasa por
+  // redact() no se filtra; la narrativa que el agente escribe en estado.json
+  // queda tal cual hasta que se renderiza, se archiva en historia/ o se
+  // muestra (relevo, why, share), donde sí pasa. Va primero para que
   // nada de adentro llegue a los patrones de abajo. Una etiqueta sin cerrar
   // tapa hasta el final: ante la duda, se calla de más y no de menos.
   out = out.replace(/<private>[\s\S]*?(?:<\/private>|$)/gi, () => {
@@ -200,9 +203,16 @@ export function anonymize(texto, { home = '' } = {}) {
     const re = new RegExp(prefijo + partes.join(SEP + '+') + String.raw`(?=[\\/]|\b|$)`, 'gi');
     out = out.replace(re, contar('~'));
   }
-  // Carpetas personales de cualquier otro usuario o máquina.
-  out = out.replace(/(?:\b[A-Za-z]:)?[\\/](?:Users|home)[\\/][^\\/\s`'"<>]+/gi, contar('~'));
+  // Carpetas personales de cualquier otro usuario o máquina. Solo al INICIO de
+  // una ruta (tras un espacio, una comilla, un paréntesis o el principio): un
+  // `/home/` o `/Users/` en medio de una URL o de una ruta del repo
+  // (`https://app.com/home/x`, `src/Users/Profile.ts`) no es una carpeta
+  // personal, y reemplazarlo dejaba texto roto en algo que se versiona.
+  out = out.replace(/(^|[\s"'`(=])((?:[A-Za-z]:)?[\\/](?:Users|home)[\\/][^\\/\s`'"<>]+)/gim,
+    (_, antes) => { n++; return `${antes}~`; });
   // El dominio termina en letras: `paquete@1.2.3` es una versión, no un correo.
-  out = out.replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b/g, contar('[correo]'));
+  // Y `git@github.com:org/repo` es una URL de git, no un correo: se excluye lo
+  // que sigue con `:`.
+  out = out.replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b(?!:)/g, contar('[correo]'));
   return { texto: out, anonymized: n };
 }

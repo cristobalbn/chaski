@@ -12,6 +12,26 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   narrativa vieja de `main` y la última quedaba en el relevo huérfano.
 
 ### Corregido
+- Hallazgos de una auditoría de los cambios del 2026-11-20:
+  - `inject.mjs` podía salir con código 1 ante un payload con un `cwd` que no
+    era texto (la comprobación del plugin estaba fuera del `try`).
+  - Un pedido de narrativa podía entregarse a otra sesión abierta en paralelo
+    en el mismo proyecto. Ahora, por transcript, solo se entrega si la sesión
+    que lo anotó ya terminó.
+  - `init --statusline` no reparaba una statusline de chaski con rutas viejas
+    (tras actualizar Node o mover chaski), y tomaba por chaski cualquier
+    statusline llamada `statusline.mjs`: no la envolvía y `uninstall` la
+    borraba. Se agregó además una protección contra que la statusline se
+    llame a sí misma.
+  - `init` quitaba los hooks globales de Claude Code aunque el plugin
+    estuviera activo solo en un proyecto.
+  - `chaski share` anonimizaba de más: rompía URLs (`/home/` dentro de una
+    URL), rutas del repo (`src/Users/`) y URLs de git (`git@host:`).
+  - La narrativa de una rama borrada podía atribuirse a una rama «HEAD»
+    (detached HEAD), o afirmarse borrada cuando git solo había fallado.
+  - `chaski why` mostraba la narrativa de `estado.json` sin redactar.
+  - El aviso de turno cortado aclara que puede seguir en curso en otra
+    ventana.
 - Un pedido de narrativa anotado antes de reiniciar Claude Code no se
   entregaba nunca: quedaba atado al id de sesión, que cambia al retomar, y el
   debounce impedía volver a pedirlo. Ahora se ata también al transcript.
