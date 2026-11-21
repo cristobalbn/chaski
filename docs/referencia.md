@@ -79,9 +79,9 @@ chaski probe --clean      # quita la sonda
 Tiene que ser una sesión interactiva: ninguno de los tres dispara hooks en
 modo headless. `chaski probe` instala una sonda temporal en
 `~/.chaski/sonda.mjs`; `--show` muestra los payloads capturados en
-`~/.chaski/sonda.log`; `--clean` quita la sonda y deja cada config como estaba
-antes de `probe`. Mientras la sonda está puesta, Codex no ejecuta los hooks de
-chaski.
+`~/.chaski/sonda.log`. `--clean` quita la sonda y conserva los cambios hechos
+en la configuración mientras estaba activa. Los hooks normales siguen activos
+en los tres CLIs.
 
 ## Actualizar: por qué `init` no es opcional
 

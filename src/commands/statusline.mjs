@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { globalDir, readJson, readJsonForWrite } from '../lib/paths.mjs';
+import { globalDir, readJsonForWrite } from '../lib/paths.mjs';
 import { writeAtomic } from '../lib/relay.mjs';
 import { pad, backup } from './common.mjs';
 import { STATUSLINE, CLIS, isInstalled } from './hook-config.mjs';
@@ -56,11 +56,11 @@ export function installStatusLine() {
       return;
     }
     const gRuta = join(globalDir(), 'config.json');
-    if (actual?.command) {
-      const g = readJsonForWrite(gRuta);
-      g.statusLineCommand = actual.command;
-      writeAtomic(gRuta, JSON.stringify(g, null, 2));
-    }
+    const g = readJsonForWrite(gRuta);
+    const previous = g.statusLineCommand;
+    if (actual?.command) g.statusLineCommand = actual.command;
+    else delete g.statusLineCommand;
+    if (g.statusLineCommand !== previous) writeAtomic(gRuta, JSON.stringify(g, null, 2));
     s.statusLine = { ...(actual ?? {}), type: 'command', command: statusLineCommandNow() };
     backup(cli.config);
     writeAtomic(cli.config, JSON.stringify(s, null, 2));
@@ -75,17 +75,20 @@ export function installStatusLine() {
  * statusline del usuario a su lugar, o la quita si no había. Modifica `s`.
  */
 export function restoreStatusLine(s) {
-  if (!isChaskiStatusLine(s?.statusLine?.command)) return false;
+  if (!isChaskiStatusLine(s?.statusLine?.command)) return null;
   const gRuta = join(globalDir(), 'config.json');
-  const g = readJson(gRuta, {}) ?? {};
+  const g = readJsonForWrite(gRuta);
   if (typeof g.statusLineCommand === 'string' && g.statusLineCommand) {
     s.statusLine = { ...s.statusLine, command: g.statusLineCommand };
   } else {
     delete s.statusLine;
   }
-  if ('statusLineCommand' in g) {
-    delete g.statusLineCommand;
-    writeAtomic(gRuta, JSON.stringify(g, null, 2));
-  }
-  return true;
+  // Solo descarta el respaldo despu\u00e9s de persistir la restauraci\u00f3n.
+  return () => {
+    if (!('statusLineCommand' in g)) return;
+    const current = readJsonForWrite(gRuta);
+    if (current.statusLineCommand !== g.statusLineCommand) return;
+    delete current.statusLineCommand;
+    writeAtomic(gRuta, JSON.stringify(current, null, 2));
+  };
 }
