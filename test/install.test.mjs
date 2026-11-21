@@ -3768,22 +3768,46 @@ test('varios procesos registran y consumen pedidos y turnos sin pisarse', async 
       import { join } from 'node:path';
       const [mode, id] = process.argv.slice(1);
       const cwd = process.cwd();
+      const tambo = join(cwd, '.tambo');
+      const turn = (session) => {
+        try {
+          return JSON.parse(readFileSync(join(tambo, 'turns-open.json'), 'utf8'))[session];
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error;
+        }
+      };
+      // Cada hook cede tras un plazo. La prueba comprueba el efecto persistido
+      // de cada operación aunque la carga del runner obligue a reintentar.
+      const retry = (operation) => {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          if (operation()) return true;
+        }
+        return false;
+      };
       for (let i = 0; i < 6; i++) {
         const session = id + '-' + i;
         if (mode === 'open') {
-          if (!notePendingAsk(cwd, { session, at: new Date().toISOString(), reason: session })) process.exit(2);
-          openTurn(cwd, session, 'codex');
+          const request = { session, at: new Date().toISOString(), reason: session };
+          if (!retry(() => notePendingAsk(cwd, request))) process.exit(2);
+          if (!retry(() => {
+            openTurn(cwd, session, 'codex');
+            return turn(session)?.agent === 'codex';
+          })) process.exit(3);
         } else {
-          // Con el lock ocupado, el próximo mensaje puede consumir el pedido.
-          // Comprueba que sigue guardado antes de simular un nuevo intento.
-          let pedido = takePendingAsk(cwd, session, () => null);
-          for (let intento = 0; pedido === null && intento < 4; intento++) {
-            const guardados = JSON.parse(readFileSync(join(cwd, '.tambo', 'pending-ask.json'), 'utf8'));
-            if (guardados[session]?.reason !== session) process.exit(3);
-            pedido = takePendingAsk(cwd, session, () => null);
-          }
-          if (pedido?.reason !== session) process.exit(4);
-          closeTurn(cwd, session);
+          if (!retry(() => {
+            const request = takePendingAsk(cwd, session, () => null);
+            if (request) {
+              if (request.reason !== session) process.exit(4);
+              return true;
+            }
+            const remaining = JSON.parse(readFileSync(join(tambo, 'pending-ask.json'), 'utf8'));
+            if (remaining[session]?.reason !== session) process.exit(5);
+            return false;
+          })) process.exit(6);
+          if (!retry(() => {
+            closeTurn(cwd, session);
+            return !turn(session);
+          })) process.exit(7);
         }
       }
     `;
