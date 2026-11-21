@@ -1,11 +1,11 @@
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
-import { isExcludedPath, redact } from './secrets.mjs';
+import { createPathFilter, createRedactor } from './secrets.mjs';
 
 const MAX_TRANSCRIPT_BYTES = 8 * 1024 * 1024;
 
 /** Hechos del transcript desde la marca de agua anterior. */
 export function transcriptFacts(path, offset = 0, config = null, budget = null, previousCommands = []) {
-  const res = { commands: previousCommands.slice(-12).map((command) => ({ ...command })), filesRead: [], lastMessage: null, offset, turns: 0 };
+  const res = { commands: previousCommands.slice(-12).map((command) => ({ ...command })), filesRead: [], lastMessage: null, offset, turns: 0, redactions: 0 };
   if (!path) return res;
   if (budget?.expired()) return { ...res, trimmed: true };
 
@@ -17,7 +17,17 @@ export function transcriptFacts(path, offset = 0, config = null, budget = null, 
     res.reset = true;
   }
   if (trimmed) res.trimmed = true;
+  res.offset = from;
+  if (!buffer.length) return res;
+
+  const redact = createRedactor(config);
   const lookup = {
+    redactCommand(command) {
+      const { texto, redactions } = redact(meaningfulLine(command));
+      res.redactions += redactions;
+      return texto;
+    },
+    isExcluded: createPathFilter(config),
     pending: [],
     previousCount: res.commands.length,
     byId: new Map(res.commands.filter(({ id }) => id != null).map((command) => [command.id, command])),
@@ -41,7 +51,7 @@ export function transcriptFacts(path, offset = 0, config = null, budget = null, 
         if (newline === -1) break;
       }
     }
-    if (event && typeof event === 'object' && !Array.isArray(event)) extract(event, res, config, lookup);
+    if (event && typeof event === 'object' && !Array.isArray(event)) extract(event, res, lookup);
     cursor = newline === -1 ? end : end + 1;
   }
   res.offset = from + cursor;
@@ -77,14 +87,14 @@ function readTranscriptChunk(path, offset) {
  * su propia forma y ninguno prometió mantenerla entre versiones. Ante un
  * formato desconocido se ignora el event en lugar de fallar.
  */
-function extract(ev, res, config, lookup) {
+function extract(ev, res, lookup) {
   // Antigravity: pasos con step_index, type y content en texto plano.
   if (ev.step_index !== undefined || ev.stepIndex !== undefined) {
-    return extractStep(ev, res, config, lookup);
+    return extractStep(ev, res, lookup);
   }
   // Codex: wrapper {timestamp, ordinal, type, payload}.
   if (ev.payload !== undefined && ev.ordinal !== undefined) {
-    return extractRollout(ev, res, config, lookup.byId);
+    return extractRollout(ev, res, lookup);
   }
 
   const kind = ev.type ?? ev.role ?? ev.kind;
@@ -108,11 +118,11 @@ function extract(ev, res, config, lookup) {
     if (b.type === 'tool_use' && b.name) {
       const inp = b.input ?? {};
       if (/^bash$|^shell$|^run/i.test(b.name) && inp.command) {
-        const { texto } = redact(meaningfulLine(String(inp.command)), config);
+        const texto = lookup.redactCommand(String(inp.command));
         recordCommand(res, lookup.byId, { cmd: texto, id: b.id, exit: null });
       } else if (/^read$|^view$/i.test(b.name) && (inp.file_path ?? inp.path)) {
         const r = String(inp.file_path ?? inp.path);
-        if (!isExcludedPath(r, config)) res.filesRead.push(r);
+        if (!lookup.isExcluded(r)) res.filesRead.push(r);
       }
     }
 
@@ -139,7 +149,7 @@ function extract(ev, res, config, lookup) {
  * sus salidas llegan en los pasos `GENERIC` siguientes, en el mismo orden.
  * También se conserva el formato anterior de pasos `RUN_COMMAND` / `VIEW_FILE`.
  */
-function extractStep(ev, res, config, { pending, previousCount }) {
+function extractStep(ev, res, { pending, previousCount, redactCommand, isExcluded }) {
   const kind = String(ev.type ?? '').toUpperCase();
   const contenido = typeof ev.content === 'string' ? ev.content : '';
   const stepIndex = ev.step_index ?? ev.stepIndex ?? null;
@@ -162,7 +172,7 @@ function extractStep(ev, res, config, { pending, previousCount }) {
         const args = stepToolArgs(call);
         if (/^(run_command|bash|shell|exec_command)$/i.test(name)) {
           const rawCmd = unwrapJsonString(args.CommandLine ?? args.command ?? args.cmd ?? '');
-          const { texto } = redact(meaningfulLine(rawCmd), config);
+          const texto = redactCommand(rawCmd);
           if (texto) {
             const id = call?.id ?? (stepIndex !== null ? `${stepIndex}:${index}` : null);
             const command = { cmd: texto, id, exit: null };
@@ -174,7 +184,7 @@ function extractStep(ev, res, config, { pending, previousCount }) {
           const rawPath = unwrapJsonString(
             args.Path ?? args.AbsolutePath ?? args.file_path ?? args.path ?? args.file ?? '',
           ).trim();
-          if (rawPath && !isExcludedPath(rawPath, config)) res.filesRead.push(rawPath);
+          if (rawPath && !isExcluded(rawPath)) res.filesRead.push(rawPath);
         }
         pending.push({ kind: 'other' });
       });
@@ -203,7 +213,7 @@ function extractStep(ev, res, config, { pending, previousCount }) {
     // línea útil si viene en texto libre.
     const m = /"?CommandLine"?\s*[:=]\s*"?([^"\n]+)/i.exec(contenido);
     const bruto = m ? m[1] : contenido;
-    const { texto } = redact(meaningfulLine(bruto), config);
+    const texto = redactCommand(bruto);
     if (texto) {
       const fallo = /FAILED|ERROR/.test(String(ev.status ?? '')) || /exit (?:code )?[1-9]/i.test(contenido);
       res.commands.push({ cmd: texto, id: stepIndex, exit: fallo ? 1 : 0 });
@@ -212,7 +222,7 @@ function extractStep(ev, res, config, { pending, previousCount }) {
 
   if (/VIEW_FILE|READ_FILE/.test(kind)) {
     const m = /"?(?:AbsolutePath|path|file)"?\s*[:=]\s*"?([^"\n]+)/i.exec(contenido);
-    if (m && !isExcludedPath(m[1], config)) res.filesRead.push(m[1].trim());
+    if (m && !isExcluded(m[1])) res.filesRead.push(m[1].trim());
   }
 }
 
@@ -261,7 +271,7 @@ function stepCommandExit(ev, contenido) {
  * `response_item` (mensajes y llamadas a herramientas) y `event_msg`
  * (task_started, item_completed, task_complete).
  */
-function extractRollout(ev, res, config, byId) {
+function extractRollout(ev, res, { byId, redactCommand }) {
   const p = ev.payload ?? {};
   const kind = String(p.type ?? '');
 
@@ -296,7 +306,7 @@ function extractRollout(ev, res, config, byId) {
 
   const line = rolloutCommand(item);
   if (!line) return;
-  const { texto } = redact(meaningfulLine(line), config);
+  const texto = redactCommand(line);
   if (!texto) return;
   const id = item.call_id ?? item.id ?? ev.ordinal;
   const exit = Number.isInteger(item.exit_code) ? item.exit_code

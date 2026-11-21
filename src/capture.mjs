@@ -14,7 +14,7 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { branchDir, statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, loadConfig, promptHookPath, silencedByPlugin, usagePath } from './lib/paths.mjs';
+import { branchDir, readJson, readOnlyTambo, readOnlyBranchDir, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, loadConfig, promptHookPath, silencedByPlugin, usagePath } from './lib/paths.mjs';
 import { notePendingAsk, markPendingSessionEnded } from './lib/pending.mjs';
 import { closeTurn } from './lib/turns.mjs';
 import { recordHistory } from './lib/history.mjs';
@@ -166,7 +166,7 @@ function main() {
       // Tareas en segundo plano que quedan corriendo. Si cambias de CLI con
       // algo a medio ejecutar, el agent nuevo tiene que saberlo.
       backgroundTasks: liveTasks(ev),
-      redactions: 0,
+      redactions: t.redactions,
       event: ev.hook_event_name ?? null,
     };
 
@@ -188,9 +188,6 @@ function main() {
     // conclusiones de subagentes y por la misma razón: se inyecta en cada
     // arranque y puede repetir algo hostil que el agente leyó.
     estado.lastReply = replyFrom(t.lastMessage, config, estado.writtenAt) ?? freshReply(previo.lastReply);
-
-    const { redactions } = redact(JSON.stringify(estado.commands), config);
-    estado.redactions = redactions;
 
     // Cuántos turnos tenía el relevo cuando se escribió la narrativa: es con
     // esto que se mide si quedó atrás, y lo anota el código, no el modelo.
@@ -325,12 +322,13 @@ function ok() { process.exitCode = 0; }
 function promote(ev, cwd, config) {
   let liberar = null;
   try {
+    if (!existsSync(join(readOnlyTambo(cwd), 'branches'))) return ok();
     liberar = acquireLock(cwd);
-    if (!liberar) return ok(); // el padre está escribiendo; se pierde esta promoción
+    if (!liberar) return ok();
 
-    const branch = currentBranch(cwd);
-    const rutaEstado = statePath(cwd, branch);
-    const rutaRelevo = relayPath(cwd, branch);
+    const dir = readOnlyBranchDir(cwd, currentBranch(cwd));
+    const rutaEstado = join(dir, 'estado.json');
+    const rutaRelevo = join(dir, 'relevo.md');
     const estado = readJson(rutaEstado, null);
     // Sin relevo del padre no hay dónde promote. Crear uno desde un subagente
     // dejaría un relevo con la conclusión de un hijo y ningún hecho.

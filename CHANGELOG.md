@@ -6,6 +6,10 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 ## [No publicado]
 
 ### Mejorado
+- Los filtros de rutas y secretos se compilan una vez por lectura.
+  El relevo cuenta las redacciones de comandos al procesar el transcript.
+- El arranque evita consultar Git en proyectos sin relevo. Los subagentes
+  solo intentan escribir si existe un estado del padre.
 - La captura obtiene rama, HEAD, upstream y archivos desde una sola consulta
   de estado a Git. Omite el diff local si todos los cambios son archivos sin
   seguimiento, y el diff con upstream si el árbol está limpio.

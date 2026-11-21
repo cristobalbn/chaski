@@ -883,9 +883,7 @@ describe('promoción de subagents', () => {
         cwd: m.proyecto, hook_event_name: 'SubagentStop', agent_id: 'sub-1',
         last_assistant_message: 'Algo',
       });
-      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
-      assert.ok(!existsSync(join(m.proyecto, '.tambo', 'branches', rama, 'relevo.md')),
-        'creó un relevo con la conclusión de un hijo y ningún hecho');
+      assert.equal(existsSync(join(m.proyecto, '.tambo')), false);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

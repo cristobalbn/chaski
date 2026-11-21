@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { git, currentBranch, projectDir } from './paths.mjs';
-import { isExcludedPath } from './secrets.mjs';
+import { createPathFilter } from './secrets.mjs';
 import { hasTime } from './budget.mjs';
 
 // Calibrado con árboles de hasta 10.000 archivos modificados. La reserva
@@ -55,6 +55,7 @@ export function gitFacts(cwd, config, budget = null, snapshot = readGitSnapshot(
   }
 
   const files = new Map();
+  let isExcluded;
   for (let i = 0; i < (records?.length ?? 0); i++) {
     const record = records[i];
     let path;
@@ -70,7 +71,7 @@ export function gitFacts(cwd, config, budget = null, snapshot = readGitSnapshot(
     } else if (record.startsWith('u ')) {
       path = pathAfterFields(record, 10);
     }
-    if (path && !isExcludedPath(path, config)) {
+    if (path && !(isExcluded ??= createPathFilter(config))(path)) {
       files.set(path, { ruta: path, mas: null, menos: null, nuevo: untracked });
     }
   }
