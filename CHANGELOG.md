@@ -5,6 +5,11 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+### Corregido
+- La captura confirma el estado firmado antes de publicar la vista Markdown.
+  El arranque recupera ese estado si la vista falta o corresponde a la
+  captura anterior. Las ediciones de la vista siguen generando un aviso.
+
 ## [0.1.13] - 2026-11-21
 
 ### Mejorado
