@@ -2201,14 +2201,20 @@ describe('comandos next, cost, why y share', () => {
       capturar(m, 'codex', {
         session_id: 's2', cwd: m.proyecto, hook_event_name: 'Stop',
       });
+      // Un registro histórico con alias (p. ej. "Antigravity") también se suma en su CLI canónico.
+      const costPath = join(m.casa, '.chaski', 'cost.json');
+      const costData = JSON.parse(readFileSync(costPath, 'utf8'));
+      costData.narratives.push({ at: new Date().toISOString(), agent: 'Antigravity', branch: rama });
+      writeFileSync(costPath, JSON.stringify(costData));
 
       const salida = m.correr('cost');
       assert.match(salida, /0 tokens · \$0\.00/);
       assert.match(salida, /en Stop\s+1 en 7d · 1 total — cada una agrega un turno/);
       assert.match(salida, /diferidas\s+0 en 7d · 0 total/);
-      assert.match(salida, /narrativas\s+1 en 7d · 1 total/);
+      assert.match(salida, /narrativas\s+2 en 7d · 2 total/);
       assert.match(salida, /claude code\s+0 narrativa\(s\) en 7d \(0 total\) · 1 en Stop y 0 diferida\(s\)/);
       assert.match(salida, /codex\s+1 narrativa\(s\) en 7d \(1 total\)/);
+      assert.match(salida, /agy\s+1 narrativa\(s\) en 7d \(1 total\)/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -3821,6 +3827,20 @@ describe('narrativa de una rama ya fusionada', () => {
       assert.match(r.stdout, /Narrativa vieja de la rama principal/, 'tapó la narrativa propia');
       assert.match(m.correr('next'), /# narrativa más reciente \(de feat\/pagos, ya no existe\): .*falta el webhook en pagos\.ts:12/);
       assert.match(m.correr('doctor'), /rama fusionada\s+narrativa más reciente de feat\/pagos \(por claude code\)/);
+
+      // Si la rama actual aún no tiene narrativa propia, share también publica la de la rama recién fusionada.
+      const dirMain = readdirSync(join(m.proyecto, '.tambo', 'branches'))
+        .map((d) => join(m.proyecto, '.tambo', 'branches', d, 'estado.json'))
+        .find((p) => existsSync(p) && JSON.parse(readFileSync(p, 'utf8')).facts?.branch === principal);
+      const estMain = JSON.parse(readFileSync(dirMain, 'utf8'));
+      estMain.narrative = null;
+      estMain.narrativeAuthor = null;
+      estMain.narrativeWrittenAt = null;
+      writeFileSync(dirMain, JSON.stringify(estMain));
+      const compartido = m.correr('share', 'webhook pagos', '--yes');
+      assert.match(compartido, /Publicado en decisiones\//);
+      assert.match(compartido, /- Rama: feat\/pagos/);
+      assert.match(compartido, /falta el webhook en pagos\.ts:12/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -3882,7 +3902,9 @@ describe('hallazgos de la auditoría del 2026-11-20', () => {
       mkdirSync(join(m.casa, '.claude'), { recursive: true });
       const vieja = '"C:\\viejo\\node.exe" "C:\\viejo\\chaski\\src\\statusline.mjs"';
       writeFileSync(ruta, JSON.stringify({ statusLine: { type: 'command', command: vieja, padding: 2 } }));
+      assert.match(m.correr('doctor'), /⚠ claude code: statusline apunta a una ruta que no existe/);
       assert.match(m.correr('init', '--statusline'), /statusline\s+actualizada a las rutas de esta instalación/);
+      assert.doesNotMatch(m.correr('doctor'), /⚠ claude code: statusline apunta a una ruta que no existe/);
       const s = JSON.parse(readFileSync(ruta, 'utf8')).statusLine;
       assert.ok(s.command.includes(process.execPath), 'no se reescribió con el node actual');
       assert.equal(s.padding, 2);

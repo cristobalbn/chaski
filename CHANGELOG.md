@@ -5,6 +5,18 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.23] - 2026-11-21
+
+### Mejorado
+- `chaski doctor` comprueba también que el script `statusline.mjs` registrado en
+  la statusline de Claude Code exista en disco y avisa con `⚠` si apunta a una
+  ruta borrada o movida.
+- `chaski share` permite publicar la narrativa más reciente de una rama recién
+  fusionada o borrada cuando la rama actual aún no tiene una narrativa propia.
+- `chaski doctor`, `chaski cost` y `chaski next` normalizan con `canonicalAgent`
+  las claves históricas de `latidos.json`, `cost.json`, `turns-open.json` y
+  `estado.agent`.
+
 ## [0.1.22] - 2026-11-21
 
 ### Mejorado
