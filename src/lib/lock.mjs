@@ -17,9 +17,7 @@ export function withFileLock(file, update, timeout = 250) {
       if (!['EEXIST', 'EBUSY', 'EPERM'].includes(error.code)) throw error;
       try {
         if (Date.now() - statSync(lock).mtimeMs > STALE_MS) rmdirSync(lock);
-      } catch (error) {
-        if (error.code === 'ENOENT') continue;
-      }
+      } catch {}
       const remaining = deadline - performance.now();
       if (remaining <= 0) return undefined;
       pause(Math.min(5, remaining));

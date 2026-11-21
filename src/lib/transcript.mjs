@@ -4,32 +4,47 @@ import { isExcludedPath, redact } from './secrets.mjs';
 const MAX_TRANSCRIPT_BYTES = 8 * 1024 * 1024;
 
 /** Hechos del transcript desde la marca de agua anterior. */
-export function transcriptFacts(path, offset = 0, config = null, budget = null) {
-  const res = { commands: [], filesRead: [], lastMessage: null, offset, turns: 0 };
+export function transcriptFacts(path, offset = 0, config = null, budget = null, previousCommands = []) {
+  const res = { commands: previousCommands.slice(-12).map((command) => ({ ...command })), filesRead: [], lastMessage: null, offset, turns: 0 };
   if (!path) return res;
   if (budget?.expired()) return { ...res, trimmed: true };
 
   const chunk = readTranscriptChunk(path, offset);
   if (!chunk) return res;
-  const { buffer, from, trimmed } = chunk;
-  if (trimmed) res.trimmed = true;
-  res.offset = from + buffer.length;
-  const lines = buffer.toString('utf8').split('\n');
-  const pending = [];
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    if (!line.trim()) continue;
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      // Una escritura concurrente puede dejar la última línea a medias.
-      // La marca queda al principio de esa línea para releerla al completar.
-      if (index === lines.length - 1) res.offset = from + buffer.lastIndexOf(0x0a) + 1;
-      continue;
-    }
-    if (event && typeof event === 'object' && !Array.isArray(event)) extract(event, res, config, pending);
+  const { buffer, from, trimmed, reset } = chunk;
+  if (reset) {
+    res.commands = [];
+    res.reset = true;
   }
+  if (trimmed) res.trimmed = true;
+  const lookup = {
+    pending: [],
+    previousCount: res.commands.length,
+    byId: new Map(res.commands.filter(({ id }) => id != null).map((command) => [command.id, command])),
+  };
+  let cursor = 0;
+  for (let records = 0; cursor < buffer.length; records++) {
+    // Un transcript con muchas llamadas puede gastar el presupuesto en
+    // parseo. Se reanuda desde el siguiente registro completo.
+    if (records % 64 === 0 && budget?.expired()) {
+      res.trimmed = true;
+      break;
+    }
+    const newline = buffer.indexOf(0x0a, cursor);
+    const end = newline === -1 ? buffer.length : newline;
+    const line = buffer.toString('utf8', cursor, end);
+    let event;
+    if (line.trim()) {
+      try { event = JSON.parse(line); }
+      catch {
+        // Conserva la línea final si el productor aún la está escribiendo.
+        if (newline === -1) break;
+      }
+    }
+    if (event && typeof event === 'object' && !Array.isArray(event)) extract(event, res, config, lookup);
+    cursor = newline === -1 ? end : end + 1;
+  }
+  res.offset = from + cursor;
 
   res.commands = res.commands.slice(-12);
   res.filesRead = [...new Set(res.filesRead)].slice(-15);
@@ -43,11 +58,12 @@ function readTranscriptChunk(path, offset) {
     const fd = openSync(path, 'r');
     try {
       const size = fstatSync(fd).size;
-      const start = Number.isSafeInteger(offset) && offset >= 0 && offset <= size ? offset : 0;
+      const reset = offset > size;
+      const start = Number.isSafeInteger(offset) && offset >= 0 && !reset ? offset : 0;
       const from = Math.max(start, size - MAX_TRANSCRIPT_BYTES);
       const buffer = Buffer.allocUnsafe(size - from);
       const read = buffer.length ? readSync(fd, buffer, 0, buffer.length, from) : 0;
-      return { buffer: buffer.subarray(0, read), from, trimmed: from > start };
+      return { buffer: buffer.subarray(0, read), from, trimmed: from > start, reset };
     } finally {
       closeSync(fd);
     }
@@ -61,14 +77,14 @@ function readTranscriptChunk(path, offset) {
  * su propia forma y ninguno prometió mantenerla entre versiones. Ante un
  * formato desconocido se ignora el event en lugar de fallar.
  */
-function extract(ev, res, config, pending) {
+function extract(ev, res, config, lookup) {
   // Antigravity: pasos con step_index, type y content en texto plano.
   if (ev.step_index !== undefined || ev.stepIndex !== undefined) {
-    return extractStep(ev, res, config, pending);
+    return extractStep(ev, res, config, lookup);
   }
   // Codex: wrapper {timestamp, ordinal, type, payload}.
   if (ev.payload !== undefined && ev.ordinal !== undefined) {
-    return extractRollout(ev, res, config);
+    return extractRollout(ev, res, config, lookup.byId);
   }
 
   const kind = ev.type ?? ev.role ?? ev.kind;
@@ -93,7 +109,7 @@ function extract(ev, res, config, pending) {
       const inp = b.input ?? {};
       if (/^bash$|^shell$|^run/i.test(b.name) && inp.command) {
         const { texto } = redact(meaningfulLine(String(inp.command)), config);
-        res.commands.push({ cmd: texto, id: b.id, exit: null });
+        recordCommand(res, lookup.byId, { cmd: texto, id: b.id, exit: null });
       } else if (/^read$|^view$/i.test(b.name) && (inp.file_path ?? inp.path)) {
         const r = String(inp.file_path ?? inp.path);
         if (!isExcludedPath(r, config)) res.filesRead.push(r);
@@ -102,7 +118,7 @@ function extract(ev, res, config, pending) {
 
     // Resultado del comando: se busca el exit code, nunca el stdout.
     if (b.type === 'tool_result') {
-      const c = res.commands.find((x) => x.id === b.tool_use_id);
+      const c = lookup.byId.get(b.tool_use_id);
       if (c) c.exit = b.is_error ? 1 : exitFrom(b) ?? 0;
     }
 
@@ -123,7 +139,7 @@ function extract(ev, res, config, pending) {
  * sus salidas llegan en los pasos `GENERIC` siguientes, en el mismo orden.
  * También se conserva el formato anterior de pasos `RUN_COMMAND` / `VIEW_FILE`.
  */
-function extractStep(ev, res, config, pending = []) {
+function extractStep(ev, res, config, { pending, previousCount }) {
   const kind = String(ev.type ?? '').toUpperCase();
   const contenido = typeof ev.content === 'string' ? ev.content : '';
   const stepIndex = ev.step_index ?? ev.stepIndex ?? null;
@@ -177,7 +193,7 @@ function extractStep(ev, res, config, pending = []) {
     // Si la lectura incremental arrancó después del PLANNER_RESPONSE, solo una
     // cabecera explícita de comando confirma el código de salida.
     const exit = stepHeaderExit(contenido);
-    const unresolved = exit !== null ? res.commands.find((c) => c.exit === null) : null;
+    const unresolved = exit !== null ? res.commands.find((c, index) => index >= previousCount && c.exit === null) : null;
     if (unresolved) unresolved.exit = exit;
     return;
   }
@@ -245,7 +261,7 @@ function stepCommandExit(ev, contenido) {
  * `response_item` (mensajes y llamadas a herramientas) y `event_msg`
  * (task_started, item_completed, task_complete).
  */
-function extractRollout(ev, res, config) {
+function extractRollout(ev, res, config, byId) {
   const p = ev.payload ?? {};
   const kind = String(p.type ?? '');
 
@@ -265,7 +281,7 @@ function extractRollout(ev, res, config) {
   }
 
   if (kind === 'function_call_output') {
-    const command = res.commands.find((c) => c.id === p.call_id);
+    const command = byId.get(p.call_id);
     const exit = rolloutResultExit(p.output);
     if (command && exit !== null) command.exit = exit;
     return;
@@ -287,15 +303,20 @@ function extractRollout(ev, res, config) {
     : execution && !('exit_code' in item)
       ? (/error|fail/i.test(item.status ?? '') ? 1 : item.status === 'completed' ? 0 : null)
       : null;
-  const previous = res.commands.find((c) => c.id === id);
+  const previous = byId.get(id);
   if (previous) {
     previous.cmd = texto;
     if (exit !== null) previous.exit = exit;
   } else {
     // Una llamada generada todavía no es un resultado: sin confirmación,
     // queda desconocido. Antes se escribía exit 0 por defecto.
-    res.commands.push({ cmd: texto, id, exit });
+    recordCommand(res, byId, { cmd: texto, id, exit });
   }
+}
+
+function recordCommand(res, byId, command) {
+  res.commands.push(command);
+  if (command.id != null) byId.set(command.id, command);
 }
 
 function rolloutCommand(item) {
