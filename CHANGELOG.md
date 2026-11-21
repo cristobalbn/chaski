@@ -5,6 +5,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.11] - 2026-11-20
+
 ### Corregido
 - Se inicializa una sola clave de firma aunque arranquen varios proyectos
   a la vez. Verificar una firma ya no crea la clave.
@@ -12,12 +14,11 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   conserva los cambios hechos en la configuración desde que se activó la sonda.
 - Al desinstalar la statusline se guarda primero la restauración en
   Claude Code para que un fallo de escritura permita volver a intentarlo.
-- Los pedidos y las marcas de turno se actualizan bajo un lock breve para
-  que dos hooks simultáneos conserven cambios de ambas sesiones.
-- Con varias ventanas abiertas en el mismo proyecto, el pedido de narrativa
-  de una pisaba el de la otra, que no se entregaba nunca: había un solo
-  espacio por proyecto. Ahora hay uno por sesión (se sigue leyendo el formato
-  anterior).
+- Cada sesión conserva su propio pedido de narrativa y su marca de turno.
+  Las actualizaciones simultáneas conservan los cambios de ambas sesiones
+  y se sigue leyendo el formato anterior de pedidos.
+- El arranque resuelve en una sola consulta a Git los commits que compara.
+  Queda más tiempo para avisar si cambiaron archivos mencionados en el relevo.
 
 ### Interno
 - Se separa la lectura de transcripts de los hechos de git. La marca de
@@ -31,8 +32,7 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Refactor: la normalización del payload (`lib/payload.mjs`), los tiempos y
   vencimientos (`lib/time.mjs`), los pedidos de narrativa (`lib/pending.mjs`),
   los turnos abiertos (`lib/turns.mjs`) y la historia (`lib/history.mjs`)
-  salen de los hooks a módulos propios. Sin cambios de comportamiento fuera de
-  lo anotado; latencia de los hooks medida sin cambios.
+  salen de los hooks a módulos propios.
 
 ## [0.1.10] - 2026-11-20
 
