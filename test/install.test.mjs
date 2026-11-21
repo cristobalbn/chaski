@@ -2315,6 +2315,40 @@ describe('narrativa guardada después de la última captura', () => {
     }
   });
 
+  test('recupera la captura confirmada si la vista todavía es anterior o falta', () => {
+    const { m, dir, ruta } = preparar('chaski-view-recovery-');
+    try {
+      const path = join(dir, 'relevo.md');
+      const oldView = readFileSync(path, 'utf8');
+      const state = JSON.parse(readFileSync(ruta, 'utf8'));
+      state.narrative = 'La nueva decisión quedó confirmada.';
+      state.narrativeWrittenAt = new Date().toISOString();
+      writeFileSync(ruta, JSON.stringify(state));
+      const stop = () => correr(m, 'capture.mjs', ['Stop', 'claude-code'], {
+        session_id: 'n1', cwd: m.proyecto, hook_event_name: 'Stop',
+      });
+      stop();
+      assert.match(readFileSync(path, 'utf8'), /nueva decisión quedó confirmada/);
+
+      // Reproduce el estado observable si solo se completó el primer rename.
+      writeFileSync(path, oldView);
+      const recovered = inject(m);
+      assert.match(recovered, /nueva decisión quedó confirmada/);
+      assert.doesNotMatch(recovered, ALARMA);
+      assert.equal(readFileSync(path, 'utf8'), oldView);
+      assert.match(m.correr('doctor'), /vista recuperada del estado/);
+
+      rmSync(path);
+      assert.match(inject(m), /nueva decisión quedó confirmada/);
+      const committed = JSON.parse(readFileSync(ruta, 'utf8'));
+      committed.relay.markdown += '\nTexto alterado\n';
+      writeFileSync(ruta, JSON.stringify(committed));
+      assert.equal(inject(m), '');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   test('un relevo.md editado a mano sigue disparando el aviso', () => {
     // Caso positivo del anterior: sin él, que el aviso no aparezca no
     // probaría que se distingue, solo que se apagó.

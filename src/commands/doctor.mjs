@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readOnlyGlobalDir, readJson, syncedFolder, tamboIsIgnored, loadConfig, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyRelayPath, readOnlyStatePath, stripBom } from '../lib/paths.mjs';
+import { readOnlyGlobalDir, readJson, syncedFolder, tamboIsIgnored, loadConfig, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyBranchDir, stripBom } from '../lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from '../lib/ask.mjs';
 import { isValidSignature } from '../lib/relay.mjs';
+import { readRelay } from '../lib/relay-store.mjs';
 import { orphanRelays, effectivePruneDays } from '../lib/maintenance.mjs';
 import { pkgVersion, pad } from './common.mjs';
 import { CAPTURE, INJECT, CLIS, isInstalled } from './hook-config.mjs';
@@ -110,13 +111,12 @@ export function doctor() {
     console.log(`  ${pad('huérfanos')} ${huerfanos.length} relevo(s) de ramas que ya no existen` + nota);
   }
 
-  const relevo = readOnlyRelayPath(cwd);
-  if (existsSync(relevo)) {
-    const estado = readJson(readOnlyStatePath(cwd), {}) ?? {};
-    const md = readFileSync(relevo, 'utf8');
+  const relay = readRelay(readOnlyBranchDir(cwd));
+  if (relay) {
+    const { state: estado, markdown: md, recovered } = relay;
     const edad = estado.writtenAt ? Math.round((Date.now() - new Date(estado.writtenAt).getTime()) / 60000) : null;
     console.log(`  ${pad('relevo')} ${md.length} caracteres${edad !== null ? `, escrito hace ${edad} min` : ''}`);
-    console.log(`  ${pad('firma')} ${estado.signature ? (isValidSignature(md, estado.signature) ? 'válida' : 'NO VALIDA — editado fuera de chaski') : 'sin firma'}`);
+    console.log(`  ${pad('firma')} ${estado.signature ? (recovered ? 'válida — vista recuperada del estado' : isValidSignature(md, estado.signature) ? 'válida' : 'NO VALIDA — editado fuera de chaski') : 'sin firma'}`);
     console.log(`  ${pad('narrativa')} ${estado.narrative ? `sí, por ${estado.narrativeAuthor ?? '?'}` : 'no — escribe «relevo» en el chat del agente'}`);
   } else {
     console.log(`  ${pad('relevo')} todavía no existe para esta rama`);

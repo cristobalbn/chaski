@@ -218,3 +218,20 @@ siquiera eso porque nunca invoca un modelo por fuera).
 No existe una opción de configuración para invocar tu suscripción de forma
 automática. No está implementada a propósito: una configuración que pone en
 riesgo tu cuenta no debería estar a un flag de distancia.
+
+## Publicación del relevo
+
+`estado.json` guarda los hechos, la narrativa y una copia acotada del Markdown
+firmado. La captura lo reemplaza primero y después publica `relevo.md`. El
+arranque puede usar la copia firmada si la vista falta o si su firma coincide
+con la última vista publicada. Los relevos anteriores conservan su lectura
+habitual. Una vista editada conserva el aviso de firma inválida.
+
+Se compararon tres diseños. Dos renombres independientes dejan una ventana
+con versiones distintas. Una base transaccional resolvería esa coordinación
+a costa de migrar el archivo que editan las skills. La copia firmada en el
+estado mantiene ese contrato y acota el costo adicional al tamaño del relevo.
+La recuperación cubre una interrupción del proceso entre escrituras. La
+durabilidad ante pérdida de energía exige garantías adicionales del sistema
+de archivos. [Node.js](https://nodejs.org/api/fs.html#fsrenamesyncoldpath-newpath) ·
+[SQLite y commit atómico](https://sqlite.org/atomiccommit.html)

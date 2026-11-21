@@ -10,12 +10,13 @@
 //   - Si no hay relevo, no imprime nada. Un agent no debe recibir ruido.
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { readOnlyBranchDir, legacyBranchState, readOnlyTambo, readJson, currentBranch, git, projectDir, loadConfig, silencedByPlugin } from './lib/paths.mjs';
+import { readOnlyBranchDir, legacyBranchState, readOnlyTambo, currentBranch, git, projectDir, loadConfig, silencedByPlugin } from './lib/paths.mjs';
 import { readStdinJson, canonicalAgent, sessionOf, cwdOf, transcriptOf } from './lib/payload.mjs';
 import { askText, promptPayload } from './lib/ask.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged } from './lib/relay.mjs';
+import { readRelay } from './lib/relay-store.mjs';
 import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
 import { takePendingAsk } from './lib/pending.mjs';
 import { openTurn, interruptedTurns } from './lib/turns.mjs';
@@ -55,19 +56,17 @@ function main() {
     if (!existsSync(join(readOnlyTambo(cwd), 'branches'))) return;
     const ramaActual = currentBranch(cwd, budget);
     const canonical = readOnlyBranchDir(cwd, ramaActual);
-    const canonicalRelay = join(canonical, 'relevo.md');
-    const canonicalExists = existsSync(canonicalRelay);
-    const legacy = canonicalExists ? null : legacyBranchState(cwd, ramaActual, budget);
-    if (!canonicalExists && !legacy) return;
-    const dir = legacy?.dir ?? canonical;
-    const ruta = legacy ? join(dir, 'relevo.md') : canonicalRelay;
-    if (legacy && !existsSync(ruta)) return;
-
-    let md = readFileSync(ruta, 'utf8');
-    if (!md.trim()) return;
-
-    const estado = readJson(join(dir, 'estado.json'), {}) ?? {};
-    const branchForDrift = legacy?.branch ?? ramaActual;
+    let relay = readRelay(canonical);
+    let branchForDrift = ramaActual;
+    if (!relay) {
+      const legacy = legacyBranchState(cwd, ramaActual, budget);
+      if (!legacy) return;
+      relay = readRelay(legacy.dir);
+      if (!relay) return;
+      branchForDrift = legacy.branch;
+    }
+    const { state: estado, recovered } = relay;
+    let md = relay.markdown;
 
     // Sesión retomada (`source: resume`, Claude Code y Codex) cuyo relevo
     // escribió ella misma: el agente ya tiene el historial completo, y el
@@ -104,7 +103,7 @@ function main() {
       return;
     }
 
-    let verificado = estado.signature ? isValidSignature(md, estado.signature) : false;
+    let verificado = recovered || isValidSignature(md, estado.signature);
 
     // El Markdown se renderiza al capturar, así que una narrative escrita
     // después —con /relevo— no aparece hasta la captura siguiente. Si la

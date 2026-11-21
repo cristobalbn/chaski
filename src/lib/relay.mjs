@@ -97,11 +97,17 @@ function signatureOf(text, key) {
   return createHmac('sha256', key).update(text).digest('hex').slice(0, 16);
 }
 
+export function relaySigner() {
+  const key = signingKey();
+  return (text) => signatureOf(text, key);
+}
+
 export function sign(text) {
-  return signatureOf(text, signingKey());
+  return relaySigner()(text);
 }
 
 export function isValidSignature(text, signature) {
+  if (typeof signature !== 'string' || !signature) return false;
   try {
     const key = readFileSync(join(readOnlyGlobalDir(), 'clave'), 'utf8').trim();
     return Boolean(key) && signature === signatureOf(text, key);

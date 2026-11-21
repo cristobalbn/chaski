@@ -22,7 +22,8 @@ import { recordCaptureActivity } from './lib/activity.mjs';
 import { withFileLock } from './lib/lock.mjs';
 import { gitFacts, readGitSnapshot } from './lib/facts.mjs';
 import { transcriptFacts } from './lib/transcript.mjs';
-import { render, writeAtomic, sign } from './lib/relay.mjs';
+import { writeAtomic } from './lib/relay.mjs';
+import { publishRelay } from './lib/relay-store.mjs';
 import { redact } from './lib/secrets.mjs';
 import { shouldAsk, askText, askPayload, promptHookAlive, COMPACT_HINT, quotaPressure } from './lib/ask.mjs';
 import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
@@ -95,7 +96,6 @@ function main() {
     const branch = snapshot.branch;
     const dir = branchDir(cwd, branch);
     const rutaEstado = join(dir, 'estado.json');
-    const rutaRelevo = join(dir, 'relevo.md');
     const current = readJson(rutaEstado, null);
     const legacy = current || existsSync(rutaEstado) ? null : legacyBranchState(cwd, branch, budget);
     const previo = current ?? (legacy ? readJson(join(legacy.dir, 'estado.json'), null) : null) ?? {};
@@ -224,8 +224,6 @@ function main() {
     estado.turnsAtNarrative = narrativaNueva ? (estado.turns ?? 0) : previosEnSesion;
     estado.narrativeStamp = estado.narrativeWrittenAt ?? null;
 
-    const md = render(estado, config);
-    estado.signature = sign(md);
 
     // ¿Toca pedirle la narrativa al agent? Se decide ANTES de escribir, para
     // que el instante de la petición quede en el mismo estado que se guarda:
@@ -247,8 +245,7 @@ function main() {
     // Una petición por ventana de cuota: se recuerda en cuál se pidió.
     estado.askedQuotaKey = motivo && cuota && motivo.startsWith('la cuota')
       ? cuota.key : (previo.askedQuotaKey ?? null);
-    writeAtomic(rutaRelevo, md);
-    writeAtomic(rutaEstado, JSON.stringify(estado, null, 2));
+    publishRelay(dir, estado, config, previo);
     recordCaptureActivity(estado.agent);
     recordQuota(ev, estado, config);
     if (narrativaNueva && estado.narrative) recordHistory(cwd, estado, config);
@@ -333,7 +330,6 @@ function promote(ev, cwd, config) {
 
     const dir = readOnlyBranchDir(cwd, currentBranch(cwd));
     const rutaEstado = join(dir, 'estado.json');
-    const rutaRelevo = join(dir, 'relevo.md');
     const estado = readJson(rutaEstado, null);
     // Sin relevo del padre no hay dónde promote. Crear uno desde un subagente
     // dejaría un relevo con la conclusión de un hijo y ningún hecho.
@@ -381,10 +377,7 @@ function promote(ev, cwd, config) {
     estado.subagents = [...previas, entrada].slice(-6);
     estado.writtenAt = new Date().toISOString();
 
-    const md = render(estado, config);
-    estado.signature = sign(md);
-    writeAtomic(rutaRelevo, md);
-    writeAtomic(rutaEstado, JSON.stringify(estado, null, 2));
+    publishRelay(dir, estado, config, estado);
   } catch (e) {
     process.stderr.write(`chaski: promoción omitida (${e?.message ?? e})\n`);
   } finally {
