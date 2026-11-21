@@ -708,6 +708,24 @@ describe('volver después de que otra persona trabajó', () => {
         { input: JSON.stringify({ cwd: d2 }), encoding: 'utf8', env: entorno2 });
 
       assert.match(salida, /cookie httpOnly/, 'perdió la narrative recién escrita');
+
+      // Y si la narrativa se actualiza manteniendo el mismo comienzo (> 60 caracteres)
+      // y cambiando solo el final (A medias / Siguiente paso), igual se re-renderiza.
+      const prefijoLargo = 'Tarea: migrar la capa de autenticación a JWT con rotación de refresh tokens en cookies.\n';
+      assert.ok(prefijoLargo.length > 60);
+      writeFileSync(join(ed, 'relevo.md'), `# Relevo\n\n## Qué se está haciendo\n\n${prefijoLargo}Siguiente paso: versión vieja.\n`);
+      writeFileSync(join(ed, 'estado.json'), JSON.stringify({
+        writtenAt: new Date().toISOString(), agent: 'test',
+        narrative: `${prefijoLargo}Siguiente paso: versión actualizada en estado.json.`,
+        narrativeAuthor: 'claude-code', narrativeWrittenAt: '2026-11-21T19:00:00.000Z',
+        narrativeStamp: '2026-11-21T18:00:00.000Z',
+        facts: { isRepo: false, dirty: [], commits: [] },
+      }));
+      const actualizada = execFileSync(process.execPath,
+        [join(AQUI, '..', 'src', 'inject.mjs'), 'SessionStart', 'claude-code'],
+        { input: JSON.stringify({ cwd: d2 }), encoding: 'utf8', env: entorno2 });
+      assert.match(actualizada, /versión actualizada en estado\.json/);
+      assert.doesNotMatch(actualizada, /versión vieja/);
     } finally {
       rmSync(d2, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
       rmSync(casa2, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });

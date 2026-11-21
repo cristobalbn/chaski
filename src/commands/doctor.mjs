@@ -18,13 +18,20 @@ export function doctor() {
   const cliStatus = Object.entries(CLIS).map(([name, cli]) => {
     const installed = isInstalled(cli.bin);
     const hasConfig = installed && existsSync(cli.config);
-    const events = hasConfig ? registeredEvents(cli) : null;
-    return { name, cli, installed, hasConfig, events };
+    const inspected = hasConfig ? inspectRegisteredHooks(cli) : null;
+    const events = inspected ? inspected.events : null;
+    const missingPaths = inspected ? inspected.missingPaths : [];
+    return { name, cli, installed, hasConfig, events, missingPaths };
   });
 
   console.log('CLIs y hooks');
   for (const status of cliStatus) {
     console.log(`  ${pad(status.name)} ${describeHooks(status, plugin)}`);
+    if (!(status.cli.formato === 'json-claude' && plugin)) {
+      for (const missing of status.missingPaths) {
+        console.log(`  ⚠ ${status.name}: hook registrado apunta a una ruta que no existe (${missing}) — ejecuta init`);
+      }
+    }
   }
 
   console.log('\nEjecutables del hook');
@@ -158,14 +165,22 @@ function describeHooks({ installed, hasConfig, cli, events }, plugin) {
  * solo un comando que apunte a un script o wrapper de chaski, dentro de la
  * clave de hooks que ese CLI realmente lee.
  */
-function registeredEvents(cli) {
+function inspectRegisteredHooks(cli) {
   let txt;
   try { txt = stripBom(readFileSync(cli.config, 'utf8')); } catch { return null; }
   // Un comando que ejecuta un hook de chaski: los scripts de entrada (y los
   // puentes con nombres viejos) o un wrapper generado en ~/.chaski/.
   const HOOK_DE_CHASKI = /(?:capture|inject|capturar|leer)\.mjs|[\\/]\.chaski[\\/][\w.-]+\.(?:cmd|sh)\b/;
   const eventos = new Set();
+  const missing = new Set();
   const esNuestro = (c) => typeof c === 'string' && HOOK_DE_CHASKI.test(c);
+  const registrar = (ev, comando) => {
+    if (!esNuestro(comando)) return false;
+    eventos.add(ev);
+    const rota = missingHookTarget(comando);
+    if (rota) missing.add(rota);
+    return true;
+  };
 
   if (cli.formato === 'toml-codex') {
     // Sin parser TOML (cero dependencias): se recorren las líneas, se ignoran
@@ -185,10 +200,10 @@ function registeredEvents(cli) {
       if (evento && c) {
         let valor;
         try { valor = c[1].startsWith('"') ? JSON.parse(c[1]) : c[1].slice(1, -1); } catch { valor = c[1]; }
-        if (esNuestro(valor)) eventos.add(evento);
+        registrar(evento, valor);
       }
     }
-    return [...eventos];
+    return { events: [...eventos], missingPaths: [...missing] };
   }
 
   let datos;
@@ -199,8 +214,10 @@ function registeredEvents(cli) {
     // hooks.<Evento> = [{ matcher?, hooks: [{ type, command }] }]
     for (const [ev, grupos] of Object.entries(datos.hooks ?? {})) {
       if (!Array.isArray(grupos)) continue;
-      const hay = grupos.some((g) => Array.isArray(g?.hooks) && g.hooks.some((h) => esNuestro(h?.command)));
-      if (hay) eventos.add(ev);
+      for (const g of grupos) {
+        if (!Array.isArray(g?.hooks)) continue;
+        for (const h of g.hooks) registrar(ev, h?.command);
+      }
     }
   } else if (cli.formato === 'json-agy') {
     // <propietario>.<Evento> = [{ type, command }] o, en PreToolUse y
@@ -210,11 +227,32 @@ function registeredEvents(cli) {
       if (!owner || typeof owner !== 'object' || Array.isArray(owner)) continue;
       for (const [ev, lista] of Object.entries(owner)) {
         if (!Array.isArray(lista)) continue;
-        const hay = lista.some((h) => esNuestro(h?.command)
-          || (Array.isArray(h?.hooks) && h.hooks.some((x) => esNuestro(x?.command))));
-        if (hay) eventos.add(ev);
+        for (const h of lista) {
+          registrar(ev, h?.command);
+          if (Array.isArray(h?.hooks)) {
+            for (const x of h.hooks) registrar(ev, x?.command);
+          }
+        }
       }
     }
   }
-  return [...eventos];
+  return { events: [...eventos], missingPaths: [...missing] };
+}
+
+function missingHookTarget(comando) {
+  const limpio = String(comando ?? '').trim().replace(/^["']|["']$/g, '');
+  const wrapperMatch = limpio.match(/^((?:[A-Za-z]:)?[^"']*?[\\/]\.chaski[\\/][\w.-]+\.(?:cmd|sh))\b/);
+  if (wrapperMatch) {
+    const wrapperPath = wrapperMatch[1];
+    if (!existsSync(wrapperPath)) return wrapperPath;
+    try {
+      const cuerpo = readFileSync(wrapperPath, 'utf8');
+      const scriptInWrapper = cuerpo.match(/["']([^"']+?(?:capture|inject|capturar|leer)\.mjs)["']/);
+      if (scriptInWrapper && !existsSync(scriptInWrapper[1])) return scriptInWrapper[1];
+    } catch {}
+    return null;
+  }
+  const scriptMatch = String(comando ?? '').match(/["']([^"']+?(?:capture|inject|capturar|leer)\.mjs)["']/);
+  if (scriptMatch && !existsSync(scriptMatch[1])) return scriptMatch[1];
+  return null;
 }

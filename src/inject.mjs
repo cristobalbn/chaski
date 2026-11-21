@@ -112,28 +112,34 @@ function main() {
     // sesión se corta justo ahí, se perdería lo más valioso del relevo. Si el
     // estado trae una narrative que el Markdown no tiene, se re-renderiza.
     let narrativeUnsigned = false;
-    if (estado.narrative && !md.includes(estado.narrative.trim().slice(0, 60))) {
+    const narrativeTrimmed = estado.narrative ? String(estado.narrative).trim() : '';
+    if (narrativeTrimmed && ((estado.narrativeWrittenAt ?? null) !== (estado.narrativeStamp ?? null)
+        || !md.includes(narrativeTrimmed.slice(0, 60))
+        || !md.includes(narrativeTrimmed.slice(-60)))) {
       const firmado = md;
       const firmaOriginal = verificado;
       // Con la misma configuración que capture.mjs: render() redacta con los
       // patrones propios de `redact`, y sin ellos el re-render no coincidiría
       // con lo que capture firmó. Solo se lee en esta rama, la rara.
       const config = loadConfig(cwd);
-      md = render(estado, config);
-      // No asumir "verificado" porque viene del mismo estado.json: quien
-      // puede escribirlo ya podía inyectar texto editando relevo.md, y ahí
-      // el aviso de "no verificado" sí aparece. Si no se recalcula aquí, lo
-      // único que se gana es suprimir el rótulo justo cuando dos personas
-      // comparten .tambo/ con claves distintas — el caso para el que existe
-      // la firma.
-      verificado = estado.signature ? isValidSignature(md, estado.signature) : false;
-      // Excepción acotada (#49): si lo firmado validaba y todo lo que no es
-      // narrativa coincide con el re-render, el único cambio es la narrativa
-      // guardada por el canal legítimo. Ahí no corresponde la alarma de
-      // manipulación, que le decía al agente que descartara justo eso.
-      if (!verificado && firmaOriginal && onlyNarrativeChanged(firmado, estado, config)) {
-        verificado = true;
-        narrativeUnsigned = true;
+      const reRender = render(estado, config);
+      if (reRender !== md) {
+        md = reRender;
+        // No asumir "verificado" porque viene del mismo estado.json: quien
+        // puede escribirlo ya podía inyectar texto editando relevo.md, y ahí
+        // el aviso de "no verificado" sí aparece. Si no se recalcula aquí, lo
+        // único que se gana es suprimir el rótulo justo cuando dos personas
+        // comparten .tambo/ con claves distintas — el caso para el que existe
+        // la firma.
+        verificado = estado.signature ? isValidSignature(md, estado.signature) : false;
+        // Excepción acotada (#49): si lo firmado validaba y todo lo que no es
+        // narrativa coincide con el re-render, el único cambio es la narrativa
+        // guardada por el canal legítimo. Ahí no corresponde la alarma de
+        // manipulación, que le decía al agente que descartara justo eso.
+        if (!verificado && firmaOriginal && onlyNarrativeChanged(firmado, estado, config)) {
+          verificado = true;
+          narrativeUnsigned = true;
+        }
       }
     }
 

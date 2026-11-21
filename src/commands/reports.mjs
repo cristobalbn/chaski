@@ -1,8 +1,9 @@
 import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { readOnlyGlobalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath, legacyBranchState } from '../lib/paths.mjs';
+import { readOnlyGlobalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath, legacyBranchState, openTurnsPath } from '../lib/paths.mjs';
 import { usageSummary } from '../lib/ask.mjs';
+import { isFresh, MODEL_TEXT_TTL_MS } from '../lib/time.mjs';
 import { writeAtomic } from '../lib/atomic.mjs';
 import { withFileLock } from '../lib/lock.mjs';
 import { createRedactor, redact, anonymize } from '../lib/secrets.mjs';
@@ -62,10 +63,18 @@ export function next() {
   if (estado.lastFile) {
     console.log(`  # último archivo tocado: ${estado.lastFile}`);
   }
-  const narrativaRedactada = estado.narrative ? redact(String(estado.narrative), loadConfig(cwd)).texto : null;
+  const config = loadConfig(cwd);
+  const narrativaRedactada = estado.narrative ? redact(String(estado.narrative), config).texto : null;
   const pendiente = summarizePending(narrativaRedactada);
   if (pendiente) {
     console.log(`  # pendiente: ${pendiente}`);
+  } else if (estado.lastReply?.text && isFresh(estado.lastReply.at, MODEL_TEXT_TTL_MS)) {
+    const respaldo = summarizeLastReply(redact(String(estado.lastReply.text), config).texto);
+    if (respaldo) console.log(`  # última respuesta: ${respaldo}`);
+  }
+  const abiertos = activeOpenTurns(cwd);
+  if (abiertos.length) {
+    console.log(`  # turno(s) abierto(s): ${abiertos.join(', ')} (revisa git status / git diff)`);
   }
   console.log('');
 }
@@ -86,6 +95,24 @@ function summarizePending(narrative) {
   const clave = idx === -1 ? null : (soloTitulo.test(lineas[idx]) ? lineas[idx + 1] : lineas[idx]);
   const elegida = (clave ?? lineas.find((l) => !l.startsWith('#') && !/^\*\*[^*]+\*\*\s*:?\s*$/.test(l))) || null;
   return elegida ? elegida.replace(/^[-*#>\s]+/, '').slice(0, 120) : null;
+}
+
+function summarizeLastReply(text) {
+  const limpio = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (!limpio) return null;
+  return limpio.length > 120 ? limpio.slice(0, 119) + '…' : limpio;
+}
+
+function activeOpenTurns(cwd, ahora = Date.now()) {
+  const crudo = readJson(openTurnsPath(cwd), null);
+  if (!crudo || typeof crudo !== 'object' || Array.isArray(crudo)) return [];
+  const agentes = [];
+  for (const t of Object.values(crudo)) {
+    if (isFresh(t?.at, MODEL_TEXT_TTL_MS, ahora)) {
+      agentes.push(String(t?.agent ?? 'otro agente').replace(/[^\w .-]/g, ''));
+    }
+  }
+  return [...new Set(agentes)];
 }
 
 // ----------------------------------------------------------------- cost

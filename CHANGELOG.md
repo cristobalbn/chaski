@@ -5,6 +5,22 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.20] - 2026-11-21
+
+### Mejorado
+- `chaski doctor` comprueba que los scripts y wrappers registrados en la
+  configuración de cada CLI sigan existiendo en disco y avisa si apuntan a una
+  ruta borrada o movida.
+- `chaski next` muestra la última respuesta capturada (`lastReply`) como
+  respaldo cuando la rama aún no tiene narrativa, e informa si hay turnos
+  abiertos en `.tambo/turns-open.json`.
+- `legacyBranchState()` recupera también los relevos de `.tambo/ramas/<slug>/`
+  cuando la carpeta canónica en `.tambo/branches/` todavía no existe.
+
+### Corregido
+- `inject.mjs` re-renderiza el relevo cuando se actualiza la narrativa en
+  `estado.json` aunque sus primeros 60 caracteres (`Tarea`) no hayan cambiado.
+
 ## [0.1.19] - 2026-11-21
 
 ### Mejorado
