@@ -57,7 +57,7 @@ function prune(cwd, options, budget) {
       if (age < Math.min(facts, narrative || facts) * DAY_MS) continue;
       const days = hasNarrative(path) ? narrative : facts;
       if (!days || age < days * DAY_MS) continue;
-      rmSync(path, { recursive: true, force: true });
+      rmSync(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
       removed.push(name);
     } catch {}
   }

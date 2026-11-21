@@ -207,7 +207,7 @@ export function acquireLock(cwd, maxEdadMs = 30000, waitMs = 0) {
       if (error.code !== 'EEXIST') return null;
       try {
         if (Date.now() - statSync(lock).mtimeMs > maxEdadMs) {
-          rmSync(lock, { recursive: true, force: true });
+          rmSync(lock, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
           mkdirSync(lock);
           break;
         }
@@ -219,7 +219,7 @@ export function acquireLock(cwd, maxEdadMs = 30000, waitMs = 0) {
     }
   }
   try { writeFileSync(join(lock, 'pid'), String(process.pid)); } catch {}
-  return () => { try { rmSync(lock, { recursive: true, force: true }); } catch {} };
+  return () => { try { rmSync(lock, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 }); } catch {} };
 }
 
 /** ¿El proyecto vive en una carpeta sincronizada? Esos clientes bloquean archivos al subirlos. */
