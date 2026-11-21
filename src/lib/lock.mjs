@@ -16,7 +16,13 @@ export function withFileLock(file, update, timeout = 250) {
     } catch (error) {
       if (!['EEXIST', 'EBUSY', 'EPERM'].includes(error.code)) throw error;
       try {
-        if (Date.now() - statSync(lock).mtimeMs > STALE_MS) rmdirSync(lock);
+        if (Date.now() - statSync(lock).mtimeMs > STALE_MS) {
+          rmdirSync(lock);
+          try {
+            mkdirSync(lock);
+            break;
+          } catch {}
+        }
       } catch {}
       const remaining = deadline - performance.now();
       if (remaining <= 0) return undefined;

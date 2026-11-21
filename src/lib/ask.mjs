@@ -391,6 +391,11 @@ function finiteNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function validResetSeconds(value) {
+  const n = finiteNumber(value);
+  return n !== null && n > 0 && n * 1000 <= 8.64e15 ? n : null;
+}
+
 export function quotaPressure(uso, config, ahora = Date.now()) {
   const conf = config?.askNarrativeAtQuota;
   if (conf === false || conf === 0) return null;
@@ -400,7 +405,7 @@ export function quotaPressure(uso, config, ahora = Date.now()) {
   const candidatas = [['5 h', uso.fiveHour], ['7 días', uso.sevenDay]]
     .map(([window, w]) => {
       const pct = finiteNumber(w?.usedPercentage);
-      return { window, pct: pct === null ? NaN : Math.round(pct), resetsAt: finiteNumber(w?.resetsAt) };
+      return { window, pct: pct === null || pct < 0 ? NaN : Math.round(pct), resetsAt: validResetSeconds(w?.resetsAt) };
     })
     .filter((c) => Number.isFinite(c.pct) && c.pct >= umbral)
     .filter((c) => !(c.resetsAt !== null && c.resetsAt * 1000 <= ahora))
@@ -417,8 +422,8 @@ export function usageSummary(uso, ahora = Date.now(), frescura = 6 * 3600 * 1000
   const partes = [];
   for (const [nombre, w] of [['5 h', uso.fiveHour], ['7 días', uso.sevenDay]]) {
     const pct = finiteNumber(w?.usedPercentage);
-    if (pct === null) continue;
-    const resets = finiteNumber(w?.resetsAt);
+    if (pct === null || pct < 0) continue;
+    const resets = validResetSeconds(w?.resetsAt);
     const vencida = resets !== null && resets * 1000 <= ahora;
     if (vencida && Number.isFinite(frescura)) continue;
     const vence = resets !== null && resets * 1000 > ahora

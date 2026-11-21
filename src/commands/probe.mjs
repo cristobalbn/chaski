@@ -41,9 +41,10 @@ export function probe(sub) {
         : ['SessionStart', 'Stop', 'SessionEnd'];
       if (cli.formato === 'json-claude') {
         const s = readJsonForWrite(cli.config);
-        s.hooks = s.hooks ?? {};
+        if (!s.hooks || typeof s.hooks !== 'object' || Array.isArray(s.hooks)) s.hooks = {};
         for (const ev of eventos) {
-          s.hooks[ev] = [...(s.hooks[ev] ?? []).filter((g) => !isProbeHookGroup(g)),
+          const prev = Array.isArray(s.hooks[ev]) ? s.hooks[ev] : [];
+          s.hooks[ev] = [...prev.filter((g) => !isProbeHookGroup(g)),
             { hooks: [{ type: 'command', command: probeCmd(ev, name), timeout: 15 }] }];
         }
         writeAtomic(cli.config, JSON.stringify(s, null, 2));

@@ -322,7 +322,8 @@ describe('uninstall revierte lo que init tocó', () => {
       m.correr('init');
       m.correr('init');
       const tresVeces = readFileSync(join(m.casa, '.claude', 'settings.json'), 'utf8');
-      const contar = (t) => (t.match(/capturar\.mjs/g) || []).length;
+      const contar = (t) => (t.match(/capture\.mjs/g) || []).length;
+      assert.ok(contar(unaVez) > 0, 'init no registró hooks de capture.mjs');
       assert.equal(contar(tresVeces), contar(unaVez),
         'correr init de nuevo duplicó los hooks');
     } finally {
@@ -939,8 +940,9 @@ describe('la documentación no promete lo que no existe', () => {
     const instalador = leer('src/cli.mjs');
     const docs = ['README.md', 'AGENTS.md', 'CONTRIBUTING.md'].map(leer).join('\n');
 
-    const subcomandos = [...instalador.matchAll(/accion === '(\w+)'/g)].map((m) => m[1]);
-    const comandos = readdirSync(join(SRC, 'commands')).map((f) => leer('src/commands/' + f)).join('\n');
+    const subcomandos = [...instalador.matchAll(/\['(\w+)',\s*async\b/g)].map((m) => m[1]);
+    assert.ok(subcomandos.length >= 9, 'no se extrajeron los subcomandos de src/cli.mjs');
+    const comandos = [instalador, ...readdirSync(join(SRC, 'commands')).map((f) => leer('src/commands/' + f))].join('\n');
     const flags = [...comandos.matchAll(/'--(\w+)'/g)].map((m) => m[1]);
 
     // Al revés de lo intuitivo: se parte del código y se verifica la doc. Un
@@ -952,23 +954,24 @@ describe('la documentación no promete lo que no existe', () => {
     }
 
     // Y ninguna doc puede mencionar un flag que ya no existe.
-    const mencionados = [...docs.matchAll(/chaski probe --(\w+)/g)].map((m) => m[1]);
+    const mencionados = [...docs.matchAll(/chaski (?:probe|share|init)(?:\s+\[[^\]]+\])?\s+--([\w-]+)/g)].map((m) => m[1]);
+    assert.ok(mencionados.length >= 2, 'no se encontraron flags en la documentación');
     for (const f of mencionados) {
       assert.ok(flags.includes(f), `la documentación menciona --${f}, que no existe`);
     }
   });
 
   test('las claves de configuración del README son las que el código lee', () => {
-    const fuente = ['src/capture.mjs', 'src/lib/secrets.mjs', 'src/lib/paths.mjs']
+    const fuente = ['src/capture.mjs', 'src/lib/secrets.mjs', 'src/lib/paths.mjs', 'src/lib/ask.mjs', 'src/commands/doctor.mjs']
       .map(leer).join('\n');
     const readme = leer('README.md');
 
     // Las claves que el README documenta en su tabla de configuración.
     const documentadas = [...readme.matchAll(/^\| `(\w+)` \|/gm)].map((m) => m[1]);
     const deConfig = documentadas.filter((k) =>
-      /redact|exclude|prune|limpiar/i.test(k));
+      /redact|exclude|prune|limpiar|askNarrative/i.test(k));
 
-    assert.ok(deConfig.length >= 3, 'la tabla de configuración del README quedó vacía');
+    assert.ok(deConfig.length >= 6, 'la tabla de configuración del README quedó incompleta');
     for (const clave of deConfig) {
       assert.ok(fuente.includes(clave),
         `el README documenta la clave "${clave}" y el código no la lee`);
@@ -980,11 +983,14 @@ describe('la documentación no promete lo que no existe', () => {
     // La regla vale para flags, claves y nombres de archivo generados.
     const instalador = leer('src/cli.mjs');
     const comandos = readdirSync(join(SRC, 'commands')).map((f) => leer('src/commands/' + f)).join('\n');
+    const configReaders = ['src/capture.mjs', 'src/lib/ask.mjs', 'src/lib/secrets.mjs', 'src/commands/doctor.mjs']
+      .map(leer).join('\n');
     const identificadores = [
-      ...[...instalador.matchAll(/accion === '([^']+)'/g)].map((m) => m[1]),
+      ...[...instalador.matchAll(/\['([^']+)',\s*async\b/g)].map((m) => m[1]),
       ...[...comandos.matchAll(/'--([^']+)'/g)].map((m) => m[1]),
-      ...[...leer('src/capture.mjs').matchAll(/config\?\.(\w+)/g)].map((m) => m[1]),
+      ...[...configReaders.matchAll(/config\??\.(\w+)/g)].map((m) => m[1]),
     ];
+    assert.ok(identificadores.length >= 15, 'no se extrajeron suficientes identificadores de la API pública');
     for (const id of identificadores) {
       assert.ok(/^[\x20-\x7e]+$/.test(id), `"${id}" tiene caracteres no ASCII`);
     }
@@ -2475,16 +2481,22 @@ describe('contrato de empaquetado npm y sincronización con GitHub', () => {
       const check = join(temp, pkg.scripts.check.replace(/^node /, ''));
       mkdirSync(dirname(check), { recursive: true });
       writeFileSync(check, readFileSync(join(raiz, 'scripts', 'check.mjs')));
+      mkdirSync(join(temp, 'test'));
+      mkdirSync(join(temp, '.claude-plugin'));
+      for (const file of ['package.json', join('.claude-plugin', 'plugin.json')]) {
+        writeFileSync(join(temp, file), readFileSync(join(raiz, file)));
+      }
       const dir = join(temp, 'src', 'commands', 'nested');
       mkdirSync(dir, { recursive: true });
       const fixture = join(dir, 'broken.mjs');
       const run = () => spawnSync(process.execPath, [check], { encoding: 'utf8' });
+      writeFileSync(fixture, 'export const broken = false;');
+      const valid = run();
+      assert.equal(valid.status, 0, valid.stderr);
       writeFileSync(fixture, 'export const broken = ;');
       const invalid = run();
-      assert.equal(invalid.status, 1);
+      assert.equal(invalid.status, 1, invalid.stderr);
       assert.match(invalid.stderr, /broken\.mjs/);
-      writeFileSync(fixture, 'export const broken = false;');
-      assert.equal(run().status, 0);
     } finally {
       rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -4560,6 +4572,25 @@ describe('varias ventanas en el mismo proyecto', () => {
       const outUninst = m.correr('uninstall');
       assert.match(outUninst, /claude code\s+nada que revertir/);
       assert.equal(readFileSync(claudeCfg, 'utf8'), raw);
+
+      // 4. init y probe también toleran hooks corruptos en settings.json, y cost/next toleran globales corruptos o con alias.
+      m.correr('init');
+      m.correr('probe');
+      mkdirSync(join(m.casa, '.chaski'), { recursive: true });
+      writeFileSync(join(m.casa, '.chaski', 'cost.json'), JSON.stringify({
+        asks: [null, 'invalido', { at: new Date().toISOString(), agent: 'Claude_Code', branch: 'main', reason: 'test' }],
+        narratives: [null, { at: '2099-01-01T00:00:00.000Z', agent: 'codex', branch: 'main' }],
+      }));
+      const outCost = m.correr('cost');
+      assert.match(outCost, /en Stop\s+1 en 7d/);
+
+      writeFileSync(join(m.casa, '.chaski', 'quota.json'), JSON.stringify({
+        'claude-code': { at: new Date().toISOString(), reason: 'rate_limit', message: 'agotado\nahora' },
+        codex: { at: '2099-01-01T00:00:00.000Z', reason: 'futuro' },
+      }));
+      const outNext = m.correr('next');
+      assert.match(outNext, /claude code\s+agotado · hace 0 min \(agotado ahora\)/);
+      assert.match(outNext, /codex\s+disponible/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
