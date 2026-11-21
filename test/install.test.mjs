@@ -79,6 +79,33 @@ function montar(prefijo) {
   return { raiz, proyecto, casa, bin, g, entorno, correr };
 }
 
+test('la configuración combina las capas y aísla las listas con tipo incorrecto', () => {
+  const m = montar('chaski-config-layers-');
+  try {
+    const global = join(m.casa, '.chaski');
+    mkdirSync(global);
+    writeFileSync(join(global, 'config.json'), JSON.stringify({
+      askNarrative: 'commit', redact: ['GLOBAL'], excludePaths: ['global/'],
+    }));
+    writeFileSync(join(m.proyecto, 'chaski.json'), JSON.stringify({
+      askNarrative: 'never', redact: 3, excludePaths: ['project/'],
+    }));
+    writeFileSync(join(m.proyecto, 'chaski.local.json'), JSON.stringify({
+      askNarrative: 'auto', redact: ['LOCAL'], excludePaths: 'wrong',
+    }));
+    const paths = pathToFileURL(join(SRC, 'lib', 'paths.mjs')).href;
+    const result = execFileSync(process.execPath, ['--input-type=module', '-e', `
+      import { loadConfig } from ${JSON.stringify(paths)};
+      console.log(JSON.stringify(loadConfig(process.cwd())));
+    `], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+    assert.deepEqual(JSON.parse(result), {
+      askNarrative: 'auto', redact: ['GLOBAL', 'LOCAL'], excludePaths: ['global/', 'project/'],
+    });
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
 describe('uninstall revierte lo que init tocó', () => {
   test('quita los hooks de chaski de Claude Code y deja lo del usuario', () => {
     const m = montar('chaski-inst-');

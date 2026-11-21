@@ -12,11 +12,17 @@ export function doctor() {
   const { cwd, workspace } = projectContext();
   console.log(`\nchaski doctor (v${pkgVersion()})\n`);
 
+  const plugin = claudePluginEnabled(cwd);
+  const cliStatus = Object.entries(CLIS).map(([name, cli]) => {
+    const installed = isInstalled(cli.bin);
+    const hasConfig = installed && existsSync(cli.config);
+    const events = hasConfig ? registeredEvents(cli) : null;
+    return { name, cli, installed, hasConfig, events };
+  });
+
   console.log('CLIs y hooks');
-  for (const [name, cli] of Object.entries(CLIS)) {
-    if (!isInstalled(cli.bin)) { console.log(`  ${pad(name)} no instalado`); continue; }
-    const estado = checkHooks(cli, cwd);
-    console.log(`  ${pad(name)} ${estado}`);
+  for (const status of cliStatus) {
+    console.log(`  ${pad(status.name)} ${describeHooks(status, plugin)}`);
   }
 
   console.log('\nEjecutables del hook');
@@ -35,11 +41,9 @@ export function doctor() {
   // Un CLI con hooks registrados que nunca estampó heartbeat es el síntoma de un
   // paso pendiente, no de un bug. Se diagnostica aquí en lugar de dejar al
   // usuario adivinando por qué .tambo/ sigue vacío.
-  const sinLatido = Object.entries(CLIS)
-    .filter(([n, c]) => isInstalled(c.bin) && existsSync(c.config)
-      && (registeredEvents(c) ?? []).length > 0
-      && !Object.keys(lat).some((k) => k.replace(/-/g, ' ') === n));
-  for (const [name] of sinLatido) {
+  const sinLatido = cliStatus.filter(({ name, events }) => events?.length
+    && !Object.keys(lat).some((key) => key.replace(/-/g, ' ') === name));
+  for (const { name } of sinLatido) {
     console.log(`\n  ⚠ ${name}: hooks registrados pero nunca ejecutados.`);
     if (name === 'codex') {
       console.log('    Codex pide confiar en los hooks la primera vez que lo abres.');
@@ -56,11 +60,10 @@ export function doctor() {
   // respuesta, y sin esta línea el usuario no tendría cómo saber por qué.
   console.log('\nPetición de narrativa (antes de la respuesta o después)');
   const vivos = readJson(promptHookPath(), {}) ?? {};
-  for (const [name, cli] of Object.entries(CLIS)) {
-    if (!isInstalled(cli.bin) || !existsSync(cli.config)) continue;
+  for (const { name, hasConfig, events } of cliStatus) {
+    if (!hasConfig) continue;
     const evento = PROMPT_HOOK_EVENTS[name];
-    const registrado = (name === 'claude code' && claudePluginEnabled(cwd))
-      || (registeredEvents(cli) ?? []).includes(evento);
+    const registrado = (name === 'claude code' && plugin) || events?.includes(evento);
     let nota;
     if (!registrado) nota = `después de la respuesta — falta el hook ${evento}: ejecuta init`;
     else if (promptHookAlive(vivos, name)) nota = 'antes de la respuesta';
@@ -71,9 +74,10 @@ export function doctor() {
 
   // #82: sin la statusline de chaski no hay dato de cuota, y la narrativa se
   // pide por turnos y commits en vez de antes de que la cuota se acabe.
-  if (isInstalled(CLIS['claude code'].bin)) {
+  const claude = cliStatus.find(({ name }) => name === 'claude code');
+  if (claude.installed) {
     console.log('\nCuota (statusline de Claude Code)');
-    const sl = readJson(CLIS['claude code'].config, {})?.statusLine;
+    const sl = readJson(claude.cli.config, {})?.statusLine;
     if (!isChaskiStatusLine(sl?.command)) {
       console.log(`  ${pad('claude code')} sin dato — ejecuta \`chaski init --statusline\` para pedir la narrativa antes de que se acabe`);
     } else {
@@ -124,18 +128,17 @@ export function doctor() {
   console.log(`  ${pad('llamadas')} chaski NO invoca claude -p, codex exec ni agy -p\n`);
 }
 
-function checkHooks(cli, cwd) {
-  if (cli.formato === 'json-claude' && claudePluginEnabled(cwd)) {
-    const propios = existsSync(cli.config) ? (registeredEvents(cli) ?? []) : [];
-    return `vía plugin ${CLAUDE_PLUGIN_ID}` + (propios.length
+function describeHooks({ installed, hasConfig, cli, events }, plugin) {
+  if (!installed) return 'no instalado';
+  if (cli.formato === 'json-claude' && plugin) {
+    return `vía plugin ${CLAUDE_PLUGIN_ID}` + (events?.length
       ? ' — también hay hooks en settings.json: se silencian solos, pero corre init para quitarlos'
       : '');
   }
-  if (!existsSync(cli.config)) return 'sin config — ejecuta init';
-  const eventos = registeredEvents(cli);
-  if (eventos === null) return 'config ilegible — revisa el archivo';
-  if (!eventos.length) return 'hooks NO registrados — ejecuta init';
-  return `registrado (${eventos.join(', ')})`;
+  if (!hasConfig) return 'sin config — ejecuta init';
+  if (events === null) return 'config ilegible — revisa el archivo';
+  if (!events.length) return 'hooks NO registrados — ejecuta init';
+  return `registrado (${events.join(', ')})`;
 }
 
 /**

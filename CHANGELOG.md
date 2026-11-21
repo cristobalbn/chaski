@@ -21,6 +21,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 - Se separa la lectura de transcripts de los hechos de git. La marca de
   agua conserva el registro incompleto y se informa cuando la lectura
   alcanza el tope de 8 MB.
+- Los informes comparten la configuración con los hooks. El diagnóstico
+  detecta cada CLI y lee sus eventos una sola vez.
 - Los subcomandos de la CLI pasan a módulos de instalación, diagnóstico,
   sonda e informes. El chequeo de sintaxis descubre los módulos nuevos
   automáticamente.
