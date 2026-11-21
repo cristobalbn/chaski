@@ -2098,3 +2098,18 @@ describe('un turno de Claude Code es un mensaje del usuario', () => {
     assert.equal(transcriptFacts(fixture('claude-code.transcript.jsonl'), 0, {}).turns, 1);
   });
 });
+
+describe('anonymize no rompe texto que no es personal', () => {
+  test('URLs, rutas del repo y URLs de git quedan igual', () => {
+    for (const t of ['https://miapp.com/home/dashboard', 'src/Users/Profile.ts', 'git@github.com:org/repo.git']) {
+      assert.deepEqual(anonymize(t, { home: '/home/z' }), { texto: t, anonymized: 0 }, t);
+    }
+  });
+
+  test('las carpetas personales al inicio de una ruta siguen reemplazándose', () => {
+    // Caso positivo de lo de arriba.
+    assert.equal(anonymize('en /home/bob/p y "/Users/ana/x"', { home: '/home/z' }).texto, 'en ~/p y "~/x"');
+    assert.equal(anonymize('ver C:\\Users\\crist\\x.txt', { home: '/home/z' }).texto, 'ver ~\\x.txt');
+    assert.equal(anonymize('escribe a yo@mail.com.').texto, 'escribe a [correo].');
+  });
+});

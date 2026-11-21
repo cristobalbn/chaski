@@ -64,6 +64,11 @@ function main() {
     // no cierra el turno (la compactación automática ocurre a mitad de uno).
     if (ev.hook_event_name !== 'PreCompact') closeTurn(cwd, ev.session_id);
 
+    // Si la sesión que anotó un pedido de narrativa termina, se anota: desde
+    // ahí el pedido puede entregarse a la conversación retomada (otro id,
+    // mismo transcript). Ver samePendingConversation() en ask.mjs.
+    if (ev.hook_event_name === 'SessionEnd') markPendingSessionEnded(cwd, ev.session_id);
+
     // En Claude Code, lo que PreCompact imprime «becomes instructions for the
     // compaction summary». Se pide que el resumen conserve lo mismo que una
     // narrativa: compactar es perder contexto, igual que cambiar de agente.
@@ -399,6 +404,18 @@ function freshSubagents(lista, ahora = Date.now()) {
     return Number.isFinite(t) && ahora - t < SUBAGENT_TTL_MS;
   });
   return vivas.length ? vivas : null;
+}
+
+/** Marca que la sesión que anotó el pedido de narrativa terminó. Nunca lanza. */
+function markPendingSessionEnded(cwd, session) {
+  if (!session) return;
+  try {
+    const ruta = pendingAskPath(cwd);
+    if (!existsSync(ruta)) return;
+    const p = readJson(ruta, null);
+    if (!p || p.session !== session || p.sessionEnded) return;
+    writeAtomic(ruta, JSON.stringify({ ...p, sessionEnded: true }));
+  } catch {}
 }
 
 /** Quita la marca de turno abierto de esta sesión. Nunca lanza. */

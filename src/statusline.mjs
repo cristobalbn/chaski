@@ -73,13 +73,18 @@ function recordUsage(ev) {
  * muestra la línea mínima en vez de dejar la barra en blanco.
  */
 function delegate(bruto, ev) {
+  // Protección contra recursión: si la statusline guardada como «la del
+  // usuario» resulta ser una de chaski (una instalación vieja, otra copia), se
+  // llamaría a sí misma sin fin. La variable la pone esta misma función al
+  // delegar; si ya viene puesta, no se delega otra vez.
+  if (process.env.CHASKI_STATUSLINE_DELEGATED) return '';
   const config = readJson(join(globalDir(), 'config.json'), {}) ?? {};
   const comando = config.statusLineCommand;
   if (typeof comando !== 'string' || !comando.trim()) return '';
   const r = spawnSync(comando, {
     input: bruto,
     cwd: dirOk(ev?.cwd) ?? process.cwd(),
-    env: process.env,
+    env: { ...process.env, CHASKI_STATUSLINE_DELEGATED: '1' },
     encoding: 'utf8',
     // Claude Code corre la statusline con sh (o Git Bash en Windows); la del
     // usuario se escribió para eso. Si no hay bash a mano, el shell del sistema.

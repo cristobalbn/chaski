@@ -15,7 +15,7 @@ import { join, resolve, dirname, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyTambo, readOnlyRelayPath, readOnlyStatePath } from './lib/paths.mjs';
+import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath, claudePluginEnabled, claudePluginEnabledForUser, CLAUDE_PLUGIN_ID, usagePath, readOnlyTambo, readOnlyRelayPath, readOnlyStatePath } from './lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from './lib/ask.mjs';
 import { writeAtomic, isValidSignature } from './lib/relay.mjs';
 import { redact, anonymize } from './lib/secrets.mjs';
@@ -238,7 +238,9 @@ function init(args = []) {
       // Con el plugin activo, Claude Code ya tiene los hooks por esa vía: init
       // no los registra en settings.json, y quita los suyos si quedaron de
       // antes, para que no corran dos veces (#80).
-      const viaPlugin = cli.formato === 'json-claude' && claudePluginEnabled(CWD);
+      // A nivel de usuario: los hooks de settings.json valen para todos los
+      // proyectos, así que solo se quitan si el plugin también.
+      const viaPlugin = cli.formato === 'json-claude' && claudePluginEnabledForUser();
       if (cli.formato === 'json-claude') nuevo = installClaude(cli.config, { viaPlugin });
       else if (cli.formato === 'json-agy') nuevo = installAgy(cli.config);
       else if (cli.formato === 'toml-codex') nuevo = installCodex(cli.config);
@@ -1181,7 +1183,10 @@ function why(args) {
     for (const dir of readdirSync(branchesDir)) {
       const est = readJson(join(branchesDir, dir, 'estado.json'), null);
       if (!est?.narrative) continue;
-      const texto = String(est.narrative).trim();
+      // La narrativa de estado.json la escribe el agente tal cual: se redacta
+      // al mostrarla, como en el relevo (secretos y <private>). La de
+      // historia/ ya se redactó al archivarse.
+      const texto = redact(String(est.narrative).trim(), loadFilterConfig(CWD)).texto;
       const branch = est.facts?.branch ?? dir;
       if (entradas.some((e) => e.branch === branch && e.narrative === texto)) continue;
       entradas.push({
@@ -1355,7 +1360,22 @@ function isInstalled(bin) {
 
 /** ¿Este comando de statusline es el de chaski? */
 function isChaskiStatusLine(comando) {
-  return typeof comando === 'string' && /statusline\.mjs"?\s*$/.test(comando);
+  // Por la ruta `chaski/src/statusline.mjs` (o `@cristobalbn/chaski/src/...`
+  // en una instalación de npm), no solo por el nombre del archivo: un usuario
+  // con su propio `~/.claude/statusline.mjs` se tomaba por chaski, init no lo
+  // envolvía y uninstall le borraba la statusline.
+  if (typeof comando !== 'string') return false;
+  // Y la ruta exacta de esta instalación, por si el repo se clonó en una
+  // carpeta con otro nombre.
+  const norm = (t) => t.replace(/\\/g, '/').toLowerCase();
+  return /[\\/]chaski[\\/]src[\\/]statusline\.mjs"?\s*$/i.test(comando)
+    || norm(comando).includes(norm(STATUSLINE));
+}
+
+/** El comando de statusline que init escribiría hoy, con las rutas de hoy. */
+function statusLineCommandNow() {
+  const q = (p) => `"${p.replace(/\//g, process.platform === 'win32' ? '\\' : '/')}"`;
+  return `${q(process.execPath)} ${q(STATUSLINE)}`;
 }
 
 /**
@@ -1374,7 +1394,19 @@ function installStatusLine() {
     const s = readJsonForWrite(cli.config);
     const actual = s.statusLine && typeof s.statusLine === 'object' ? s.statusLine : null;
     if (isChaskiStatusLine(actual?.command)) {
-      console.log(`  ${pad('statusline')} ya instalada`);
+      // Ya es la de chaski, pero el comando lleva rutas absolutas (node y el
+      // script): tras actualizar Node o mover chaski queda apuntando a la nada,
+      // la barra se apaga y la cuota deja de anotarse sin aviso. Se reescribe
+      // si cambió, igual que init reescribe los hooks.
+      const ahora = statusLineCommandNow();
+      if (actual.command === ahora) {
+        console.log(`  ${pad('statusline')} ya instalada`);
+        return;
+      }
+      s.statusLine = { ...actual, command: ahora };
+      backup(cli.config);
+      writeAtomic(cli.config, JSON.stringify(s, null, 2));
+      console.log(`  ${pad('statusline')} actualizada a las rutas de esta instalación`);
       return;
     }
     const gRuta = join(globalDir(), 'config.json');
@@ -1383,8 +1415,7 @@ function installStatusLine() {
       g.statusLineCommand = actual.command;
       writeAtomic(gRuta, JSON.stringify(g, null, 2));
     }
-    const q = (p) => `"${p.replace(/\//g, process.platform === 'win32' ? '\\' : '/')}"`;
-    s.statusLine = { ...(actual ?? {}), type: 'command', command: `${q(process.execPath)} ${q(STATUSLINE)}` };
+    s.statusLine = { ...(actual ?? {}), type: 'command', command: statusLineCommandNow() };
     backup(cli.config);
     writeAtomic(cli.config, JSON.stringify(s, null, 2));
     console.log(`  ${pad('statusline')} instalada${actual?.command ? `; envuelve la tuya: ${actual.command}` : ''}`);

@@ -31,7 +31,9 @@ function main() {
   const ev = readPayload();
   // Instalado por `init` y además como plugin de Claude Code: este proceso es
   // el duplicado, y sin esto el relevo se inyectaría dos veces por sesión.
-  if (silencedByPlugin(agentFromArg(process.argv[3]), cwdFrom(ev))) return;
+  // Dentro de try: un payload raro (un cwd que no es texto) no puede tumbar el
+  // hook (invariante 4). Antes esta línea estaba fuera y salía con código 1.
+  try { if (silencedByPlugin(agentFromArg(process.argv[3]), cwdFrom(ev))) return; } catch {}
   // Mismo archivo para los dos hooks de entrada (invariante 8: cada nombre
   // que init escribe en una config ajena queda fijo para siempre, así que no
   // se agrega un tercero). Este camino corre en CADA mensaje del usuario:
@@ -220,7 +222,10 @@ function openTurn(cwd, session, agent) {
     const ruta = openTurnsPath(cwd);
     if (!existsSync(dirname(ruta))) return;
     const abiertos = readJson(ruta, {}) ?? {};
-    if (abiertos[session]) return;
+    // Una marca de esta sesión de hace menos de un minuto es este mismo turno
+    // (agy llama varias veces por turno). Una más vieja es de un turno anterior
+    // que no cerró: se renueva, porque la sesión sigue viva y trabajando.
+    if (abiertos[session] && Date.now() - Date.parse(abiertos[session].at ?? '') < 60_000) return;
     const ahora = Date.now();
     for (const [s, t] of Object.entries(abiertos)) {
       if (!(ahora - Date.parse(t?.at ?? '') < OPEN_TURN_TTL_MS)) delete abiertos[s];
@@ -251,7 +256,7 @@ function interruptedTurns(cwd, estado, sesionActual) {
       if (s === sesionActual || !Number.isFinite(at) || at <= desde || ahora - at > OPEN_TURN_TTL_MS) continue;
       const min = Math.max(0, Math.round((ahora - at) / 60000));
       const hace = min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} día(s)`;
-      lineas.push(`- Un turno de ${String(t.agent ?? 'otro agente').replace(/[^\w .-]/g, '')} empezó hace ${hace} y no terminó: se interrumpió, se cerró la ventana o se cortó.`);
+      lineas.push(`- Un turno de ${String(t.agent ?? 'otro agente').replace(/[^\w .-]/g, '')} empezó hace ${hace} y no terminó: se interrumpió, se cerró la ventana o se cortó (o sigue en curso en otra ventana).`);
     }
     if (!lineas.length) return null;
     return [
@@ -299,14 +304,21 @@ function mergedBranchNarrative(cwd, estado, budget) {
     }
     if (!ultima) return null;
     const rama = String(ultima.branch);
-    if (rama === estado.facts?.branch || rama === 'sin-rama') return null;
+    // `HEAD` es lo que git informa en detached HEAD: no es una rama que exista
+    // ni que pueda haberse fusionado.
+    if (rama === estado.facts?.branch || rama === 'sin-rama' || rama === 'HEAD') return null;
     const at = Date.parse(ultima.at);
     const propia = Date.parse(estado.narrativeWrittenAt ?? '') || 0;
     if (!Number.isFinite(at) || at <= propia || Date.now() - at > 14 * 86400_000) return null;
     // El nombre va como argumento a git: nada que pueda leerse como opción.
     if (!/^[\w./-]+$/.test(rama) || rama.startsWith('-')) return null;
-    const viva = git(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${rama}`], { budget });
-    if (viva) return null;
+    // `for-each-ref` y no `rev-parse --verify`: este último sale con error
+    // tanto si la rama no existe como si git falló o se acabó el presupuesto,
+    // y git() devuelve null en los dos casos. Con for-each-ref, «no existe»
+    // es salida vacía (''), y null queda solo para «no se pudo saber», donde
+    // no se afirma nada.
+    const viva = git(cwd, ['for-each-ref', '--format=%(refname)', `refs/heads/${rama}`], { budget });
+    if (viva !== '') return null;
     const cuerpo = String(ultima.narrative).trim();
     const corto = cuerpo.length > 900 ? cuerpo.slice(0, 900).trimEnd() + '…' : cuerpo;
     const min = Math.max(0, Math.round((Date.now() - at) / 60000));
