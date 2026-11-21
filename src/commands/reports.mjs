@@ -194,11 +194,13 @@ export async function why(args) {
 
   const tambo = readOnlyTambo(cwd);
   const coincidencias = [];
+  let seq = 0;
   const addMatch = (entry) => {
     const texto = `${entry.branch ?? ''} ${entry.author ?? ''} ${entry.narrative}`.toLowerCase();
     if (terminos.length && !terminos.every((t) => texto.includes(t))) return;
-    coincidencias.push(entry);
-    if (coincidencias.length > 10) coincidencias.shift();
+    const ms = Date.parse(entry.at ?? '');
+    coincidencias.push({ ...entry, _ms: Number.isFinite(ms) ? ms : null, _seq: seq++ });
+    if (coincidencias.length > 50) coincidencias.shift();
   };
 
   // También revisa el estado vivo de cada rama por si una narrativa se
@@ -209,18 +211,19 @@ export async function why(args) {
   if (existsSync(branchesDir)) {
     for (const dir of readdirSync(branchesDir)) {
       const est = readJson(join(branchesDir, dir, 'estado.json'), null);
-      if (!est?.narrative) continue;
+      const rawNarrative = String(est?.narrative ?? '').trim();
+      if (!rawNarrative) continue;
       // La narrativa de estado.json la escribe el agente tal cual: se redacta
       // al mostrarla, como en el relevo (secretos y <private>). La de
       // historia/ ya se redactó al archivarse.
-      const texto = redactNarrative(String(est.narrative).trim()).texto;
+      const texto = redactNarrative(rawNarrative).texto;
       const branch = est.facts?.branch ?? dir;
       const key = JSON.stringify([branch, texto]);
       if (live.has(key)) continue;
       live.set(key, {
         fuente: 'rama',
-        at: est.narrativeWrittenAt ?? est.writtenAt ?? null,
-        author: est.narrativeAuthor || est.agent ? canonicalAgent(est.narrativeAuthor ?? est.agent) : '?',
+        at: est.narrativeWrittenAt || est.writtenAt || null,
+        author: est.narrativeAuthor || est.agent ? canonicalAgent(est.narrativeAuthor || est.agent) : '?',
         branch,
         head: est.head ?? null,
         narrative: texto,
@@ -262,7 +265,15 @@ export async function why(args) {
     return;
   }
 
-  for (const e of coincidencias.reverse()) {
+  const ordenadas = [...coincidencias]
+    .sort((a, b) => {
+      if (a._ms !== null && b._ms !== null && a._ms !== b._ms) return a._ms - b._ms;
+      return a._seq - b._seq;
+    })
+    .slice(-10)
+    .reverse();
+
+  for (const e of ordenadas) {
     const fecha = String(e.at ?? '').slice(0, 16).replace('T', ' ') || 'sin fecha';
     const head = e.head ? ` · ${e.head}` : '';
     console.log(`── ${fecha} · ${e.branch} · por ${e.author}${head} (${e.fuente})`);

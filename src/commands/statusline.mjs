@@ -35,7 +35,7 @@ export function installStatusLine() {
   const cli = CLIS['claude code'];
   if (!isInstalled(cli.bin)) {
     console.log(`  ${pad('statusline')} Claude Code no instalado, se omite`);
-    return;
+    return true;
   }
   try {
     const s = readJsonForWrite(cli.config);
@@ -48,13 +48,13 @@ export function installStatusLine() {
       const ahora = statusLineCommandNow();
       if (actual.command === ahora) {
         console.log(`  ${pad('statusline')} ya instalada`);
-        return;
+        return true;
       }
       s.statusLine = { ...actual, command: ahora };
       backup(cli.config);
       writeAtomic(cli.config, JSON.stringify(s, null, 2));
       console.log(`  ${pad('statusline')} actualizada a las rutas de esta instalación`);
-      return;
+      return true;
     }
     const gRuta = join(globalDir(), 'config.json');
     const g = readJsonForWrite(gRuta);
@@ -67,8 +67,10 @@ export function installStatusLine() {
     backup(cli.config);
     writeAtomic(cli.config, JSON.stringify(s, null, 2));
     console.log(`  ${pad('statusline')} instalada${actual?.command ? `; envuelve la tuya: ${actual.command}` : ''}`);
+    return true;
   } catch (e) {
     console.log(`  ${pad('statusline')} FALLÓ: ${e?.message ?? e}`);
+    return false;
   }
 }
 
