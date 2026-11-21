@@ -5,6 +5,8 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.10] - 2026-11-20
+
 ### Agregado
 - Si la narrativa más reciente es de una rama que ya no existe (típico tras un
   squash-merge y borrar la rama) y es más nueva que la de la rama actual, el
