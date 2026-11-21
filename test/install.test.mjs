@@ -4319,4 +4319,30 @@ describe('varias ventanas en el mismo proyecto', () => {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  test('init --statusline crea ~/.claude si el plugin de usuario evitó crear settings.json, y uninstall repetido no toca configs sin hooks de chaski', () => {
+    const m = montar('chaski-sl-mkdir-uninst-');
+    try {
+      const pluginsDir = join(m.casa, '.claude', 'plugins');
+      mkdirSync(pluginsDir, { recursive: true });
+      writeFileSync(join(pluginsDir, 'installed_plugins.json'), JSON.stringify({
+        plugins: { 'chaski@chaski': [{ scope: 'user' }] },
+      }));
+      rmSync(join(m.casa, '.claude', 'settings.json'), { force: true });
+      const outInit = m.correr('init', '--statusline');
+      assert.match(outInit, /statusline\s+instalada/);
+      const claudeCfg = join(m.casa, '.claude', 'settings.json');
+      assert.ok(existsSync(claudeCfg), 'debía crear settings.json al instalar statusline');
+
+      const outUninst1 = m.correr('uninstall');
+      assert.match(outUninst1, /claude code\s+hooks de chaski removidos/);
+      const rawBeforeSecond = '{\n  "model": "sonnet"  \n}\n';
+      writeFileSync(claudeCfg, rawBeforeSecond);
+      const outUninst2 = m.correr('uninstall');
+      assert.match(outUninst2, /claude code\s+nada que revertir/);
+      assert.equal(readFileSync(claudeCfg, 'utf8'), rawBeforeSecond, 'uninstall no debe reescribir un settings.json que no tiene nada de chaski');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });

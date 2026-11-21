@@ -474,12 +474,18 @@ export function uninstall() {
         // Siempre se quita solo lo nuestro de la config actual. Restaurar el
         // respaldo pisaba todo lo que el usuario cambió después del primer
         // init (y el trusted_hash que Codex escribe al conceder confianza).
+        let changed = false;
+        let finalizeStatusLine = null;
         if (cli.formato === 'toml-codex') {
           const before = readFileSync(cli.config, 'utf8');
           const after = removeBlock(removeBlock(before), PROBE_START, PROBE_END);
-          if (after !== before) writeAtomic(cli.config, after.trimEnd() + '\n');
+          if (after !== before) {
+            writeAtomic(cli.config, after.trimEnd() + '\n');
+            changed = true;
+          }
         } else {
           const s = readJsonForWrite(cli.config);
+          const original = JSON.stringify(s);
           if (cli.formato === 'json-agy') {
             delete s.chaski;
             delete s.chaskiProbe;
@@ -492,15 +498,22 @@ export function uninstall() {
             }
             if (!Object.keys(s.hooks).length) delete s.hooks;
           }
-          const finalizeStatusLine = cli.formato === 'json-claude' ? restoreStatusLine(s) : null;
-          writeAtomic(cli.config, JSON.stringify(s, null, 2));
+          finalizeStatusLine = cli.formato === 'json-claude' ? restoreStatusLine(s) : null;
+          if (JSON.stringify(s) !== original || finalizeStatusLine) {
+            writeAtomic(cli.config, JSON.stringify(s, null, 2));
+            changed = true;
+          }
           if (finalizeStatusLine) {
             finalizeStatusLine();
             console.log(`  ${pad('statusline')} devuelta a como estaba antes de chaski`);
           }
         }
-        console.log(`  ${pad(name)} hooks de chaski removidos` +
-          (existsSync(bak) ? `; respaldo previo conservado en ${bak}` : ''));
+        if (changed) {
+          console.log(`  ${pad(name)} hooks de chaski removidos` +
+            (existsSync(bak) ? `; respaldo previo conservado en ${bak}` : ''));
+        } else {
+          console.log(`  ${pad(name)} nada que revertir`);
+        }
       } else {
         console.log(`  ${pad(name)} nada que revertir`);
       }
