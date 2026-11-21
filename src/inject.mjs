@@ -257,25 +257,21 @@ function detectDrift(cwd, estado, budget = null, rama = undefined) {
  */
 function changesSinceRelay(cwd, estado, budget = null) {
   const avisos = [];
-  const head = git(cwd, ['rev-parse', '--short', 'HEAD'], { budget });
-  if (!estado.head || !head || estado.head === head) return avisos;
-  // `estado.head` va como argumento a git más abajo. Sin validar, un valor
-  // como `--output=<archivo>` lo interpreta git como opción de `log`/`diff` y
-  // escribe un archivo. Lo escribe capture.mjs, pero estado.json es editable.
-  // Hoy `cat-file -e` lo rechaza antes, así que es defensa en profundidad:
-  // no depender de que ese paso vaya primero.
-  if (!/^[0-9a-f]{4,40}$/i.test(String(estado.head))) return avisos;
+  // estado.json es editable. El identificador tiene que ser hexadecimal
+  // antes de pasárselo a git.
+  if (!/^[0-9a-f]{4,64}$/i.test(String(estado.head))) return avisos;
 
-  // Si el commit del relevo ya no existe, la historia se reescribió
-  // (rebase, squash, fuerza). Nada de lo que sigue es comparable.
-  const existe = git(cwd, ['cat-file', '-e', `${estado.head}^{commit}`], { budget }) !== null;
-  if (!existe) {
-    avisos.push(`- El commit del relevo (\`${estado.head}\`) ya no existe: la historia se reescribió.`);
-    avisos.push('  Trata todo este relevo como una hipótesis y verifica cada punto.');
+  // Resuelve ambos extremos de una vez: un proceso menos antes del diff,
+  // que puede quedar fuera del presupuesto si el arranque de git es lento.
+  const resolved = git(cwd, ['rev-parse', 'HEAD^{commit}', `${estado.head}^{commit}`], { budget });
+  if (resolved === null) {
+    avisos.push(`- No se pudo comparar el commit del relevo (\`${estado.head}\`).`);
     return avisos;
   }
+  const [head, base] = resolved.split('\n');
+  if (!base || head === base) return avisos;
 
-  const rango = `${estado.head}..HEAD`;
+  const rango = `${base}..${head}`;
   const log = git(cwd, ['log', rango, '--format=%h|%an|%s'], { budget }) ?? '';
   const commits = log.split('\n').filter(Boolean).map((l) => {
     const [h, autor, ...resto] = l.split('|');
@@ -295,11 +291,12 @@ function changesSinceRelay(cwd, estado, budget = null) {
   // `--name-only` compara árboles, no contenido: a diferencia de `--numstat`
   // en facts.mjs, no escala con el tamaño del diff. Medido con 10.000
   // archivos cambiados en un commit: ~50 ms.
-  const tocados = new Set((git(cwd, ['diff', '--name-only', rango], { budget }) ?? '')
-    .split('\n').filter(Boolean));
   const mencionados = mentionedPaths(estado.narrative);
+  if (!mencionados.length) return avisos;
+  const tocados = (git(cwd, ['diff', '--name-only', rango], { budget }) ?? '')
+    .split('\n').filter(Boolean);
   const collisions = mencionados.filter((r) =>
-    [...tocados].some((t) => t === r || t.endsWith('/' + r) || r.endsWith('/' + t)));
+    tocados.some((t) => t === r || t.endsWith('/' + r) || r.endsWith('/' + t)));
 
   if (collisions.length) {
     avisos.push('');
