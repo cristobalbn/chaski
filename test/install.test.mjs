@@ -2228,7 +2228,8 @@ describe('#73: la petición de narrativa se entrega antes de la respuesta', () =
       mensaje(m, 'claude-code', 's');
       writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 75;\n');
       capturar(m, 'claude-code', 's');
-      const p = JSON.parse(readFileSync(pendiente(m), 'utf8'));
+      // Un pedido por sesión (lib/pending.mjs): `{ "<session>": { ... } }`.
+      const p = JSON.parse(readFileSync(pendiente(m), 'utf8')).s;
       const estado = JSON.parse(readFileSync(p.statePath, 'utf8'));
       estado.narrative = 'escrita a mano';
       estado.narrativeWrittenAt = new Date(Date.parse(p.at) + 1000).toISOString();
@@ -3263,6 +3264,69 @@ describe('hallazgos de la auditoría del 2026-11-20', () => {
       assert.match(arranque(), /de la rama `feat\/borrada`/);
       writeFileSync(hist, entrada('HEAD'));
       assert.doesNotMatch(arranque(), /Narrativa más reciente/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+});
+
+describe('varias ventanas en el mismo proyecto', () => {
+  // Con un solo pedido por proyecto, el Stop de una ventana borraba el pedido
+  // de la otra, que no se entregaba nunca. Ahora hay uno por sesión.
+  const transcript = join(AQUI, 'fixtures', 'claude-code.transcript.jsonl');
+  const prompt = (m, session) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'UserPromptSubmit', 'claude-code'], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: session, cwd: m.proyecto, prompt: 'x', transcript_path: transcript }),
+  });
+  const stop = (m, session) => spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+    cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+    input: JSON.stringify({ session_id: session, cwd: m.proyecto, hook_event_name: 'Stop', transcript_path: transcript }),
+  });
+  const texto = (r) => JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
+
+  test('cada ventana recibe su propio pedido de narrativa', () => {
+    const m = montar('chaski-dos-ventanas-');
+    try {
+      prompt(m, 'ventana-A');
+      prompt(m, 'ventana-B');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 99;\n');
+      stop(m, 'ventana-A');
+      // La segunda ventana cierra su turno: con el formato viejo, esto pisaba
+      // el pedido de la primera. El debounce es por relevo (rama), así que se
+      // limpia para que la segunda también anote el suyo.
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const rutaEstado = join(m.proyecto, '.tambo', 'branches', rama, 'estado.json');
+      const e = JSON.parse(readFileSync(rutaEstado, 'utf8'));
+      e.askedAt = null;
+      writeFileSync(rutaEstado, JSON.stringify(e));
+      stop(m, 'ventana-B');
+      const pedidos = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'pending-ask.json'), 'utf8'));
+      assert.deepEqual(Object.keys(pedidos).sort(), ['ventana-A', 'ventana-B']);
+
+      assert.match(texto(prompt(m, 'ventana-A')), /antes de responder este mensaje/);
+      assert.ok(JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'pending-ask.json'), 'utf8'))['ventana-B'],
+        'entregar el pedido de A borró el de B');
+      assert.match(texto(prompt(m, 'ventana-B')), /antes de responder este mensaje/);
+      assert.ok(!existsSync(join(m.proyecto, '.tambo', 'pending-ask.json')), 'sin pedidos, el archivo debe desaparecer');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('un pedido anotado con el formato anterior (uno solo) se sigue entregando', () => {
+    const m = montar('chaski-pedido-viejo-');
+    try {
+      prompt(m, 'vieja');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 100;\n');
+      stop(m, 'vieja'); // crea el relevo y la carpeta
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const ruta = join(m.proyecto, '.tambo', 'pending-ask.json');
+      writeFileSync(ruta, JSON.stringify({
+        session: 'vieja', at: new Date().toISOString(), reason: 'van 9 turnos desde la última narrativa',
+        statePath: join(m.proyecto, '.tambo', 'branches', rama, 'estado.json'), hasSkill: true,
+      }));
+      assert.match(texto(prompt(m, 'vieja')), /van 9 turnos/);
+      assert.ok(!existsSync(ruta));
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

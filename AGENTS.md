@@ -263,9 +263,9 @@ herramienta existe para evitar.
 
 ```
 src/cli.mjs          ~1.200 lín. — init / doctor / next / cost / why / share / probe / uninstall / version
-src/capture.mjs      ~550 lín.   — hook de captura (Stop, SubagentStop): orquesta git, transcripts, cuota, costos e historia
+src/capture.mjs      ~640 lín.   — hook de captura (Stop, SubagentStop): orquesta git, transcripts, cuota, costos e historia
 src/statusline.mjs   ~130 lín.   — statusline opcional de Claude Code (`init --statusline`): anota rate_limits y delega en la del usuario
-src/inject.mjs       ~300 lín.   — hook de inyección (SessionStart; y UserPromptSubmit / PreInvocation, que entregan la petición de narrativa anotada): camino crítico, detecta deriva y neutraliza marcas <<< >>>
+src/inject.mjs       ~330 lín.   — hook de inyección (SessionStart; y UserPromptSubmit / PreInvocation, que entregan la petición de narrativa anotada): camino crítico, detecta deriva y neutraliza marcas <<< >>>
 src/lib/facts.mjs    ~570 lín.   — extracción defensiva de hechos desde git (status, log, diff, upstream) y transcripts
 src/lib/paths.mjs    ~340 lín.   — rutas, slugs de ramas (branchSlug), lock por mkdir, loadConfig, detección de entorno
 src/lib/relay.mjs    ~410 lín.   — render de Markdown endurecido (vallas, código en línea), preámbulo, firma HMAC SHA-256 y writeAtomic
@@ -273,6 +273,9 @@ src/lib/ask.mjs      ~200 lín.   — petición proactiva de narrativa (shouldAs
 src/lib/secrets.mjs  ~160 lín.   — filtro de secretos, etiquetas <private> y rutas excluidas antes de escribir a disco
 src/lib/payload.mjs  ~80 lín.    — normalización del payload de los hooks (sesión, cwd, transcript, evento, agente), compartida por capture e inject
 src/lib/time.mjs     ~40 lín.    — antigüedad legible (ageText), vencimientos (MODEL_TEXT_TTL_MS = 72 h) e isFresh
+src/lib/pending.mjs  ~105 lín.   — pedidos de narrativa por sesión (pending-ask.json): anotar, marcar fin de sesión, tomar el que toca
+src/lib/turns.mjs    ~90 lín.    — turnos abiertos (turns-open.json): abrir, cerrar, avisar de los cortados
+src/lib/history.mjs  ~105 lín.   — historia de narrativas (historia/entries.jsonl) y narrativa de una rama ya fusionada
 src/lib/budget.mjs   ~65 lín.    — reloj global y timeouts derivados por subproceso (STOP_HOOK_BUDGET_MS = 1100)
 src/capturar.mjs     ~25 lín.    — puente de compatibilidad hacia capture.mjs
 src/leer.mjs         ~20 lín.    — puente de compatibilidad hacia inject.mjs
@@ -289,7 +292,7 @@ hooks/hooks.json     hooks del plugin: forma exec (`node` + `args` con ${CLAUDE_
     - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy"`), `session`, `transcript`, `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ ruta, mas, menos, nuevo }] (máx. 50), dirtyTotal, dirtyUnknown (opcional), commits, upstream: { ref, ahead, collisions } | null, trimmed }`; `ahead` = commits del upstream que no tienes), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ kind, reason, conclusion, at }]`, máx. 6, vencen a las 72 h), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre `relevo.md`), `askedAt`, `askedReason`, `turnsAtNarrative`, `narrativeStamp`, `lastReply` (`{ text, at }`: última respuesta del agente tomada del transcript, redactada, máx. ~700 caracteres, vence a las 72 h; se renderiza solo si hubo turnos después de la narrativa).
     - **Campos exclusivos del agente (al guardar narrativa)**: `narrative` (string Markdown), `narrativeAuthor` (`"claude code" | "codex" | "agy"`), `narrativeWrittenAt` (ISO 8601 UTC actual, posterior a `writtenAt`).
   - `.tambo/branches/<slug>/relevo.md` — Markdown renderizado desde `estado.json` por `render()` (`src/lib/relay.mjs`), firmado con HMAC e inyectado por `inject.mjs`. Nunca se edita a mano.
-  - `.tambo/pending-ask.json` — petición de narrativa anotada por `Stop` (`{ session, transcript, at, reason, statePath, hasSkill, sessionEnded? }`; `capture.mjs` marca `sessionEnded` en el `SessionEnd` de esa sesión). La consume `inject.mjs` en el `UserPromptSubmit` (Claude Code, Codex) o `PreInvocation` (agy) siguiente de la misma sesión y la borra. Ver `src/lib/ask.mjs`.
+  - `.tambo/pending-ask.json` — pedidos de narrativa anotados por `Stop`, **uno por sesión** (`{ "<session>": { session, transcript, at, reason, statePath, hasSkill, sessionEnded? } }`; se lee también el formato anterior de un solo pedido; `capture.mjs` marca `sessionEnded` en el `SessionEnd` de esa sesión). La consume `inject.mjs` en el `UserPromptSubmit` (Claude Code, Codex) o `PreInvocation` (agy) siguiente de la misma sesión y la borra. Ver `src/lib/ask.mjs`.
   - `.tambo/turns-open.json` — `{ "<session>": { agent, at } }`, turnos empezados y no terminados. Lo escribe el hook de entrega de `inject.mjs` al empezar el turno (solo si `.tambo/` existe), lo limpia `capture.mjs` al cerrarlo (no en `PreCompact`). `SessionStart` avisa de los de otras sesiones posteriores al relevo. Vencen a las 72 h.
   - `.tambo/historia/entries.jsonl` — histórico append-only de narrativas redactadas (consultado por `chaski why`, y por `inject.mjs` para mostrar la narrativa más reciente si es de una rama que ya no existe). Cada línea es `{ at, author, branch, head, narrative }`.
 - **En el repositorio (versionado en git, opt-in):**
