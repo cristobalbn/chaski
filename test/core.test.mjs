@@ -1357,7 +1357,7 @@ describe('presupuesto de tiempo del hook', () => {
       const agotado = git(dir, ['rev-parse', '--abbrev-ref', 'HEAD'], { budget: fakeBudget(0) });
       assert.equal(agotado, null, 'con el presupuesto en cero, igual intentó el subproceso');
     } finally {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 15, retryDelay: 100 });
     }
   });
 
@@ -1379,7 +1379,7 @@ describe('presupuesto de tiempo del hook', () => {
         for (let i = 0; i < n; i++) writeFileSync(join(dir, `sucio-${i}.txt`), `${i} modificado\n`);
         return fn(dir);
       } finally {
-        rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+        rmSync(dir, { recursive: true, force: true, maxRetries: 15, retryDelay: 100 });
       }
     };
 
