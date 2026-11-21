@@ -18,7 +18,8 @@ import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBra
 import { notePendingAsk, markPendingSessionEnded } from './lib/pending.mjs';
 import { closeTurn } from './lib/turns.mjs';
 import { recordHistory } from './lib/history.mjs';
-import { gitFacts, transcriptFacts } from './lib/facts.mjs';
+import { gitFacts } from './lib/facts.mjs';
+import { transcriptFacts } from './lib/transcript.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
 import { shouldAsk, askText, askPayload, promptHookAlive, COMPACT_HINT, quotaPressure } from './lib/ask.mjs';
@@ -135,7 +136,7 @@ function main() {
       // Si algún paso de gitFacts se quedó sin presupuesto, se declara aquí
       // -en un campo de hechos, no de narrative- para que el agent siguiente
       // sepa que el relevo es incompleto por diseño y no por error silencioso.
-      trimmed: g.trimmed ?? [],
+      trimmed: [...(g.trimmed ?? []), ...(t.trimmed ? ['transcript'] : [])],
       commands: fusionar(mismaSesion ? previo.commands : [], t.commands),
       lastFile: lastTouched(g, previo),
       // La narrative es del agent, no de este script. Se preserva tal cual.

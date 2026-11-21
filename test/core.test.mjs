@@ -14,7 +14,8 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
-import { transcriptFacts, gitFacts } from '../src/lib/facts.mjs';
+import { gitFacts } from '../src/lib/facts.mjs';
+import { transcriptFacts } from '../src/lib/transcript.mjs';
 import { redact, isExcludedPath, anonymize } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
 import { branchSlug, pruneOrphanRelays, git, projectDir, readJson } from '../src/lib/paths.mjs';
@@ -359,6 +360,48 @@ test('lectura incremental: desde la marca de agua no relee nada', () => {
   assert.equal(segunda.offset, primera.offset);
 });
 
+test('la marca de agua conserva la línea incompleta y omite registros desconocidos', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chaski-transcript-tail-'));
+  try {
+    const path = join(dir, 'transcript.jsonl');
+    const complete = Buffer.from('null\n[]\n{"type":"user","content":"primera"}\n');
+    const next = Buffer.from('{"type":"user","content":"después"}');
+    const split = next.indexOf(Buffer.from('é')) + 1;
+    writeFileSync(path, Buffer.concat([complete, next.subarray(0, split)]));
+    const partial = transcriptFacts(path);
+    assert.equal(partial.turns, 1);
+    assert.equal(partial.offset, complete.length);
+
+    writeFileSync(path, Buffer.concat([complete, next]));
+    const resumed = transcriptFacts(path, partial.offset);
+    assert.equal(resumed.turns, 1);
+    assert.equal(resumed.offset, complete.length + next.length);
+    assert.equal(transcriptFacts(path, resumed.offset).turns, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test('el transcript avisa si omite bytes por el tope o por tiempo', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chaski-transcript-cap-'));
+  try {
+    const path = join(dir, 'transcript.jsonl');
+    const first = Buffer.from('{"type":"user","content":"primera"}\n');
+    const last = Buffer.from('\n{"type":"user","content":"segunda"}\n');
+    const transcript = Buffer.concat([first, Buffer.alloc(8 * 1024 * 1024, 32), last]);
+    writeFileSync(path, transcript);
+    const tail = transcriptFacts(path);
+    assert.equal(tail.trimmed, true);
+    assert.equal(tail.turns, 1);
+    assert.equal(tail.offset, transcript.length);
+    const skipped = transcriptFacts(path, first.length, null, fakeBudget(0));
+    assert.equal(skipped.trimmed, true);
+    assert.equal(skipped.offset, first.length);
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
 test('un transcript truncado se relee desde el principio', () => {
   const t = fixture('claude-code.transcript.jsonl');
   // Marca de agua mayor que el archivo: el caso de un transcript rotado.
@@ -390,7 +433,7 @@ describe('la marca de agua pertenece a una sesión', () => {
     try {
       const t1 = join(dir, 'session-de-hoy.jsonl');
       const t2 = join(dir, 'session-de-manana.jsonl');
-      // Un turno es un mensaje del usuario (ver isUserPrompt en facts.mjs).
+      // Un turno es un mensaje del usuario (ver isUserPrompt en transcript.mjs).
       const turno = (txt) => JSON.stringify({
         type: 'user',
         message: { content: txt },
