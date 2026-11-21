@@ -13,6 +13,7 @@ import { dirname } from 'node:path';
 import { readJson, openTurnsPath } from './paths.mjs';
 import { writeAtomic } from './relay.mjs';
 import { ageText, MODEL_TEXT_TTL_MS } from './time.mjs';
+import { withFileLock } from './lock.mjs';
 
 /**
  * Anota que esta sesión empezó un turno. capture.mjs la quita al cerrarlo
@@ -28,18 +29,17 @@ export function openTurn(cwd, session, agent) {
   if (!session) return;
   try {
     const ruta = openTurnsPath(cwd);
-    if (!existsSync(dirname(ruta))) return;
-    const abiertos = readJson(ruta, {}) ?? {};
-    // Una marca de esta sesión de hace menos de un minuto es este mismo turno
-    // (agy llama varias veces por turno). Una más vieja es de un turno anterior
-    // que no cerró: se renueva, porque la sesión sigue viva y trabajando.
-    if (abiertos[session] && Date.now() - Date.parse(abiertos[session].at ?? '') < 60_000) return;
-    const ahora = Date.now();
-    for (const [s, t] of Object.entries(abiertos)) {
-      if (!(ahora - Date.parse(t?.at ?? '') < MODEL_TEXT_TTL_MS)) delete abiertos[s];
-    }
-    abiertos[session] = { agent, at: new Date(ahora).toISOString() };
-    writeAtomic(ruta, JSON.stringify(abiertos, null, 2));
+    if (!existsSync(dirname(ruta)) || alreadyOpen(readOpenTurns(ruta), session)) return;
+    withFileLock(ruta, () => {
+      const current = readOpenTurns(ruta);
+      if (alreadyOpen(current, session)) return;
+      const ahora = Date.now();
+      for (const [s, t] of Object.entries(current)) {
+        if (!(ahora - Date.parse(t?.at ?? '') < MODEL_TEXT_TTL_MS)) delete current[s];
+      }
+      current[session] = { agent, at: new Date(ahora).toISOString() };
+      writeAtomic(ruta, JSON.stringify(current, null, 2));
+    });
   } catch {}
 }
 
@@ -55,7 +55,7 @@ export function openTurn(cwd, session, agent) {
  */
 export function interruptedTurns(cwd, estado, sesionActual) {
   try {
-    const abiertos = readJson(openTurnsPath(cwd), {}) ?? {};
+    const abiertos = readOpenTurns(openTurnsPath(cwd));
     const desde = Date.parse(estado?.writtenAt ?? '') || 0;
     const ahora = Date.now();
     const lineas = [];
@@ -81,10 +81,23 @@ export function closeTurn(cwd, session) {
   if (!session) return;
   try {
     const ruta = openTurnsPath(cwd);
-    if (!existsSync(ruta)) return;
-    const abiertos = readJson(ruta, {}) ?? {};
-    if (!(session in abiertos)) return;
-    delete abiertos[session];
-    writeAtomic(ruta, JSON.stringify(abiertos, null, 2));
+    if (!readOpenTurns(ruta)[session]) return;
+    withFileLock(ruta, () => {
+      const abiertos = readOpenTurns(ruta);
+      if (!abiertos[session]) return;
+      delete abiertos[session];
+      writeAtomic(ruta, JSON.stringify(abiertos, null, 2));
+    });
   } catch {}
+}
+
+function readOpenTurns(path) {
+  const turns = readJson(path, null);
+  return Object.assign(Object.create(null), turns);
+}
+
+// agy llama varias veces por turno. Una marca vieja corresponde a un
+// turno anterior que no cerró y se renueva.
+function alreadyOpen(turns, session) {
+  return Date.now() - Date.parse(turns[session]?.at ?? '') < 60_000;
 }

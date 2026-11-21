@@ -276,6 +276,7 @@ src/lib/payload.mjs  ~80 lín.    — normalización del payload de los hooks (s
 src/lib/time.mjs     ~40 lín.    — antigüedad legible (ageText), vencimientos (MODEL_TEXT_TTL_MS = 72 h) e isFresh
 src/lib/pending.mjs  ~105 lín.   — pedidos de narrativa por sesión (pending-ask.json): anotar, marcar fin de sesión, tomar el que toca
 src/lib/turns.mjs    ~90 lín.    — turnos abiertos (turns-open.json): abrir, cerrar, avisar de los cortados
+src/lib/lock.mjs     — lock breve para actualizar archivos compartidos entre hooks
 src/lib/history.mjs  ~105 lín.   — historia de narrativas (historia/entries.jsonl) y narrativa de una rama ya fusionada
 src/lib/budget.mjs   ~65 lín.    — reloj global y timeouts derivados por subproceso (STOP_HOOK_BUDGET_MS = 1100)
 src/capturar.mjs     ~25 lín.    — puente de compatibilidad hacia capture.mjs

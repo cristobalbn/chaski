@@ -249,13 +249,7 @@ function main() {
     heartbeat(estado.agent);
     recordQuota(ev, estado);
     if (narrativaNueva && estado.narrative) recordHistory(cwd, estado, config);
-    // Se decide una sola vez, antes de contabilizar: una petición diferida no
-    // agrega un turno, y `chaski cost` tiene que poder distinguirla (#73).
-    // Sin id de sesión no hay cómo atar la anotación a su conversación, y
-    // shouldDeliverPending() no la entregaría nunca.
-    const diferida = Boolean(motivo && estado.session && canDefer(estado.agent));
-    if (motivo || (narrativaNueva && estado.narrative)) recordCost(estado, motivo, narrativaNueva, diferida);
-    occasionalPrune(cwd, config);
+    let diferida = false;
 
     // La petición va por stdout y solo después de que el relevo esté escrito:
     // si algo de arriba fallara, se pierde la petición y no el relevo.
@@ -276,17 +270,21 @@ function main() {
         && existsSync(join(process.env.CLAUDE_PLUGIN_ROOT, 'skill', 'SKILL.md'));
       const hasSkill = Boolean(enPlugin) || (inProject
         && existsSync(join(cwd, skillBase, 'skills', 'relevo', 'SKILL.md')));
-      if (diferida) {
+      if (estado.session && canDefer(estado.agent)) {
         // #73: no se imprime nada. Lo entrega inject.mjs con el mensaje
         // siguiente del usuario, antes de la respuesta. Ver ask.mjs.
-        notePendingAsk(cwd, {
+        diferida = notePendingAsk(cwd, {
           session: estado.session, transcript: estado.transcript, at: estado.writtenAt, reason: motivo, statePath: rutaEstado, hasSkill,
-        });
-      } else {
+        }) === true;
+      }
+      if (!diferida) {
         const salida = askPayload(estado.agent, askText(motivo, hasSkill, rutaEstado));
         if (salida) process.stdout.write(JSON.stringify(salida) + '\n');
       }
     }
+
+    if (motivo || (narrativaNueva && estado.narrative)) recordCost(estado, motivo, narrativaNueva, diferida);
+    occasionalPrune(cwd, config);
 
     // Aviso para quien mire stderr (doctor, una terminal, logs del CLI). El
     // relevo mismo ya lo dice -- esto es la copia para quien no lo abra.

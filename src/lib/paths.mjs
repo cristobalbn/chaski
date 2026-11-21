@@ -386,7 +386,8 @@ export function loadConfig(cwd) {
 
 /**
  * Petición de narrativa anotada en `Stop` para entregarse en el mensaje
- * siguiente (#73). Una por proyecto y no por rama: quien la lee es el hook de
+ * siguiente (#73). El archivo es por proyecto y cada pedido por sesión.
+ * Quien lo lee es el hook de
  * `UserPromptSubmit`, que corre en cada mensaje y no puede pagar un `git` para
  * saber la rama. La sesión que trae adentro la ata a su conversación.
  */
