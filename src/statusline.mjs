@@ -23,8 +23,9 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { readJson, globalDir, usagePath } from './lib/paths.mjs';
+import { readJson, globalDir, readOnlyGlobalDir, usagePath } from './lib/paths.mjs';
 import { writeAtomic } from './lib/relay.mjs';
+import { withFileLock } from './lib/lock.mjs';
 
 main();
 
@@ -50,21 +51,42 @@ function main() {
 function recordUsage(ev) {
   const rl = ev?.rate_limits;
   if (!rl || typeof rl !== 'object') return;
-  const ventana = (w) => {
-    const pct = Number(w?.used_percentage);
-    const resets = Number(w?.resets_at);
-    return Number.isFinite(pct) ? { usedPercentage: pct, resetsAt: Number.isFinite(resets) ? resets : null } : null;
-  };
-  const nuevo = { fiveHour: ventana(rl.five_hour), sevenDay: ventana(rl.seven_day) };
-  if (!nuevo.fiveHour && !nuevo.sevenDay) return;
+  const next = { fiveHour: quotaWindow(rl.five_hour), sevenDay: quotaWindow(rl.seven_day) };
+  if (!next.fiveHour && !next.sevenDay) return;
 
-  const ruta = usagePath();
-  const todo = readJson(ruta, {}) ?? {};
-  const previo = todo['claude code'];
-  const igual = previo && JSON.stringify({ fiveHour: previo.fiveHour, sevenDay: previo.sevenDay }) === JSON.stringify(nuevo);
-  if (igual && Date.now() - Date.parse(previo.at ?? '') < 60_000) return;
-  todo['claude code'] = { at: new Date().toISOString(), ...nuevo };
-  writeAtomic(ruta, JSON.stringify(todo, null, 2));
+  const path = usagePath();
+  const now = Date.now();
+  const unchanged = (previous) => {
+    const at = Date.parse(previous?.at ?? '');
+    return at <= now && now - at < 60_000
+      && sameWindow(previous.fiveHour, next.fiveHour)
+      && sameWindow(previous.sevenDay, next.sevenDay);
+  };
+  const agent = 'claude code';
+  if (unchanged(readJson(path, null)?.[agent])) return;
+  globalDir();
+  withFileLock(path, () => {
+    const usage = readJson(path, {}) ?? {};
+    const previous = usage[agent];
+    const ahead = Date.parse(previous?.at ?? '') - now;
+    if (unchanged(previous) || (ahead > 0 && ahead < 60_000)) return;
+    writeAtomic(path, JSON.stringify({ ...usage, [agent]: { at: new Date(now).toISOString(), ...next } }, null, 2));
+  }, 40);
+}
+
+function quotaNumber(value) {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function quotaWindow(window) {
+  const usedPercentage = quotaNumber(window?.used_percentage);
+  return usedPercentage === null ? null : { usedPercentage, resetsAt: quotaNumber(window?.resets_at) };
+}
+
+function sameWindow(a, b) {
+  return a?.usedPercentage === b?.usedPercentage && a?.resetsAt === b?.resetsAt;
 }
 
 /**
@@ -78,7 +100,7 @@ function delegate(bruto, ev) {
   // llamaría a sí misma sin fin. La variable la pone esta misma función al
   // delegar; si ya viene puesta, no se delega otra vez.
   if (process.env.CHASKI_STATUSLINE_DELEGATED) return '';
-  const config = readJson(join(globalDir(), 'config.json'), {}) ?? {};
+  const config = readJson(join(readOnlyGlobalDir(), 'config.json'), {}) ?? {};
   const comando = config.statusLineCommand;
   if (typeof comando !== 'string' || !comando.trim()) return '';
   const r = spawnSync(comando, {
@@ -114,7 +136,10 @@ function defaultLine(ev) {
   const partes = [];
   const modelo = ev?.model?.display_name;
   if (typeof modelo === 'string' && modelo) partes.push(modelo);
-  const pct = (w) => (Number.isFinite(Number(w?.used_percentage)) ? `${Math.round(Number(w.used_percentage))} %` : null);
+  const pct = (w) => {
+    const value = quotaNumber(w?.used_percentage);
+    return value === null ? null : `${Math.round(value)} %`;
+  };
   const cinco = pct(ev?.rate_limits?.five_hour);
   const siete = pct(ev?.rate_limits?.seven_day);
   if (cinco) partes.push(`cuota 5 h ${cinco}`);

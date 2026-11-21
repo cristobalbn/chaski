@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { globalDir, readJson, syncedFolder, tamboIsIgnored, orphanRelays, effectivePruneDays, loadConfig, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyRelayPath, readOnlyStatePath, stripBom } from '../lib/paths.mjs';
+import { readOnlyGlobalDir, readJson, syncedFolder, tamboIsIgnored, loadConfig, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyRelayPath, readOnlyStatePath, stripBom } from '../lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from '../lib/ask.mjs';
 import { isValidSignature } from '../lib/relay.mjs';
+import { orphanRelays, effectivePruneDays } from '../lib/maintenance.mjs';
 import { pkgVersion, pad } from './common.mjs';
 import { CAPTURE, INJECT, CLIS, isInstalled } from './hook-config.mjs';
 import { projectContext, projectRootNote } from './project.mjs';
@@ -31,7 +32,7 @@ export function doctor() {
   }
 
   console.log('\nLatidos (última vez que cada CLI ejecutó el hook)');
-  const lat = readJson(join(globalDir(), 'latidos.json'), {}) ?? {};
+  const lat = readJson(join(readOnlyGlobalDir(), 'latidos.json'), {}) ?? {};
   if (!Object.keys(lat).length) console.log('  ninguno todavía — abre una sesión y vuelve a revisar');
   for (const [a, iso] of Object.entries(lat)) {
     const days = (Date.now() - new Date(iso).getTime()) / 86400000;

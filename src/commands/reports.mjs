@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { globalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath } from '../lib/paths.mjs';
+import { readOnlyGlobalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath } from '../lib/paths.mjs';
 import { usageSummary } from '../lib/ask.mjs';
 import { writeAtomic } from '../lib/relay.mjs';
 import { withFileLock } from '../lib/lock.mjs';
@@ -15,7 +15,7 @@ export function next() {
   console.log('\nchaski next\n');
   const branch = currentBranch(cwd);
   const estado = readJson(readOnlyStatePath(cwd, branch), {}) ?? {};
-  const quota = readJson(join(globalDir(), 'quota.json'), {}) ?? {};
+  const quota = readJson(join(readOnlyGlobalDir(), 'quota.json'), {}) ?? {};
   const edadRelevo = estado.writtenAt
     ? Math.max(0, Math.round((Date.now() - new Date(estado.writtenAt).getTime()) / 60000))
     : null;
@@ -84,7 +84,7 @@ export function cost() {
   console.log('Gasto externo');
   console.log('  0 tokens · $0.00 (chaski no invoca modelos ni APIs externas)\n');
 
-  const c = readJson(join(globalDir(), 'cost.json'), { asks: [], narratives: [] }) ?? {};
+  const c = readJson(join(readOnlyGlobalDir(), 'cost.json'), { asks: [], narratives: [] }) ?? {};
   const asks = Array.isArray(c.asks) ? c.asks : [];
   const narratives = Array.isArray(c.narratives) ? c.narratives : [];
   const hace7d = Date.now() - 7 * 86_400_000;

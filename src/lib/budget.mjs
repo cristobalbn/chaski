@@ -11,12 +11,14 @@
 //   - Un reloj GLOBAL desde el arranque del hook, contra el que cada paso
 //     consulta cuánto queda ANTES de lanzar un subproceso. Esto es lo que
 //     permite decidir qué omitir cuando no cabe todo (ver gitFacts en
-//     facts.mjs), y es barato: un Date.now(), nada de spawnear nada.
+//     facts.mjs), y es barato: un reloj monotónico, nada de spawnear nada.
 //   - Un timeout por llamada DERIVADO de lo que queda del reloj global. Es
 //     la red de seguridad para cuando la estimación de costo de un paso
 //     resultó optimista (disco lento, antivirus, OneDrive bloqueando el
 //     archivo): ninguna llamada individual puede ya exceder el presupuesto
 //     completo, porque su timeout nunca es mayor que lo que queda.
+import { performance } from 'node:perf_hooks';
+
 export const STOP_HOOK_BUDGET_MS = 1100; // de 1.500 ms compartidos, deja ~400 ms (27%) para los demás hooks del evento
 
 // inject.mjs no tiene un presupuesto compartido documentado como el de Stop,
@@ -35,12 +37,12 @@ export const MIN_GIT_CALL_MS = 60;
 
 /** Reloj de un solo uso para un presupuesto de `ms` desde este instante. */
 export function createBudget(ms) {
-  const inicio = Date.now();
+  const inicio = performance.now();
   const limite = inicio + ms;
   return {
-    remaining() { return limite - Date.now(); },
-    expired() { return Date.now() >= limite; },
-    elapsed() { return Date.now() - inicio; },
+    remaining() { return limite - performance.now(); },
+    expired() { return performance.now() >= limite; },
+    elapsed() { return Math.round(performance.now() - inicio); },
   };
 }
 
@@ -60,5 +62,5 @@ export function hasTime(budget, piso = MIN_GIT_CALL_MS) {
  * prueba con un presupuesto falso, sin spawnear ni esperar nada.
  */
 export function effectiveTimeout(timeout, budget) {
-  return budget ? Math.min(timeout, budget.remaining()) : timeout;
+  return budget ? Math.floor(Math.min(timeout, budget.remaining())) : timeout;
 }

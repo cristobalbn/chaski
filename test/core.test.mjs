@@ -18,8 +18,9 @@ import { gitFacts } from '../src/lib/facts.mjs';
 import { transcriptFacts } from '../src/lib/transcript.mjs';
 import { redact, isExcludedPath, anonymize, createRedactor, createPathFilter } from '../src/lib/secrets.mjs';
 import { render, writeAtomic, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
-import { branchSlug, pruneOrphanRelays, git, projectDir, readJson } from '../src/lib/paths.mjs';
+import { branchSlug, git, projectDir, readJson } from '../src/lib/paths.mjs';
 import { canonicalAgent, sessionOf, cwdOf, rawTranscriptOf, eventOf } from '../src/lib/payload.mjs';
+import { pruneOrphanRelays } from '../src/lib/maintenance.mjs';
 import { ageText, isFresh } from '../src/lib/time.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
 import { shouldAsk, askText, askPayload, turnsThreshold, shouldDeliverPending, promptPayload, PENDING_TTL_MS, promptHookAlive, PROMPT_HOOK_EVENTS, quotaPressure, usageSummary } from '../src/lib/ask.mjs';
@@ -1277,11 +1278,14 @@ describe('presupuesto de tiempo del hook', () => {
       // este cambio no existía ningún presupuesto: con muchos archivos,
       // numstat corría siempre entero y podía llevarse todo el hook consigo.
       conRepoSucio(30, (dir) => {
-        const h = gitFacts(dir, {}, fakeBudget(150));
+        // Da margen al runner para status y log. El cálculo de numstat
+        // todavía supera el presupuesto simulado con estos 30 archivos.
+        const h = gitFacts(dir, {}, fakeBudget(225));
 
-        assert.equal(h.isRepo, true, 'rama/HEAD: lo más barato, no debería sacrificarse nunca con 150 ms');
+        assert.equal(h.isRepo, true);
+        assert.ok(h.branch, 'la rama debe sobrevivir el recorte');
         assert.equal(h.dirty.length, 30, 'la lista de archivos sucios debe sobrevivir el recorte');
-        assert.ok(h.commits.length > 0, 'el log de commits es barato: no debería sacrificarse con 150 ms');
+        assert.ok(h.commits.length > 0, 'el log de commits debe sobrevivir el recorte');
 
         // numstat se sacrificó: ningún archivo trae +/-, y queda declarado.
         assert.ok(h.dirty.every((f) => f.mas === null), 'numstat corrió pese al presupuesto ajustado');

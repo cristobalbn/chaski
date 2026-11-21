@@ -96,7 +96,8 @@ function fingerprint(texto) {
 
 /** Rama actual del árbol en cwd, o null si no hay repo. */
 export function currentBranch(cwd, budget = null) {
-  return git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'], { budget });
+  const ref = git(cwd, ['rev-parse', '--symbolic-full-name', 'HEAD'], { budget });
+  return ref?.replace(/^refs\/heads\//, '') ?? null;
 }
 
 /**
@@ -161,6 +162,17 @@ export function readOnlyBranchDir(cwd, branch = undefined) {
   const rama = branch === undefined ? currentBranch(cwd) : branch;
   return join(readOnlyTambo(cwd), 'branches', branchSlug(rama));
 }
+/** Busca el relevo que una versión anterior guardó con el nombre abreviado de Git. */
+export function legacyBranchState(cwd, branch, budget = null) {
+  if (!branch || branch === 'HEAD') return null;
+  const names = ['heads/' + branch, 'refs/heads/' + branch];
+  if (!names.some((name) => existsSync(join(readOnlyBranchDir(cwd, name), 'estado.json')))) return null;
+  const legacy = git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'], { budget });
+  if (!names.includes(legacy)) return null;
+  const dir = readOnlyBranchDir(cwd, legacy);
+  return existsSync(join(dir, 'estado.json')) ? { dir, branch: legacy } : null;
+}
+
 export function readOnlyRelayPath(cwd, branch = undefined) { return join(readOnlyBranchDir(cwd, branch), 'relevo.md'); }
 export function readOnlyStatePath(cwd, branch = undefined) { return join(readOnlyBranchDir(cwd, branch), 'estado.json'); }
 
@@ -197,98 +209,6 @@ export function acquireLock(cwd, maxEdadMs = 30000) {
   }
   try { writeFileSync(join(lock, 'pid'), String(process.pid)); } catch {}
   return () => { try { rmSync(lock, { recursive: true, force: true }); } catch {} };
-}
-
-/** Días por defecto antes de borrar el relevo de una rama que ya no existe. */
-export const DAYS_FACTS_ONLY = 30;
-export const DAYS_WITH_NARRATIVE = 90;
-
-/**
- * Plazos efectivos de la poda, en días. Una sola fuente de verdad para la
- * poda y para `doctor`, que antes tenía «90 en vez de 30» escrito a mano.
- * `0` desactiva: en `facts` apaga toda la poda; en `narrative`, solo la de
- * relevos con narrativa (los demás siguen su plazo). Antes `0` en narrative
- * daba plazo cero y borraba en la próxima poda, al revés que `pruneAfterDays`.
- */
-export function effectivePruneDays(opciones = {}) {
-  // Compatibilidad: un número suelto se interpreta como los días base.
-  const o = typeof opciones === 'number' ? { factsOnly: opciones } : (opciones ?? {});
-  const facts = o.factsOnly ?? DAYS_FACTS_ONLY;
-  const narrative = o.withNarrative ?? Math.max(facts * 3, DAYS_WITH_NARRATIVE);
-  return { facts, narrative };
-}
-
-/**
- * Borra los relevos de ramas que ya no existen en git.
- *
- * El criterio no es la antigüedad a secas, porque el costo de equivocarse es
- * asimétrico: borrar de más cuesta contexto irrecuperable, acumular de más
- * cuesta kilobytes. Y dentro de un relevo hay dos cosas de valor muy distinto:
- *
- *   - Los HECHOS son reproducibles: archivos, diff y commits se recalculan
- *     desde git en cualquier momento. Si la rama fue mergeada, además ya
- *     están en el historial.
- *   - La NARRATIVA no se recupera. Existe porque alguien la escribió, costó
- *     un turno de un modelo e incluye el juicio de una persona.
- *
- * Así que los relevos con narrative viven el triple. Y `days = 0` desactiva
- * la limpieza: la tolerancia a la basura es una preferencia legítima.
- *
- * Dos resguardos más: solo se borra lo que git confirma que no existe, y una
- * rama viva nunca se toca, sin importar la antigüedad.
- *
- * Devuelve los nombres borrados.
- */
-export function pruneOrphanRelays(cwd, opciones = {}) {
-  const { facts: diasHechos, narrative: diasNarrativa } = effectivePruneDays(opciones);
-
-  const borrados = [];
-  if (diasHechos === 0) return borrados; // limpieza desactivada
-  try {
-    const dirRamas = join(tambo(cwd), 'branches');
-    if (!existsSync(dirRamas)) return borrados;
-
-    // Si no se puede listar las ramas, no se borra nada: ante la duda, queda.
-    const salida = git(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
-    if (salida === null) return borrados;
-    const vivas = new Set(salida.split('\n').filter(Boolean).map(branchSlug));
-
-    for (const entrada of readdirSync(dirRamas, { withFileTypes: true })) {
-      if (!entrada.isDirectory() || vivas.has(entrada.name)) continue;
-      const ruta = join(dirRamas, entrada.name);
-      try {
-        const tieneNarrativa = !!(readJson(join(ruta, 'estado.json'), {}) ?? {}).narrative;
-        const plazo = tieneNarrativa ? diasNarrativa : diasHechos;
-        if (plazo === 0) continue; // limpieza de relevos con narrativa desactivada
-        if (statSync(ruta).mtimeMs > Date.now() - plazo * 86_400_000) continue;
-        rmSync(ruta, { recursive: true, force: true });
-        borrados.push(entrada.name);
-      } catch {}
-    }
-  } catch {}
-  return borrados;
-}
-
-/** Relevos cuya rama ya no existe, sin borrar nada. Para `doctor`. */
-export function orphanRelays(cwd) {
-  try {
-    const dirRamas = join(readOnlyTambo(cwd), 'branches');
-    if (!existsSync(dirRamas)) return [];
-    const salida = git(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
-    if (salida === null) return [];
-    const vivas = new Set(salida.split('\n').filter(Boolean).map(branchSlug));
-    return readdirSync(dirRamas, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && !vivas.has(e.name))
-      .map((e) => {
-        const ruta = join(dirRamas, e.name);
-        let days = 0;
-        try { days = (Date.now() - statSync(ruta).mtimeMs) / 86_400_000; } catch {}
-        const withNarrative = !!(readJson(join(ruta, 'estado.json'), {}) ?? {}).narrative;
-        return { name: e.name, days: Math.round(days), withNarrative };
-      });
-  } catch {
-    return [];
-  }
 }
 
 /** ¿El proyecto vive en una carpeta sincronizada? Esos clientes bloquean archivos al subirlos. */
@@ -374,7 +294,7 @@ export { existsSync };
  */
 export function loadConfig(cwd) {
   const layers = [
-    join(globalDir(), 'config.json'),
+    join(readOnlyGlobalDir(), 'config.json'),
     join(cwd, 'chaski.json'),
     join(cwd, 'chaski.local.json'),
   ].map((path) => readJson(path, null))
@@ -401,7 +321,7 @@ export function pendingAskPath(cwd) { return join(projectDir(cwd), TAMBO, 'pendi
  * La escribe inject.mjs al correr en `UserPromptSubmit`/`PreInvocation`, y
  * capture.mjs solo difiere la petición si es reciente. Ver ask.mjs.
  */
-export function promptHookPath() { return join(globalDir(), 'prompt-hook.json'); }
+export function promptHookPath() { return join(readOnlyGlobalDir(), 'prompt-hook.json'); }
 
 /**
  * Turnos empezados y no terminados, por sesión: `{ "<session>": { agent, at } }`.
@@ -476,7 +396,7 @@ export function silencedByPlugin(agent, cwd) {
  * La escribe statusline.mjs; la leen capture.mjs (para pedir la narrativa
  * antes de quedarse sin cuota) y `chaski next`.
  */
-export function usagePath() { return join(globalDir(), 'usage.json'); }
+export function usagePath() { return join(readOnlyGlobalDir(), 'usage.json'); }
 
 /** Un transcript de reemplazo tiene que haberse escrito hace menos de esto. */
 export const TRANSCRIPT_FALLBACK_MS = 15 * 60 * 1000;
