@@ -38,12 +38,20 @@ export function publishRelay(dir, state, config, previous = {}) {
   writeAtomic(join(dir, 'estado.json'), JSON.stringify({
     ...state, signature, relay: { markdown, previousSignature },
   }, null, 2));
-  writeAtomic(path, markdown);
+  try { writeAtomic(path, markdown); }
+  catch (error) {
+    // El estado quedó confirmado. El historial y los pedidos aún se guardan.
+    process.stderr.write('chaski: vista del relevo pendiente (' + error.message + ')\n');
+  }
 }
 
 /** Lee primero la vista para que un escritor concurrente pueda adelantar el estado. */
 export function readRelay(dir) {
-  const view = readView(join(dir, 'relevo.md'));
+  let view = null;
+  try { view = readView(join(dir, 'relevo.md')); }
+  catch (error) {
+    if (!['EBUSY', 'EPERM', 'EACCES', 'EISDIR'].includes(error.code)) throw error;
+  }
   const state = readJson(join(dir, 'estado.json'), {}) ?? {};
   const snapshot = state.relay?.markdown;
   if (typeof snapshot === 'string' && snapshot.length <= MAX_CHARS && view !== snapshot

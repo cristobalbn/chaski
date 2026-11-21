@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { branchSlug } from '../src/lib/paths.mjs';
+import { notePendingAsk, takePendingAsk } from '../src/lib/pending.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const SRC = join(AQUI, '..', 'src');
@@ -565,6 +566,46 @@ describe('probe', () => {
       // puede esconder, porque nadie la mira en el uso normal.
       const salidaLimpiar = m.correr('probe', '--clean');
       assert.match(salidaLimpiar, /sonda removida|restaurado/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('la sonda conserva JSON útil, redacta valores y acota el log', () => {
+    const m = montar('chaski-probe-mask-');
+    try {
+      m.correr('probe');
+      const script = join(m.casa, '.chaski', 'sonda.mjs');
+      const log = join(m.casa, '.chaski', 'sonda.log');
+      writeFileSync(join(m.proyecto, 'chaski.json'), JSON.stringify({ redact: ['local-secret-[0-9]+'] }));
+      const args = [script, 'Stop', 'codex'];
+      const run = (input) => execFileSync(process.execPath, args, { env: m.entorno, encoding: 'utf8', input });
+      const token = 'ghp_1234567890abcdefghijklmnopqrstuvwxAB';
+      const input = JSON.stringify({
+        cwd: m.proyecto, apiKey: 'low-entropy-key',
+        metadata: { max_tokens: 400, label: 'local-secret-934' },
+        prompt: 'Mensaje con ' + token,
+      });
+      run(input);
+      const raw = readFileSync(log, 'utf8');
+      if (process.platform !== 'win32') assert.equal(statSync(log).mode & 0o777, 0o600);
+      assert.match(raw, /===== Stop \| codex/);
+      const entry = JSON.parse(raw.trimEnd().split('\n').at(-1));
+      assert.equal(entry.metadata.max_tokens, 400);
+      assert.match(entry.apiKey, /redactado/);
+      assert.match(entry.metadata.label, /redactado/);
+      assert.match(entry.prompt, /redactado/);
+      for (const secret of [token, 'low-entropy-key', 'local-secret-934']) {
+        assert.ok(input.includes(secret));
+        assert.ok(!raw.includes(secret));
+      }
+      run(JSON.stringify({ prompt: 'a'.repeat(66_000) }));
+      assert.match(readFileSync(log, 'utf8'), /input-too-large/);
+      writeFileSync(log, 'entrada de diagnóstico antigua\n'.repeat(12_000));
+      run('{malformado');
+      const bounded = readFileSync(log, 'utf8');
+      assert.match(bounded, /invalid-json/);
+      assert.ok(Buffer.byteLength(bounded) <= 256 * 1024);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -2400,6 +2441,29 @@ describe('narrativa guardada después de la última captura', () => {
     }
   });
 
+  test('una vista bloqueada permite archivar la narrativa confirmada', () => {
+    const { m, dir, ruta } = preparar('chaski-view-blocked-');
+    try {
+      const view = join(dir, 'relevo.md');
+      rmSync(view);
+      mkdirSync(view);
+      const state = JSON.parse(readFileSync(ruta, 'utf8'));
+      state.narrative = 'Narrativa archivada con vista pendiente.';
+      state.narrativeWrittenAt = new Date().toISOString();
+      writeFileSync(ruta, JSON.stringify(state));
+      const captured = spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ cwd: m.proyecto, session_id: 'n1' }),
+      });
+      assert.equal(captured.status, 0);
+      assert.match(captured.stderr, /vista del relevo pendiente/);
+      assert.match(inject(m), /Narrativa archivada con vista pendiente/);
+      assert.match(readFileSync(join(m.proyecto, '.tambo', 'historia', 'entries.jsonl'), 'utf8'), /Narrativa archivada con vista pendiente/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   test('un relevo.md editado a mano sigue disparando el aviso', () => {
     // Caso positivo del anterior: sin él, que el aviso no aparezca no
     // probaría que se distingue, solo que se apagó.
@@ -3667,6 +3731,29 @@ describe('hallazgos de la auditoría del 2026-11-20', () => {
   });
 });
 
+test('un pedido sobrevive si el lock está ocupado durante todo el intento', () => {
+  const m = montar('chaski-pending-busy-');
+  try {
+    const tambo = join(m.proyecto, '.tambo');
+    mkdirSync(tambo);
+    const pending = { session: 'sesion', at: new Date().toISOString(), reason: 'guardar narrativa' };
+    const path = join(tambo, 'pending-ask.json');
+    const lock = path + '.lock';
+    const take = () => takePendingAsk(m.proyecto, pending.session, () => null);
+
+    assert.equal(notePendingAsk(m.proyecto, pending), true);
+    const before = readFileSync(path, 'utf8');
+    mkdirSync(lock);
+    assert.equal(take(), null);
+    assert.equal(readFileSync(path, 'utf8'), before);
+    rmSync(lock, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    assert.deepEqual(take(), pending);
+    assert.equal(take(), null);
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
 test('varios procesos registran y consumen pedidos y turnos sin pisarse', async () => {
   const m = montar('chaski-state-race-');
   try {
@@ -3677,6 +3764,8 @@ test('varios procesos registran y consumen pedidos y turnos sin pisarse', async 
     const helper = `
       import { notePendingAsk, takePendingAsk } from ${JSON.stringify(pending)};
       import { openTurn, closeTurn } from ${JSON.stringify(turns)};
+      import { readFileSync } from 'node:fs';
+      import { join } from 'node:path';
       const [mode, id] = process.argv.slice(1);
       const cwd = process.cwd();
       for (let i = 0; i < 6; i++) {
@@ -3685,7 +3774,15 @@ test('varios procesos registran y consumen pedidos y turnos sin pisarse', async 
           if (!notePendingAsk(cwd, { session, at: new Date().toISOString(), reason: session })) process.exit(2);
           openTurn(cwd, session, 'codex');
         } else {
-          if (takePendingAsk(cwd, session, () => null)?.reason !== session) process.exit(3);
+          // Con el lock ocupado, el próximo mensaje puede consumir el pedido.
+          // Comprueba que sigue guardado antes de simular un nuevo intento.
+          let pedido = takePendingAsk(cwd, session, () => null);
+          for (let intento = 0; pedido === null && intento < 4; intento++) {
+            const guardados = JSON.parse(readFileSync(join(cwd, '.tambo', 'pending-ask.json'), 'utf8'));
+            if (guardados[session]?.reason !== session) process.exit(3);
+            pedido = takePendingAsk(cwd, session, () => null);
+          }
+          if (pedido?.reason !== session) process.exit(4);
           closeTurn(cwd, session);
         }
       }
