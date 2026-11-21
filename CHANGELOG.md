@@ -5,6 +5,30 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.31] - 2026-11-21
+
+### Corregido
+- `SubagentStop` (`promote()` en `src/capture.mjs`) espera hasta 220 ms dentro
+  del presupuesto del hook para adquirir `.tambo/.lock`, evitando perder
+  conclusiones cuando varios subagentes terminan en paralelo.
+- `capture.mjs` no solicita narrativa (`shouldAsk`) en un evento `Stop` que
+  acaba de sellar el turno por límite de cuota (`sealedAtLimit`).
+- `meaningfulLine` (`src/lib/transcript.mjs`) colapsa bloques multilínea
+  `<private>` y `PRIVATE KEY` antes de separar líneas, impidiendo que una línea
+  interna escape del filtro cuando la apertura estaba en una línea de `export` o
+  comentario.
+- En el adaptador de `agy` (`src/lib/transcripts/agy.mjs`), `SYSTEM_MESSAGE` no
+  cierra otra tarea en segundo plano si su `taskId` ya salió de la ventana de 12
+  comandos, y `GENERIC` incremental asocia el código de salida al comando
+  pendiente más reciente (`findLast`).
+- `detectDrift` (`src/inject.mjs`) avisa también cuando `HEAD` retrocede a un
+  commit ancestro (`git reset` o rebase) o cuando `git log` se omite por
+  presupuesto tras confirmar `HEAD !== estado.head`.
+- `inject.mjs` entrega la narrativa de una rama recién fusionada y los avisos de
+  turnos interrumpidos aunque la rama actual aún no tenga relevo propio, y
+  `mergedBranchNarrative` (`src/lib/history.mjs`) re-redacta con los patrones
+  actuales de `chaski.json`.
+
 ## [0.1.30] - 2026-11-21
 
 ### Corregido

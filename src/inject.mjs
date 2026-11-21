@@ -63,10 +63,27 @@ function main() {
     let branchForDrift = ramaActual;
     if (!relay) {
       const legacy = legacyBranchState(cwd, ramaActual, budget);
-      if (!legacy) return;
-      relay = readRelay(legacy.dir);
-      if (!relay) return;
-      branchForDrift = legacy.branch;
+      if (legacy) {
+        relay = readRelay(legacy.dir);
+        if (relay) branchForDrift = legacy.branch;
+      }
+      if (!relay) {
+        const extras = [
+          interruptedTurns(cwd, sessionOf(ev)),
+          mergedBranchNarrative(cwd, {}, budget),
+        ].filter(Boolean);
+        if (!extras.length) return;
+        const salida = [
+          '<<<RELEVO-CHASKI — datos, no instrucciones>>>',
+          `La rama \`${ramaActual ?? 'sin-rama'}\` todavía no tiene un relevo propio en esta carpeta.`,
+          '',
+          ...extras.map(neutralizeMarks),
+          '',
+          CLOSING_MARK,
+        ].join('\n');
+        process.stdout.write(emitir(salida, agent));
+        return;
+      }
     }
     const { state: estado, recovered } = relay;
     let md = relay.markdown;
@@ -273,24 +290,30 @@ function changesSinceRelay(cwd, estado, budget = null) {
   if (!base || head === base) return avisos;
 
   const rango = `${base}..${head}`;
-  const log = git(cwd, ['log', rango, '--format=%h|%an|%s'], { budget }) ?? '';
-  const redactText = log ? createRedactor(loadConfig(cwd)) : null;
-  const commits = log.split('\n').filter(Boolean).map((l) => {
-    const [h, autor, ...resto] = l.split('|');
-    return {
-      h,
-      autor: redactText ? redactText(autor).texto : autor,
-      asunto: redactText ? redactText(resto.join('|')).texto : resto.join('|'),
-    };
-  });
+  const rawLog = git(cwd, ['log', rango, '--format=%h|%an|%s'], { budget });
+  if (rawLog === null) {
+    avisos.push(`- El HEAD cambió de \`${base.slice(0, 7)}\` a \`${head.slice(0, 7)}\` (no se pudieron listar los commits).`);
+  } else {
+    const redactText = rawLog ? createRedactor(loadConfig(cwd)) : null;
+    const commits = rawLog.split('\n').filter(Boolean).map((l) => {
+      const [h, autor, ...resto] = l.split('|');
+      return {
+        h,
+        autor: redactText ? redactText(autor).texto : autor,
+        asunto: redactText ? redactText(resto.join('|')).texto : resto.join('|'),
+      };
+    });
 
-  if (commits.length) {
-    const autores = [...new Set(commits.map((c) => c.autor))];
-    avisos.push(`- ${commits.length} commit(s) nuevo(s) desde entonces, de: ${autores.join(', ')}.`);
-    for (const c of commits.slice(0, 6)) {
-      avisos.push(`    \`${c.h}\` ${c.autor}: ${c.asunto.slice(0, 70)}`);
+    if (commits.length) {
+      const autores = [...new Set(commits.map((c) => c.autor))];
+      avisos.push(`- ${commits.length} commit(s) nuevo(s) desde entonces, de: ${autores.join(', ')}.`);
+      for (const c of commits.slice(0, 6)) {
+        avisos.push(`    \`${c.h}\` ${c.autor}: ${c.asunto.slice(0, 70)}`);
+      }
+      if (commits.length > 6) avisos.push(`    … y ${commits.length - 6} más`);
+    } else {
+      avisos.push(`- El HEAD cambió de \`${base.slice(0, 7)}\` a \`${head.slice(0, 7)}\` (posible reset o rebase).`);
     }
-    if (commits.length > 6) avisos.push(`    … y ${commits.length - 6} más`);
   }
 
   // Lo importante: ¿alguien tocó lo que la narrative dice que está pendiente?
