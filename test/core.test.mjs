@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process';
 
 import { gitFacts } from '../src/lib/facts.mjs';
 import { transcriptFacts } from '../src/lib/transcript.mjs';
-import { redact, isExcludedPath, anonymize } from '../src/lib/secrets.mjs';
+import { redact, isExcludedPath, anonymize, createRedactor, createPathFilter } from '../src/lib/secrets.mjs';
 import { render, writeAtomic, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
 import { branchSlug, pruneOrphanRelays, git, projectDir, readJson } from '../src/lib/paths.mjs';
 import { canonicalAgent, sessionOf, cwdOf, rawTranscriptOf, eventOf } from '../src/lib/payload.mjs';
@@ -80,6 +80,7 @@ describe('contrato de transcript: Claude Code', () => {
       const todo = JSON.stringify(r2.commands);
       assert.ok(!todo.includes(token), 'se filtró un token real');
       assert.match(todo, /redactado/, 'no dejó marca de redacción');
+      assert.equal(r2.redactions, 1);
     } finally {
       rmSync(tmp, { force: true });
     }
@@ -662,6 +663,18 @@ test('un formato desconocido no lanza', () => {
 });
 
 // ------------------------------------------------------------ secretos
+
+test('los filtros compilados reutilizan patrones sin arrastrar coincidencias entre registros', () => {
+  const config = { redact: ['VAULT_[0-9]+'], excludePaths: ['^cache/'] };
+  const mask = createRedactor(config);
+  const exclude = createPathFilter(config);
+  assert.equal(mask('VAULT_123 VAULT_456').redactions, 2);
+  assert.equal(mask('VAULT_123').redactions, 1);
+  assert.equal(mask('texto público').redactions, 0);
+  assert.equal(exclude('cache/one'), true);
+  assert.equal(exclude('src/cache/two'), false);
+  assert.equal(exclude('project/.env'), true);
+});
 
 describe('filtro de secretos', () => {
   // Las credenciales de prueba se arman por concatenación, nunca como literal.

@@ -75,7 +75,8 @@ const avisados = new Set();
 
 function safeUserRegexes(lista, flags, clave) {
   const out = [];
-  for (const p of (lista ?? [])) {
+  if (!Array.isArray(lista)) return out;
+  for (const p of lista) {
     if (typeof p !== 'string' || !p || p.length > MAX_USER_PATTERN_LEN) continue;
     if (isCatastrophicShape(p)) {
       // Un aviso por patrón y proceso: isExcludedPath corre una vez por
@@ -92,16 +93,21 @@ function safeUserRegexes(lista, flags, clave) {
   return out;
 }
 
-/** Patrones extra del usuario, desde chaski.json → redact: ["..."] */
-function userPatterns(config) {
-  return safeUserRegexes(config?.redact, 'g', 'redact').map((re) => [re, 'patron-usuario']);
+// En un transcript se aplican los mismos patrones a miles de comandos.
+// Cada lector conserva su conjunto compilado durante toda la lectura.
+export function createRedactor(config = null) {
+  const extra = safeUserRegexes(config?.redact, 'g', 'redact').map((re) => [re, 'patron-usuario']);
+  const patterns = extra.length ? [...PATTERNS, ...extra] : PATTERNS;
+  return (text) => redactText(text, patterns);
 }
 
-/**
- * Redacta el texto. Devuelve { texto, redactions } — el conteo sirve para
- * que el relevo declare que hubo redactions en lugar de callarlas.
- */
+/** Redacción para un texto individual. */
 export function redact(texto, config = null) {
+  if (!texto) return { texto: '', redactions: 0 };
+  return createRedactor(config)(texto);
+}
+
+function redactText(texto, patterns) {
   if (!texto) return { texto: '', redactions: 0 };
   let out = String(texto);
   let n = 0;
@@ -119,7 +125,7 @@ export function redact(texto, config = null) {
     return '[privado]';
   });
 
-  for (const [re, etiqueta] of [...PATTERNS, ...userPatterns(config)]) {
+  for (const [re, etiqueta] of patterns) {
     out = out.replace(re, (match, ...grupos) => {
       n++;
       // En asignaciones, URLs y cabeceras se conserva la parte no secreta
@@ -156,24 +162,27 @@ function hasHighEntropy(s, umbral = 3.6) {
   return h >= umbral;
 }
 
-/** ¿Esta ruta no debe aparecer nunca en el relevo? */
-export function isExcludedPath(ruta, config = null) {
-  const defecto = [
-    // Lo que chaski mismo escribe: nunca es parte del trabajo del usuario.
-    /(^|[\\/])\.tambo([\\/]|$)/i,
-    /(^|[\\/])chaski\.local\.json$/i,
-    /(^|[\\/])\.env($|\.|[\\/])/i,
-    /(^|[\\/])\.?(credentials|secrets?)($|[\\/.])/i,
-    /\.(pem|key|pfx|p12|keystore|jks)$/i,
-    /(^|[\\/])id_(rsa|dsa|ecdsa|ed25519)($|\.)/i,
-    /(^|[\\/])\.npmrc$/i,
-    /(^|[\\/])\.aws[\\/]/i,
-  ];
-  // Mismo control que `redact`: una `excludePaths` con retroceso catastrófico
-  // también corre en cada turno y puede colgar el hook.
-  const extra = safeUserRegexes(config?.excludePaths, 'i', 'excludePaths');
+const DEFAULT_EXCLUSIONS = [
+  // Lo que chaski mismo escribe: nunca es parte del trabajo del usuario.
+  /(^|[\\/])\.tambo([\\/]|$)/i,
+  /(^|[\\/])chaski\.local\.json$/i,
+  /(^|[\\/])\.env($|\.|[\\/])/i,
+  /(^|[\\/])\.?(credentials|secrets?)($|[\\/.])/i,
+  /\.(pem|key|pfx|p12|keystore|jks)$/i,
+  /(^|[\\/])id_(rsa|dsa|ecdsa|ed25519)($|\.)/i,
+  /(^|[\\/])\.npmrc$/i,
+  /(^|[\\/])\.aws[\\/]/i,
+];
 
-  return [...defecto, ...extra].some((re) => re.test(ruta));
+export function createPathFilter(config = null) {
+  const extra = safeUserRegexes(config?.excludePaths, 'i', 'excludePaths');
+  const patterns = extra.length ? [...DEFAULT_EXCLUSIONS, ...extra] : DEFAULT_EXCLUSIONS;
+  return (path) => patterns.some((pattern) => pattern.test(path));
+}
+
+/** ¿Esta ruta debe quedar fuera del relevo? */
+export function isExcludedPath(path, config = null) {
+  return createPathFilter(config)(path);
 }
 
 /**

@@ -11,7 +11,8 @@
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync } from 'node:fs';
-import { readOnlyRelayPath, readOnlyStatePath, readJson, currentBranch, git, projectDir, loadConfig, promptHookPath, silencedByPlugin } from './lib/paths.mjs';
+import { join } from 'node:path';
+import { readOnlyRelayPath, readOnlyStatePath, readOnlyTambo, readJson, currentBranch, git, projectDir, loadConfig, promptHookPath, silencedByPlugin } from './lib/paths.mjs';
 import { readStdinJson, canonicalAgent, sessionOf, cwdOf, transcriptOf } from './lib/payload.mjs';
 import { askText, promptPayload, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged, writeAtomic } from './lib/relay.mjs';
@@ -49,6 +50,8 @@ function main() {
   const budget = createBudget(SESSION_START_BUDGET_MS);
   try {
     const cwd = projectDir(cwdOf(ev));
+    // Sin estados de rama no hay relevo. Evita lanzar Git en el primer arranque.
+    if (!existsSync(join(readOnlyTambo(cwd), 'branches'))) return;
     const ramaActual = currentBranch(cwd, budget);
     // Solo lectura: abrir una sesión no debe crear `.tambo/` en un proyecto
     // donde chaski nunca capturó.
@@ -73,10 +76,11 @@ function main() {
     // primera versión de esto (0.1.7) nunca reconocía una sesión retomada.
     // Resuelta igual que en capture.mjs: tras un resume la ruta del payload no
     // existe, y la que guardó el relevo es la del transcript real.
-    const transcriptActual = transcriptOf(ev);
-    const mismaConversacion = (estado.transcript && transcriptActual && estado.transcript === transcriptActual)
-      || (estado.session && estado.session === sessionOf(ev));
-    if (ev.source === 'resume' && mismaConversacion) {
+    const resume = ev.source === 'resume' && (
+      (estado.session && estado.session === sessionOf(ev))
+      || (estado.transcript && estado.transcript === transcriptOf(ev))
+    );
+    if (resume) {
       const avisos = [
         detectDrift(cwd, estado, budget, ramaActual),
         interruptedTurns(cwd, estado, sessionOf(ev)),
