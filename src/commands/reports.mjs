@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { readOnlyGlobalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath, legacyBranchState, openTurnsPath } from '../lib/paths.mjs';
 import { usageSummary } from '../lib/ask.mjs';
+import { canonicalAgent } from '../lib/payload.mjs';
 import { latestMergedBranchEntry } from '../lib/history.mjs';
 import { isFresh, MODEL_TEXT_TTL_MS } from '../lib/time.mjs';
 import { writeAtomic } from '../lib/atomic.mjs';
@@ -196,7 +197,7 @@ export async function why(args) {
       live.set(key, {
         fuente: 'rama',
         at: est.narrativeWrittenAt ?? est.writtenAt ?? null,
-        author: est.narrativeAuthor ?? est.agent ?? '?',
+        author: est.narrativeAuthor || est.agent ? canonicalAgent(est.narrativeAuthor ?? est.agent) : '?',
         branch,
         head: est.head ?? null,
         narrative: texto,
@@ -294,7 +295,7 @@ export function share(args) {
   const body = redactForShare(String(estado.narrative).trim());
   const branchLabel = redactForShare(branch || 'decision');
   const title = temaArgs ? redactForShare(temaArgs) : branchLabel;
-  const author = redactForShare(estado.narrativeAuthor ?? estado.agent ?? 'desconocido');
+  const author = redactForShare(estado.narrativeAuthor || estado.agent ? canonicalAgent(estado.narrativeAuthor ?? estado.agent) : 'desconocido');
   const redactions = body.redactions + branchLabel.redactions + (temaArgs ? title.redactions : 0) + author.redactions;
   const anonymized = body.anonymized + branchLabel.anonymized + (temaArgs ? title.anonymized : 0) + author.anonymized;
   const slug = slugify(title.texto);

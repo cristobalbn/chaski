@@ -22,6 +22,7 @@
 // conversación del usuario. Un hook que bloqueara en cada `Stop` duplicaría
 // sus turnos y sería insufrible, así que el debounce no es un ajuste fino sino
 // una condición de usabilidad.
+import { canonicalAgent } from './payload.mjs';
 
 /** Minutos mínimos entre dos peticiones, para no agregar un turno cada rato. */
 export const DEBOUNCE_MIN = 12;
@@ -199,7 +200,7 @@ export function askText(motivo, haySkill = true, rutaEstado = null, { beforeRepl
  * termina el turno como siempre y se pierde la petición, no el relevo.
  */
 export function askPayload(agent, reason) {
-  const a = String(agent ?? '').toLowerCase();
+  const a = canonicalAgent(agent);
 
   // Claude Code: `additionalContext` y NO `decision: "block"`.
   //
@@ -217,7 +218,7 @@ export function askPayload(agent, reason) {
   // dice que está rota.
   //
   // No se combinan los dos campos: la documentación no dice qué rótulo saldría.
-  if (/^claude/.test(a)) {
+  if (a === 'claude code') {
     return { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: reason } };
   }
 
@@ -230,7 +231,7 @@ export function askPayload(agent, reason) {
   // inyecta como mensaje de sistema. Su documentación dice que **cualquier otro
   // valor permite parar**, así que mandarle el `"block"` de Claude Code no
   // daría error: no haría nada, en silencio, el peor modo de fallo posible.
-  if (a === 'agy' || a === 'antigravity') return { decision: 'continue', reason };
+  if (a === 'agy') return { decision: 'continue', reason };
   return null;
 }
 
@@ -283,8 +284,9 @@ export const PROMPT_HOOK_FRESH_MS = 12 * 3600 * 1000;
 
 /** ¿El hook de entrega de este CLI dio señales de vida hace poco? */
 export function promptHookAlive(registro, agent, ahora = Date.now()) {
-  if (!PROMPT_HOOK_EVENTS[agent]) return false;
-  const t = Date.parse(registro?.[agent] ?? '');
+  const a = canonicalAgent(agent);
+  if (!PROMPT_HOOK_EVENTS[a]) return false;
+  const t = Date.parse(registro?.[a] ?? '');
   return Number.isFinite(t) && ahora - t < PROMPT_HOOK_FRESH_MS && t <= ahora + 60_000;
 }
 
@@ -326,7 +328,7 @@ export function shouldDeliverPending(pending, sessionId, estado, ahora = Date.no
     ? (estado?.narrativeSession ?? estado?.session)
     : estado?.session;
   const attributed = !pending.agent || (narrativeSession === pending.session
-    && (!estado.narrativeAuthor || estado.narrativeAuthor === pending.agent));
+    && (!estado.narrativeAuthor || canonicalAgent(estado.narrativeAuthor) === canonicalAgent(pending.agent)));
   if (attributed && Number.isFinite(narrada) && narrada >= at) return false;
   return true;
 }
@@ -340,8 +342,9 @@ export function shouldDeliverPending(pending, sessionId, estado, ahora = Date.no
  * va anidado en otro objeto, como exige su contrato.
  */
 export function promptPayload(agent, texto) {
-  if (agent === 'agy') return { injectSteps: [{ systemMessage: { systemMessage: texto } }] };
-  const evento = PROMPT_HOOK_EVENTS[agent];
+  const a = canonicalAgent(agent);
+  if (a === 'agy') return { injectSteps: [{ systemMessage: { systemMessage: texto } }] };
+  const evento = PROMPT_HOOK_EVENTS[a];
   if (!evento) return null;
   return { hookSpecificOutput: { hookEventName: evento, additionalContext: texto } };
 }

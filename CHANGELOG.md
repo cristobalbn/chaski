@@ -5,6 +5,22 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.22] - 2026-11-21
+
+### Mejorado
+- `canonicalAgent` y `agentOf` (`src/lib/payload.mjs`) normalizan también los
+  alias de los tres CLIs (`Claude Code`, `Codex CLI`, `Antigravity`,
+  `antigravity-cli`) y unifican la detección de agente entre `capture.mjs` e
+  `inject.mjs` (incluyendo la detección de `agy` por `workspacePaths`).
+
+### Corregido
+- `shouldDeliverPending` compara `narrativeAuthor` de forma canónica, evitando
+  que un pedido de narrativa diferido se vuelva a entregar cuando el agente
+  guardó `narrativeAuthor` con mayúsculas o alias (`"Claude Code"`,
+  `"claude-code"`, `"Codex"`, `"Antigravity"`).
+- `chaski why`, `chaski share` y el render del relevo normalizan `narrativeAuthor`
+  en una sola línea canónica.
+
 ## [0.1.21] - 2026-11-21
 
 ### Mejorado

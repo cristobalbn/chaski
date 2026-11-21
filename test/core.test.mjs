@@ -20,7 +20,7 @@ import { transcriptFacts } from '../src/lib/transcript.mjs';
 import { redact, isExcludedPath, anonymize, createRedactor, createPathFilter } from '../src/lib/secrets.mjs';
 import { render, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
 import { branchSlug, git, projectDir, readJson } from '../src/lib/paths.mjs';
-import { canonicalAgent, sessionOf, cwdOf, rawTranscriptOf, eventOf } from '../src/lib/payload.mjs';
+import { canonicalAgent, agentOf, sessionOf, cwdOf, rawTranscriptOf, eventOf } from '../src/lib/payload.mjs';
 import { pruneOrphanRelays } from '../src/lib/maintenance.mjs';
 import { ageText, isFresh } from '../src/lib/time.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
@@ -2106,6 +2106,19 @@ describe('#73: umbral configurable y petición diferida', () => {
       assert.equal(shouldDeliverPending(p, 's1', { narrativeWrittenAt: '2026-11-20T11:30:00Z' }, ahora), false);
     });
 
+    test('reconoce alias de narrativeAuthor de la misma sesión pero sigue entregando si la narrativa fue de otra sesión', () => {
+      const pAgent = { ...p, agent: 'claude code' };
+      assert.equal(shouldDeliverPending(pAgent, 's1', {
+        session: 's1', narrativeWrittenAt: '2026-11-20T11:30:00Z', narrativeAuthor: 'Claude-Code',
+      }, ahora), false, 'debe reconocer Claude-Code como claude code');
+      assert.equal(shouldDeliverPending({ ...p, agent: 'agy' }, 's1', {
+        session: 's1', narrativeWrittenAt: '2026-11-20T11:30:00Z', narrativeAuthor: 'Antigravity',
+      }, ahora), false, 'debe reconocer Antigravity como agy');
+      assert.equal(shouldDeliverPending(pAgent, 's1', {
+        session: 's2', narrativeWrittenAt: '2026-11-20T11:30:00Z', narrativeAuthor: 'claude code',
+      }, ahora), true, 'una narrativa de otra sesión no cancela el pedido');
+    });
+
     test('no entrega una anotación vencida, del futuro o rota', () => {
       assert.equal(shouldDeliverPending(p, 's1', {}, ahora + PENDING_TTL_MS + 1), false);
       assert.equal(shouldDeliverPending({ ...p, at: '2026-11-21T11:00:00Z' }, 's1', {}, ahora), false);
@@ -2344,9 +2357,20 @@ describe('lib/payload.mjs: normalización compartida del payload', () => {
   test('canonicalAgent unifica la grafía de los tres CLIs', () => {
     assert.equal(canonicalAgent('claude-code'), 'claude code');
     assert.equal(canonicalAgent('claude'), 'claude code');
+    assert.equal(canonicalAgent('Claude Code'), 'claude code');
     assert.equal(canonicalAgent(' Codex '), 'codex');
+    assert.equal(canonicalAgent('Codex CLI'), 'codex');
     assert.equal(canonicalAgent('agy'), 'agy');
+    assert.equal(canonicalAgent('Antigravity'), 'agy');
+    assert.equal(canonicalAgent('antigravity-cli'), 'agy');
     assert.equal(canonicalAgent(undefined), 'desconocido');
+  });
+
+  test('agentOf usa el argumento del hook o detecta el CLI desde el payload y evento', () => {
+    assert.equal(agentOf({}, ['node', 'x', 'SessionStart', 'claude-code']), 'claude code');
+    assert.equal(agentOf({}, ['node', 'x', 'PreInvocation', 'Antigravity']), 'agy');
+    assert.equal(agentOf({ workspacePaths: ['/a'] }, ['node', 'x', 'SessionStart']), 'agy');
+    assert.equal(agentOf({ hook_event_name: 'StopFailure' }, ['node', 'x']), 'claude code');
   });
 
   test('sessionOf acepta el nombre de cada CLI y rechaza lo que no es texto', () => {
