@@ -42,7 +42,12 @@ export function doctor() {
   }
 
   console.log('\nLatidos (última vez que cada CLI ejecutó el hook)');
-  const lat = readJson(join(readOnlyGlobalDir(), 'latidos.json'), {}) ?? {};
+  const latRaw = readJson(join(readOnlyGlobalDir(), 'latidos.json'), {}) ?? {};
+  const lat = Object.create(null);
+  for (const [a, iso] of Object.entries(latRaw)) {
+    const k = canonicalAgent(a);
+    if (!lat[k] || Date.parse(iso) > Date.parse(lat[k])) lat[k] = iso;
+  }
   if (!Object.keys(lat).length) console.log('  ninguno todavía — abre una sesión y vuelve a revisar');
   for (const [a, iso] of Object.entries(lat)) {
     const days = (Date.now() - new Date(iso).getTime()) / 86400000;

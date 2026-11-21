@@ -5,6 +5,16 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.25] - 2026-11-21
+
+### Mejorado
+- `chaski next` informa si quedaron tareas corriendo en segundo plano
+  (`backgroundTasks`) y si `upstream` divergió con commits entrantes o archivos
+  en común.
+- `chaski doctor` consolida los latidos de `latidos.json` por nombre canónico de
+  CLI (conservando el timestamp más reciente cuando un archivo antiguo tenía
+  claves como `claude-code` y `claude code`).
+
 ## [0.1.24] - 2026-11-21
 
 ### Mejorado
