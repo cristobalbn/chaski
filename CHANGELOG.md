@@ -5,6 +5,19 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.17] - 2026-11-21
+
+### Corregido
+- Los comandos del transcript se redactan antes de recortarse a 160 caracteres.
+- `probe` crea la carpeta de configuración de Claude Code si todavía no existe.
+- `Stop` reintenta archivar la narrativa en `historia/entries.jsonl` si la
+  escritura falló en la captura anterior.
+- `Stop` redacta `description` y `type` de `background_tasks` antes de
+  guardarlos en el estado y en el relevo.
+- Una captura de otra ventana después de guardar una narrativa conserva la
+  sesión autora para no cancelar el pedido pendiente de la ventana que aún no
+  ha escrito la suya.
+
 ## [0.1.16] - 2026-11-21
 
 ### Corregido

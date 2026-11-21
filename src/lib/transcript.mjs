@@ -36,7 +36,7 @@ export function transcriptFacts(path, offset = 0, config = null, budget = null, 
     redactCommand(command) {
       const { texto, redactions } = redact(meaningfulLine(command));
       res.redactions += redactions;
-      return texto;
+      return texto.slice(0, 160);
     },
     isExcluded: createPathFilter(config),
     pending: [],
@@ -116,5 +116,5 @@ function meaningfulLine(comando) {
   // `cd <ruta> && comando` es el patrón más común de todos: lo que informa
   // es el comando, no el directorio.
   elegida = elegida.replace(/^cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*/i, '');
-  return elegida.slice(0, 160);
+  return elegida;
 }
