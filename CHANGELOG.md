@@ -5,6 +5,15 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.26] - 2026-11-21
+
+### Mejorado
+- `chaski share` conserva también el SHA corto del commit (`head`) cuando
+  publica la narrativa heredada de una rama recién fusionada o borrada.
+- `chaski why` aplica el filtro de secretos y los patrones actuales de `redact`
+  (`chaski.json`, `chaski.local.json`) también sobre las entradas leídas de
+  `.tambo/historia/entries.jsonl` y `decisiones/`.
+
 ## [0.1.25] - 2026-11-21
 
 ### Mejorado

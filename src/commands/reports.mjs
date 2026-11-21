@@ -196,10 +196,10 @@ export async function why(args) {
 
   // También revisa el estado vivo de cada rama por si una narrativa se
   // escribió a mano en estado.json y todavía no pasó por otra captura.
+  const redactNarrative = createRedactor(loadConfig(cwd));
   const live = new Map();
   const branchesDir = join(tambo, 'branches');
   if (existsSync(branchesDir)) {
-    const redactNarrative = createRedactor(loadConfig(cwd));
     for (const dir of readdirSync(branchesDir)) {
       const est = readJson(join(branchesDir, dir, 'estado.json'), null);
       if (!est?.narrative) continue;
@@ -224,9 +224,10 @@ export async function why(args) {
   for await (const entry of historyEntries(join(tambo, 'historia', 'entries.jsonl'))) {
     // Una copia archivada prevalece sobre la misma narrativa en estado.json,
     // incluso cuando la búsqueda no coincide con el autor archivado.
-    if (live.size) live.delete(JSON.stringify([entry.branch, entry.narrative]));
+    const narrative = redactNarrative(String(entry.narrative).trim()).texto;
+    if (live.size) live.delete(JSON.stringify([entry.branch, narrative]));
     const author = entry.author ? canonicalAgent(entry.author) : '?';
-    addMatch({ ...entry, author, fuente: 'historia' });
+    addMatch({ ...entry, narrative, author, fuente: 'historia' });
   }
   for (const entry of live.values()) addMatch(entry);
 
@@ -234,7 +235,7 @@ export async function why(args) {
   if (existsSync(decDir)) {
     for (const f of readdirSync(decDir).filter((n) => n.endsWith('.md')).sort()) {
       try {
-        const txt = readFileSync(join(decDir, f), 'utf8').trim();
+        const txt = redactNarrative(readFileSync(join(decDir, f), 'utf8').trim()).texto;
         addMatch({
           fuente: `decisiones/${f}`,
           at: f.slice(0, 10),
@@ -316,7 +317,7 @@ export function share(args) {
   const authorRaw = tienePropia
     ? (estado.narrativeAuthor || estado.agent ? canonicalAgent(estado.narrativeAuthor ?? estado.agent) : 'desconocido')
     : (heredada.author ? canonicalAgent(heredada.author) : 'desconocido');
-  const headRaw = tienePropia ? estado.head : null;
+  const headRaw = tienePropia ? estado.head : heredada.head;
   const body = redactForShare(narrativeRaw);
   const branchLabel = redactForShare(branchRaw);
   const title = temaArgs ? redactForShare(temaArgs) : branchLabel;
