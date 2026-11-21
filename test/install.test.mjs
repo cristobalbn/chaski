@@ -2316,6 +2316,13 @@ describe('comandos next, cost, why y share', () => {
       assert.match(m.correr('why', 'agy', 'sqlite'), /migrando las colas a SQLite/);
       assert.match(m.correr('why', 'graphql', 'cdn'), /Descartamos GraphQL/);
 
+      // Un patrón de redacción agregado en chaski.json después de archivar se aplica también a historia/.
+      writeFileSync(join(m.proyecto, 'chaski.json'), JSON.stringify({ redact: ['SQLite'] }));
+      const redactadoHistoria = m.correr('why', 'colas');
+      assert.match(redactadoHistoria, /migrando las colas a \[redactado: patron-usuario\]/);
+      assert.ok(!redactadoHistoria.includes('SQLite'));
+      rmSync(join(m.proyecto, 'chaski.json'), { force: true });
+
       const sinMatch = m.correr('why', 'kubernetes');
       assert.match(sinMatch, /No encontré decisiones/);
     } finally {
@@ -3844,7 +3851,7 @@ describe('narrativa de una rama ya fusionada', () => {
       writeFileSync(dirMain, JSON.stringify(estMain));
       const compartido = m.correr('share', 'webhook pagos', '--yes');
       assert.match(compartido, /Publicado en decisiones\//);
-      assert.match(compartido, /- Rama: feat\/pagos/);
+      assert.match(compartido, /- Rama: feat\/pagos \([0-9a-f]{4,64}\)/);
       assert.match(compartido, /falta el webhook en pagos\.ts:12/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });

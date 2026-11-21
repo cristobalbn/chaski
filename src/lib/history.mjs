@@ -91,6 +91,7 @@ export function latestMergedBranchEntry(cwd, estado, budget = null) {
       at,
       author: String(ultima.author ?? 'un agente').replace(/[^\w .-]/g, ''),
       branch: rama,
+      head: typeof ultima.head === 'string' && ultima.head ? ultima.head : null,
       narrative: String(ultima.narrative).trim(),
     };
   } catch {
