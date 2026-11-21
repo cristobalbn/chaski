@@ -18,6 +18,7 @@ import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBra
 import { notePendingAsk, markPendingSessionEnded } from './lib/pending.mjs';
 import { closeTurn } from './lib/turns.mjs';
 import { recordHistory } from './lib/history.mjs';
+import { withFileLock } from './lib/lock.mjs';
 import { gitFacts } from './lib/facts.mjs';
 import { transcriptFacts } from './lib/transcript.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
@@ -113,7 +114,8 @@ function main() {
       || Boolean(previo.session && ev.session_id && previo.session === ev.session_id && !ev.transcript_path);
     const desde = mismoTranscript ? (previo.offset ?? 0) : 0;
 
-    const t = transcriptFacts(ev.transcript_path, desde, config, budget);
+    const previousCommands = mismaSesion && Array.isArray(previo.commands) ? previo.commands : [];
+    const t = transcriptFacts(ev.transcript_path, desde, config, budget, previousCommands);
     const g = gitFacts(cwd, config, budget, branch);
     const headFromLog = g.commits?.[0]?.split(' ')[0] || null;
 
@@ -127,7 +129,7 @@ function main() {
       offset: t.offset,
       // Los turns se acumulan dentro de una sesión; en una nueva se reinician,
       // o el relevo diría "1.200 turns" de trabajo que ya no está en contexto.
-      turns: (mismaSesion ? (previo.turns ?? 0) : 0) + t.turns,
+      turns: (mismaSesion && !t.reset ? (previo.turns ?? 0) : 0) + t.turns,
       facts: g,
       // HEAD al momento de escribir: inject.mjs lo compara para detectar deriva.
       // Sale del primer commit de `git log -5` sin lanzar otro subproceso; solo
@@ -137,7 +139,7 @@ function main() {
       // -en un campo de hechos, no de narrative- para que el agent siguiente
       // sepa que el relevo es incompleto por diseño y no por error silencioso.
       trimmed: [...(g.trimmed ?? []), ...(t.trimmed ? ['transcript'] : [])],
-      commands: fusionar(mismaSesion ? previo.commands : [], t.commands),
+      commands: t.commands,
       lastFile: lastTouched(g, previo),
       // La narrative es del agent, no de este script. Se preserva tal cual.
       narrative: previo.narrative ?? null,
@@ -174,7 +176,7 @@ function main() {
       || /rate.?limit|quota.?exceeded|MAX_TOKEN_BUDGET_EXCEEDED/i.test(detalleLimite)) {
       estado.sealedAtLimit = {
         at: estado.writtenAt,
-        motivo: ev.error_type || ev.terminationReason || 'rate_limit',
+        motivo: redact(ev.error_type || ev.terminationReason || 'rate_limit', config).texto,
       };
     }
 
@@ -217,7 +219,7 @@ function main() {
     // petición creía que iban mil turnos. La base de ahora puede atrasar la
     // próxima petición unos turnos; nunca inventa trabajo que no hubo. Sin
     // narrativa todavía, la base sí es 0: todo el trabajo es posterior a ella.
-    const previosEnSesion = mismaSesion && (previo.turnsAtNarrative ?? 0) <= (estado.turns ?? 0)
+    const previosEnSesion = mismaSesion && !t.reset && (previo.turnsAtNarrative ?? 0) <= (estado.turns ?? 0)
       ? (previo.turnsAtNarrative ?? 0) : (estado.narrative ? (estado.turns ?? 0) : 0);
     estado.turnsAtNarrative = narrativaNueva ? (estado.turns ?? 0) : previosEnSesion;
     estado.narrativeStamp = estado.narrativeWrittenAt ?? null;
@@ -248,7 +250,7 @@ function main() {
     writeAtomic(rutaRelevo, md);
     writeAtomic(rutaEstado, JSON.stringify(estado, null, 2));
     heartbeat(estado.agent);
-    recordQuota(ev, estado);
+    recordQuota(ev, estado, config);
     if (narrativaNueva && estado.narrative) recordHistory(cwd, estado, config);
     let diferida = false;
 
@@ -501,11 +503,6 @@ function detectAgent(ev) {
 }
 
 
-function fusionar(previos, nuevos) {
-  const out = [...(previos ?? []), ...(nuevos ?? [])];
-  return out.slice(-12);
-}
-
 function lastTouched(g, previo) {
   // Solo archivos: un directorio sin trackear no es "el último archivo tocado".
   const cand = (g.dirty ?? []).filter((s) => !s.ruta.endsWith('/'));
@@ -595,23 +592,26 @@ function heartbeat(agent) {
  * Solo escribe cuando ocurre un corte por límite o cuando un CLI que estaba
  * marcado como agotado vuelve a completar un turno normal.
  */
-function recordQuota(ev, estado) {
+function recordQuota(ev, estado, config) {
   try {
     const ruta = join(globalDir(), 'quota.json');
-    const q = readJson(ruta, {}) ?? {};
     const name = canonicalAgent(estado.agent);
-    if (estado.sealedAtLimit) {
-      const msg = String(ev.error_message ?? ev.error ?? '').trim().slice(0, 200) || null;
-      q[name] = {
-        at: estado.writtenAt,
-        reason: estado.sealedAtLimit.motivo,
-        message: msg,
-      };
-      writeAtomic(ruta, JSON.stringify(q, null, 2));
-    } else if (ev.hook_event_name === 'Stop' && q[name]) {
-      delete q[name];
-      writeAtomic(ruta, JSON.stringify(q, null, 2));
-    }
+    const sealed = estado.sealedAtLimit;
+    if (!sealed && (ev.hook_event_name !== 'Stop' || !readJson(ruta, null)?.[name])) return;
+    // Dos proyectos pueden informar sobre el mismo CLI al mismo tiempo.
+    withFileLock(ruta, () => {
+      const quota = readJson(ruta, {}) ?? {};
+      const previous = quota[name];
+      if (previous?.at > estado.writtenAt || (!sealed && !previous)) return;
+      if (sealed) {
+        const raw = String(ev.error_message ?? ev.error ?? '').trim();
+        const message = redact(raw, config).texto.slice(0, 200) || null;
+        quota[name] = { at: estado.writtenAt, reason: sealed.motivo, message };
+      } else {
+        delete quota[name];
+      }
+      writeAtomic(ruta, JSON.stringify(quota, null, 2));
+    }, 40);
   } catch {}
 }
 
@@ -622,22 +622,24 @@ function recordQuota(ev, estado) {
 function recordCost(estado, motivo, narrativaNueva, diferida = false) {
   try {
     const ruta = join(globalDir(), 'cost.json');
-    const c = readJson(ruta, { asks: [], narratives: [] }) ?? { asks: [], narratives: [] };
-    const agent = canonicalAgent(estado.agent);
-    const branch = estado.facts?.branch ?? 'sin-rama';
-    if (motivo) {
-      c.asks = [...(Array.isArray(c.asks) ? c.asks : []), {
-        at: estado.writtenAt, agent, branch, reason: motivo,
-        // Diferida: se entrega antes de la respuesta siguiente, sin turno extra.
-        ...(diferida ? { deferred: true } : {}),
-      }].slice(-500);
-    }
-    if (narrativaNueva && estado.narrative) {
-      const author = canonicalAgent(estado.narrativeAuthor ?? estado.agent);
-      c.narratives = [...(Array.isArray(c.narratives) ? c.narratives : []), {
-        at: estado.narrativeWrittenAt ?? estado.writtenAt, agent: author, branch,
-      }].slice(-500);
-    }
-    writeAtomic(ruta, JSON.stringify(c, null, 2));
+    withFileLock(ruta, () => {
+      const c = readJson(ruta, { asks: [], narratives: [] }) ?? { asks: [], narratives: [] };
+      const agent = canonicalAgent(estado.agent);
+      const branch = estado.facts?.branch ?? 'sin-rama';
+      if (motivo) {
+        c.asks = [...(Array.isArray(c.asks) ? c.asks : []), {
+          at: estado.writtenAt, agent, branch, reason: motivo,
+          // Diferida: se entrega antes de la respuesta siguiente, sin turno extra.
+          ...(diferida ? { deferred: true } : {}),
+        }].slice(-500);
+      }
+      if (narrativaNueva && estado.narrative) {
+        const author = canonicalAgent(estado.narrativeAuthor ?? estado.agent);
+        c.narratives = [...(Array.isArray(c.narratives) ? c.narratives : []), {
+          at: estado.narrativeWrittenAt ?? estado.writtenAt, agent: author, branch,
+        }].slice(-500);
+      }
+      writeAtomic(ruta, JSON.stringify(c, null, 2));
+    }, 40);
   } catch {}
 }

@@ -1,9 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { globalDir, readJson, loadConfig, currentBranch, usagePath, readOnlyTambo, readOnlyStatePath } from '../lib/paths.mjs';
+import { globalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath } from '../lib/paths.mjs';
 import { usageSummary } from '../lib/ask.mjs';
 import { writeAtomic } from '../lib/relay.mjs';
+import { withFileLock } from '../lib/lock.mjs';
 import { redact, anonymize } from '../lib/secrets.mjs';
 import { pad } from './common.mjs';
 import { CLIS, isInstalled } from './hook-config.mjs';
@@ -212,32 +213,31 @@ export function share(args) {
   }
 
   const config = loadConfig(cwd);
-  const { texto: sinSecretos, redactions } = redact(String(estado.narrative).trim(), config);
-  // decisiones/ se versiona: la carpeta personal (con el nombre de usuario) y
-  // los correos no tienen por qué quedar en la historia de git del equipo.
-  const { texto: cuerpoLimpio, anonymized } = anonymize(sinSecretos, { home: homedir() });
-  const slugBase = slugify(temaArgs || branch || 'decision');
+  const home = homedir();
+  const redactForShare = (value) => {
+    const { texto, redactions } = redact(value, config);
+    return { ...anonymize(texto, { home }), redactions };
+  };
+  const body = redactForShare(String(estado.narrative).trim());
+  const branchLabel = redactForShare(branch || 'decision');
+  const title = temaArgs ? redactForShare(temaArgs) : branchLabel;
+  const author = redactForShare(estado.narrativeAuthor ?? estado.agent ?? 'desconocido');
+  const redactions = body.redactions + branchLabel.redactions + (temaArgs ? title.redactions : 0) + author.redactions;
+  const anonymized = body.anonymized + branchLabel.anonymized + (temaArgs ? title.anonymized : 0) + author.anonymized;
+  const slug = slugify(title.texto);
   const fecha = new Date().toISOString().slice(0, 10);
   const decDir = join(cwd, 'decisiones');
-
-  let nombre = `${fecha}-${slugBase}.md`;
-  let n = 2;
-  while (existsSync(join(decDir, nombre))) {
-    nombre = `${fecha}-${slugBase}-${n}.md`;
-    n++;
-  }
-  const destino = join(decDir, nombre);
-  const titulo = temaArgs || `Decisión en ${branch}`;
-  const autor = estado.narrativeAuthor ?? estado.agent ?? 'desconocido';
-  const head = estado.head ? ` (${estado.head})` : '';
+  const nombre = decisionName(decDir, fecha, slug);
+  const titulo = temaArgs ? title.texto : `Decisión en ${branchLabel.texto}`;
+  const head = /^[0-9a-f]{4,64}$/i.test(estado.head ?? '') ? ` (${estado.head})` : '';
   const contenido = [
     `# ${titulo}`,
     '',
     `- Fecha: ${fecha}`,
-    `- Rama: ${branch}${head}`,
-    `- Autor del relevo: ${autor}`,
+    `- Rama: ${branchLabel.texto}${head}`,
+    `- Autor del relevo: ${author.texto}`,
     '',
-    cuerpoLimpio,
+    body.texto,
     '',
   ].join('\n');
 
@@ -263,9 +263,22 @@ export function share(args) {
     }
   }
 
-  mkdirSync(decDir, { recursive: true });
-  writeAtomic(destino, contenido);
-  console.log(`Publicado en decisiones/${nombre}\n`);
+  const published = withFileLock(join(tambo(cwd), 'share'), () => {
+    mkdirSync(decDir, { recursive: true });
+    // El nombre de la vista previa puede haberse ocupado al confirmar.
+    const name = decisionName(decDir, fecha, slug);
+    writeAtomic(join(decDir, name), contenido);
+    return name;
+  });
+  if (!published) throw new Error('otra publicación está en curso. Vuelve a ejecutar share');
+  console.log(`Publicado en decisiones/${published}\n`);
+}
+
+function decisionName(dir, date, slug) {
+  const base = `${date}-${slug}`;
+  let name = `${base}.md`;
+  for (let n = 2; existsSync(join(dir, name)); n++) name = `${base}-${n}.md`;
+  return name;
 }
 
 function slugify(s) {

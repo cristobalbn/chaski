@@ -6,7 +6,7 @@
 //   2. Presupuesto duro de tamaño. No es una buena práctica: por encima de
 //      10.000 caracteres, Claude Code deja de inyectar el contenido y manda
 //      solo una ruta, así que un relevo gordo simplemente no funciona.
-import { writeFileSync, renameSync, readFileSync, unlinkSync } from 'node:fs';
+import { writeFileSync, renameSync, readFileSync, statSync, chmodSync, unlinkSync } from 'node:fs';
 import { createHmac, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { globalDir, readOnlyGlobalDir } from './paths.mjs';
@@ -23,7 +23,20 @@ export const MAX_CHARS = 6000; // ~1.500 tokens, con margen bajo el techo de 10.
  */
 export function writeAtomic(ruta, contenido, { mode } = {}) {
   const tmp = `${ruta}.${process.pid}.tmp`;
+  // El temporal reemplaza el inodo anterior. Conserva sus permisos para
+  // que reescribir una configuración privada no la vuelva legible por otros.
+  if (mode === undefined && process.platform !== 'win32') {
+    const previous = statSync(ruta, { throwIfNoEntry: false });
+    if (previous) mode = previous.mode & 0o777;
+  }
   writeFileSync(tmp, contenido, { encoding: 'utf8', mode });
+  if (mode !== undefined && process.platform !== 'win32' && (mode & process.umask()) !== 0) {
+    try { chmodSync(tmp, mode); }
+    catch (error) {
+      try { unlinkSync(tmp); } catch {}
+      throw error;
+    }
+  }
 
   // En Windows el rename falla si otro proceso tiene el destino abierto, y
   // suele ser momentáneo: un antivirus, un cliente de sincronización, otro

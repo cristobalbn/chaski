@@ -13,7 +13,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync,
+  mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, existsSync, rmSync, readdirSync,
   realpathSync, statSync, utimesSync,
 } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -1872,9 +1872,12 @@ describe('comandos next, cost, why y share', () => {
       capturar(m, 'claude-code', {
         session_id: 's1', cwd: m.proyecto,
         hook_event_name: 'StopFailure', error_type: 'rate_limit',
-        error_message: 'You hit your limit',
+        error_message: 'You hit your limit ghp_1234567890abcdefghijklmnopqrstuvwxAB',
       });
 
+      const quota = readFileSync(join(m.casa, '.chaski', 'quota.json'), 'utf8');
+      assert.match(quota, /You hit your limit \[redactado:/);
+      assert.doesNotMatch(quota, /ghp_1234567890/);
       const salida = m.correr('next');
       assert.match(salida, /claude code\s+agotado/, 'no marcó claude code como agotado');
       assert.match(salida, /→\s+codex\s+disponible/, 'no sugirió codex como siguiente CLI disponible');
@@ -1975,6 +1978,10 @@ describe('comandos next, cost, why y share', () => {
         session_id: 's1', cwd: m.proyecto, hook_event_name: 'Stop',
       });
 
+      const history = join(m.proyecto, '.tambo', 'historia', 'entries.jsonl');
+      assert.match(readFileSync(history, 'utf8'), /Descartamos GraphQL/);
+      appendFileSync(history, '{"narrative":"incompleta');
+
       // Segunda narrativa: reemplaza la anterior en estado.json con otro tema.
       est = JSON.parse(readFileSync(rutaEstado, 'utf8'));
       est.narrative = 'Ahora estamos migrando las colas a SQLite con WAL.';
@@ -1989,6 +1996,7 @@ describe('comandos next, cost, why y share', () => {
       const actual = JSON.parse(readFileSync(rutaEstado, 'utf8'));
       assert.ok(!actual.narrative.includes('GraphQL'));
 
+      assert.match(readFileSync(history, 'utf8'), /migrando las colas a SQLite/);
       const encontrado = m.correr('why', 'graphql');
       assert.match(encontrado, /Descartamos GraphQL/);
       assert.match(encontrado, /\(historia\)/);
@@ -2046,6 +2054,58 @@ describe('comandos next, cost, why y share', () => {
       assert.equal(archivos2.length, 2);
       assert.ok(archivos2.some((f) => /-refresh-en-cookie-2\.md$/.test(f)),
         `no creó el archivo con sufijo -2: ${archivos2.join(', ')}`);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('dos confirmaciones de share conservan ambos archivos y filtran el tema', async () => {
+    const m = montar('chaski-share-dual-');
+    try {
+      capturar(m, 'claude-code', { session_id: 's1', cwd: m.proyecto, hook_event_name: 'Stop' });
+      const branch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const statePath = join(m.proyecto, '.tambo', 'branches', branch, 'estado.json');
+      const state = JSON.parse(readFileSync(statePath, 'utf8'));
+      state.narrative = 'La decisión va en ambos archivos.';
+      writeFileSync(statePath, JSON.stringify(state));
+      const token = 'ghp_1234567890abcdefghijklmnopqrstuvwxAB';
+      const email = 'prueba.usuario@example.com';
+      const start = () => {
+        const child = spawn(process.execPath, [join(SRC, 'cli.mjs'), 'share', `prueba ${token} ${email}`], {
+          cwd: m.proyecto, env: m.entorno, stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        let output = '';
+        const ready = new Promise((resolve, reject) => {
+          child.stdout.on('data', (data) => {
+            output += data;
+            if (output.includes('[s/N]')) resolve();
+          });
+          child.on('error', reject);
+          child.on('close', () => reject(new Error(output)));
+        });
+        const done = new Promise((resolve) => child.on('close', (code) => resolve({ code, output })));
+        return { child, ready, done };
+      };
+      const runs = [start(), start()];
+      try {
+        await Promise.all(runs.map((run) => run.ready));
+        for (const { child } of runs) child.stdin.end('s\n');
+      } finally {
+        for (const { child } of runs) if (!child.stdin.writableEnded) child.stdin.end();
+      }
+      for (const { code, output } of await Promise.all(runs.map((run) => run.done))) {
+        assert.equal(code, 0, output);
+        assert.ok(!output.includes(token) && !output.includes(email));
+      }
+      const dir = join(m.proyecto, 'decisiones');
+      const names = readdirSync(dir);
+      assert.equal(names.length, 2);
+      for (const name of names) {
+        const content = readFileSync(join(dir, name), 'utf8');
+        assert.match(content, /redactado.*correo/);
+        assert.ok(!content.includes(token) && !content.includes(email));
+        assert.doesNotMatch(name, /ghp_|prueba-usuario/);
+      }
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

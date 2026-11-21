@@ -4,7 +4,7 @@
 // sesión (la narrativa de una rama ya fusionada).
 //
 // Ninguna función lanza: las llaman los hooks (invariante 4).
-import { existsSync, readFileSync, mkdirSync, statSync, openSync, readSync, closeSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, fstatSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { tambo, readOnlyTambo, git } from './paths.mjs';
 import { writeAtomic } from './relay.mjs';
@@ -25,8 +25,7 @@ export function recordHistory(cwd, estado, config) {
     const { texto } = redact(String(estado.narrative ?? '').trim(), config);
     if (!texto) return;
     const previas = existsSync(ruta) ? readFileSync(ruta, 'utf8') : '';
-    const lineas = previas.split('\n').filter(Boolean);
-    const ultima = lineas.length ? JSON.parse(lineas[lineas.length - 1]) : null;
+    const ultima = lastHistoryEntry(previas);
     const branch = estado.facts?.branch ?? 'sin-rama';
     if (ultima && ultima.branch === branch && ultima.narrative === texto) return;
     const entrada = {
@@ -59,19 +58,15 @@ export function mergedBranchNarrative(cwd, estado, budget) {
     const ruta = join(readOnlyTambo(cwd), 'historia', 'entries.jsonl');
     if (!existsSync(ruta)) return null;
     // Las últimas entradas bastan: un archivo append-only puede ser largo.
-    const tam = statSync(ruta).size;
-    const desde = Math.max(0, tam - 64 * 1024);
     const fd = openSync(ruta, 'r');
-    let texto = '';
+    let ultima;
     try {
-      const buf = Buffer.alloc(tam - desde);
-      readSync(fd, buf, 0, buf.length, desde);
-      texto = buf.toString('utf8');
+      const size = fstatSync(fd).size;
+      const from = Math.max(0, size - 64 * 1024);
+      const buf = Buffer.alloc(size - from);
+      const bytes = readSync(fd, buf, 0, buf.length, from);
+      ultima = lastHistoryEntry(buf.toString('utf8', 0, bytes));
     } finally { closeSync(fd); }
-    let ultima = null;
-    for (const linea of texto.split('\n').reverse()) {
-      try { const e = JSON.parse(linea); if (e?.narrative && e?.branch && e?.at) { ultima = e; break; } } catch {}
-    }
     if (!ultima) return null;
     const rama = String(ultima.branch);
     // `HEAD` es lo que git informa en detached HEAD: no es una rama que exista
@@ -102,4 +97,19 @@ export function mergedBranchNarrative(cwd, estado, budget) {
   } catch {
     return null;
   }
+}
+
+function lastHistoryEntry(text) {
+  // Busca desde el final. Archivar una entrada no necesita separar todo el historial.
+  for (let end = text.length; end > 0;) {
+    const previous = text.lastIndexOf('\n', end - 1);
+    const line = text.slice(previous + 1, end);
+    end = previous;
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry?.narrative && entry?.branch && entry?.at) return entry;
+    } catch {}
+  }
+  return null;
 }

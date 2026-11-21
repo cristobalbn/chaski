@@ -5,6 +5,20 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.12] - 2026-11-20
+
+### Corregido
+- El parseo del transcript respeta el presupuesto y reanuda desde el
+  siguiente registro si se recorta.
+- Los resultados tardíos de Claude Code y Codex completan el comando de
+  la captura anterior. Si el transcript se trunca, se reinician sus contadores.
+- Los registros de cuota y costo se serializan entre proyectos. Los mensajes
+  de cuota se redactan antes de guardarse.
+- Las escrituras atómicas conservan los permisos de archivos existentes en Unix.
+- El historial vuelve a registrar narrativas aunque la última línea esté dañada.
+- Las publicaciones simultáneas conservan ambos archivos. El filtro de
+  secretos y datos personales cubre también los títulos y nombres de archivo.
+
 ## [0.1.11] - 2026-11-20
 
 ### Corregido

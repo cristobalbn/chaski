@@ -8,7 +8,7 @@
 // lugar de fallar en silencio en la máquina de alguien.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -360,6 +360,39 @@ test('lectura incremental: desde la marca de agua no relee nada', () => {
   assert.equal(segunda.offset, primera.offset);
 });
 
+test('Claude Code y Codex cruzan resultados tardíos con el comando de la captura anterior', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chaski-command-delta-'));
+  try {
+    const path = join(dir, 'transcript.jsonl');
+    const pairs = [
+      [
+        { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', id: 'c1', input: { command: 'npm test' } }] } },
+        { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'c1', is_error: true }] } },
+      ],
+      [
+        { ordinal: 1, type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'c1', arguments: '{"cmd":"npm test"}' } },
+        { ordinal: 2, type: 'response_item', payload: { type: 'function_call_output', call_id: 'c1', output: 'Process exited with code 1\nOutput:\nfallo' } },
+      ],
+    ];
+    const jsonl = (event) => JSON.stringify(event) + '\n';
+    for (const [call, result] of pairs) {
+      writeFileSync(path, jsonl(call));
+      const previous = transcriptFacts(path);
+      assert.deepEqual(previous.commands, [{ cmd: 'npm test', id: 'c1', exit: null }]);
+      writeFileSync(path, jsonl(call) + jsonl(result));
+      const next = transcriptFacts(path, previous.offset, null, null, previous.commands);
+      assert.deepEqual(next.commands, [{ cmd: 'npm test', id: 'c1', exit: 1 }]);
+      assert.equal(previous.commands[0].exit, null);
+      writeFileSync(path, jsonl(result));
+      const rotated = transcriptFacts(path, next.offset, null, null, next.commands);
+      assert.equal(rotated.reset, true);
+      assert.deepEqual(rotated.commands, []);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
 test('la marca de agua conserva la línea incompleta y omite registros desconocidos', () => {
   const dir = mkdtempSync(join(tmpdir(), 'chaski-transcript-tail-'));
   try {
@@ -397,6 +430,25 @@ test('el transcript avisa si omite bytes por el tope o por tiempo', () => {
     const skipped = transcriptFacts(path, first.length, null, fakeBudget(0));
     assert.equal(skipped.trimmed, true);
     assert.equal(skipped.offset, first.length);
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test('la lectura retoma desde el registro siguiente si se acaba el tiempo de parseo', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chaski-transcript-budget-'));
+  try {
+    const path = join(dir, 'transcript.jsonl');
+    const line = JSON.stringify({ type: 'user', content: 'sesión' }) + '\n';
+    writeFileSync(path, line.repeat(100));
+    let checks = 0;
+    const partial = transcriptFacts(path, 0, null, { expired: () => ++checks > 2 });
+    assert.equal(partial.trimmed, true);
+    assert.ok(partial.turns > 0 && partial.turns < 100);
+    assert.equal(partial.offset, partial.turns * Buffer.byteLength(line));
+    const rest = transcriptFacts(path, partial.offset);
+    assert.equal(partial.turns + rest.turns, 100);
+    assert.equal(rest.trimmed, undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
@@ -768,8 +820,9 @@ test('escritura atómica: no deja el archivo a medias', () => {
   const dir = mkdtempSync(join(tmpdir(), 'chaski-test-'));
   try {
     const f = join(dir, 'relevo.md');
-    writeAtomic(f, 'primero');
+    writeAtomic(f, 'primero', { mode: 0o600 });
     writeAtomic(f, 'segundo');
+    if (process.platform !== 'win32') assert.equal(statSync(f).mode & 0o777, 0o600);
     assert.equal(readFileSync(f, 'utf8'), 'segundo');
     // No debe quedar ningún temporal.
     const sobrantes = execFileSync(process.execPath,
