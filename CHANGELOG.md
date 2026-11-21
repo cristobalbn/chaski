@@ -5,6 +5,16 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.29] - 2026-11-21
+
+### Mejorado
+- `chaski init --statusline` asegura el directorio `~/.claude/` antes de
+  escribir `settings.json`, permitiendo activar la statusline aunque el plugin
+  haya evitado crear `settings.json` en el paso de hooks.
+- `chaski uninstall` no reescribe archivos de configuración existentes
+  (`settings.json`, `hooks.json`, `config.toml`) cuando no contienen hooks ni
+  statusline de Chaski, e informa `nada que revertir`.
+
 ## [0.1.28] - 2026-11-21
 
 ### Mejorado

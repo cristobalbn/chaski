@@ -1,4 +1,5 @@
-import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { globalDir, readJsonForWrite } from '../lib/paths.mjs';
 import { writeAtomic } from '../lib/atomic.mjs';
 import { pad, backup } from './common.mjs';
@@ -62,6 +63,7 @@ export function installStatusLine() {
     else delete g.statusLineCommand;
     if (g.statusLineCommand !== previous) writeAtomic(gRuta, JSON.stringify(g, null, 2));
     s.statusLine = { ...(actual ?? {}), type: 'command', command: statusLineCommandNow() };
+    mkdirSync(dirname(cli.config), { recursive: true });
     backup(cli.config);
     writeAtomic(cli.config, JSON.stringify(s, null, 2));
     console.log(`  ${pad('statusline')} instalada${actual?.command ? `; envuelve la tuya: ${actual.command}` : ''}`);
