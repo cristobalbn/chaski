@@ -15,7 +15,7 @@ import { join, resolve, dirname, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath, claudePluginEnabled, claudePluginEnabledForUser, CLAUDE_PLUGIN_ID, usagePath, readOnlyTambo, readOnlyRelayPath, readOnlyStatePath } from './lib/paths.mjs';
+import { globalDir, readJson, readJsonForWrite, syncedFolder, tamboIsIgnored, relayPath, statePath, orphanRelays, effectivePruneDays, loadConfig, TAMBO, projectDir, tambo, currentBranch, promptHookPath, claudePluginEnabled, claudePluginEnabledForUser, CLAUDE_PLUGIN_ID, usagePath, readOnlyTambo, readOnlyRelayPath, readOnlyStatePath, stripBom } from './lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from './lib/ask.mjs';
 import { writeAtomic, isValidSignature } from './lib/relay.mjs';
 import { redact, anonymize } from './lib/secrets.mjs';
@@ -810,7 +810,7 @@ function checkHooks(cli) {
  */
 function registeredEvents(cli) {
   let txt;
-  try { txt = readFileSync(cli.config, 'utf8').replace(/^﻿/, ''); } catch { return null; }
+  try { txt = stripBom(readFileSync(cli.config, 'utf8')); } catch { return null; }
   // Un comando que ejecuta un hook de chaski: los scripts de entrada (y los
   // puentes con nombres viejos) o un wrapper generado en ~/.chaski/. Va aquí
   // y no como const de módulo: el despacho de comandos corre arriba del

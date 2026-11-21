@@ -11,6 +11,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { globalDir } from './paths.mjs';
 import { redact } from './secrets.mjs';
+import { ageText } from './time.mjs';
 
 export const MAX_CHARS = 6000; // ~1.500 tokens, con margen bajo el techo de 10.000
 
@@ -424,10 +425,6 @@ function minutesSince(iso) {
  * que cambia la lectura es "hace minutos" contra "hace días".
  */
 function antiguedad(iso) {
-  const t = iso ? Date.parse(iso) : NaN;
-  if (!Number.isFinite(t)) return '';
-  const min = Math.max(0, Math.round((Date.now() - t) / 60000));
-  if (min < 60) return ` — hace ${min} min`;
-  if (min < 1440) return ` — hace ${Math.round(min / 60)} h`;
-  return ` — hace ${Math.round(min / 1440)} día(s)`;
+  const hace = ageText(iso);
+  return hace ? ` — hace ${hace}` : '';
 }

@@ -271,6 +271,8 @@ src/lib/paths.mjs    ~340 lín.   — rutas, slugs de ramas (branchSlug), lock p
 src/lib/relay.mjs    ~410 lín.   — render de Markdown endurecido (vallas, código en línea), preámbulo, firma HMAC SHA-256 y writeAtomic
 src/lib/ask.mjs      ~200 lín.   — petición proactiva de narrativa (shouldAsk), debounces y payloads por CLI
 src/lib/secrets.mjs  ~160 lín.   — filtro de secretos, etiquetas <private> y rutas excluidas antes de escribir a disco
+src/lib/payload.mjs  ~80 lín.    — normalización del payload de los hooks (sesión, cwd, transcript, evento, agente), compartida por capture e inject
+src/lib/time.mjs     ~40 lín.    — antigüedad legible (ageText), vencimientos (MODEL_TEXT_TTL_MS = 72 h) e isFresh
 src/lib/budget.mjs   ~65 lín.    — reloj global y timeouts derivados por subproceso (STOP_HOOK_BUDGET_MS = 1100)
 src/capturar.mjs     ~25 lín.    — puente de compatibilidad hacia capture.mjs
 src/leer.mjs         ~20 lín.    — puente de compatibilidad hacia inject.mjs
