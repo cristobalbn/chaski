@@ -2570,6 +2570,55 @@ describe('narrativa guardada después de la última captura', () => {
   });
 });
 
+describe('relevo entre clientes', () => {
+  const clients = ['claude-code', 'codex', 'agy'];
+  for (const source of clients) {
+    test(`captura de ${source} e inyección en los otros dos clientes`, () => {
+      const m = montar(`chaski-relay-${source}-`);
+      try {
+        const payload = (agent, event) => {
+          const fixture = join(AQUI, 'fixtures', `${agent}.payload.json`);
+          const transcript = join(AQUI, 'fixtures', `${agent}.transcript.jsonl`);
+          const sample = JSON.parse(readFileSync(fixture, 'utf8'));
+          return agent === 'agy'
+            ? { ...sample, workspacePaths: [m.proyecto], transcriptPath: transcript }
+            : { ...sample, cwd: m.proyecto, transcript_path: transcript, hook_event_name: event };
+        };
+        const run = (script, event, agent) => {
+          const result = spawnSync(process.execPath, [join(SRC, script), event, agent], {
+            cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+            input: JSON.stringify(payload(agent, event)),
+          });
+          assert.ifError(result.error);
+          assert.equal(result.status, 0);
+          assert.equal(result.stderr, '');
+          return result.stdout;
+        };
+        writeFileSync(join(m.proyecto, 'chaski.json'), JSON.stringify({ askNarrative: false }));
+        assert.equal(run('capture.mjs', 'Stop', source), '');
+        const branch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+        const dir = join(m.proyecto, '.tambo', 'branches', branch);
+        const state = JSON.parse(readFileSync(join(dir, 'estado.json'), 'utf8'));
+        assert.equal(state.agent, source.replace('-', ' '));
+        assert.ok(state.turns > 0);
+        assert.ok(state.commands.some(({ cmd }) => cmd.includes('npm test')));
+
+        const [normal, recovery] = clients.filter((client) => client !== source);
+        for (const target of [normal, recovery]) {
+          if (target === recovery) rmSync(join(dir, 'relevo.md'));
+          const out = run('inject.mjs', 'SessionStart', target);
+          const context = target === 'agy' ? JSON.parse(out).injectSteps[0].systemMessage.systemMessage : out;
+          assert.match(context, /^<<<RELEVO-CHASKI/);
+          assert.match(context, /npm test/);
+          assert.match(context, /<<<FIN-RELEVO-CHASKI>>>/);
+        }
+      } finally {
+        rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      }
+    });
+  }
+});
+
 describe('#73: la petición de narrativa se entrega antes de la respuesta', () => {
   // En Stop, la petición llegaba después de la respuesta y el guardado la
   // empujaba fuera de la pantalla. Ahora Stop solo la anota y la entrega
