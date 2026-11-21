@@ -47,5 +47,6 @@ export function recordCaptureActivity(agent) {
 
 /** El primer mensaje confirma que el hook de entrega está activo. */
 export function recordPromptActivity(agent) {
-  if (Object.hasOwn(PROMPT_HOOK_EVENTS, agent)) record(promptHookPath(), agent, 10 * MINUTE_MS);
+  const canonical = canonicalAgent(agent);
+  if (Object.hasOwn(PROMPT_HOOK_EVENTS, canonical)) record(promptHookPath(), canonical, 10 * MINUTE_MS, true);
 }

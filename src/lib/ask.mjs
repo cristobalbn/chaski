@@ -286,8 +286,12 @@ export const PROMPT_HOOK_FRESH_MS = 12 * 3600 * 1000;
 export function promptHookAlive(registro, agent, ahora = Date.now()) {
   const a = canonicalAgent(agent);
   if (!PROMPT_HOOK_EVENTS[a]) return false;
-  const t = Date.parse(registro?.[a] ?? '');
-  return Number.isFinite(t) && ahora - t < PROMPT_HOOK_FRESH_MS && t <= ahora + 60_000;
+  for (const [k, v] of Object.entries(registro ?? {})) {
+    if (canonicalAgent(k) !== a) continue;
+    const t = Date.parse(v ?? '');
+    if (Number.isFinite(t) && ahora - t < PROMPT_HOOK_FRESH_MS && t <= ahora + 60_000) return true;
+  }
+  return false;
 }
 
 /** Una petición anotada vale un rato: después ya no es «el trabajo anterior». */
