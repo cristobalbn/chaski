@@ -8,12 +8,13 @@
 
 const PATTERNS = [
   // Credenciales con prefijo reconocible
-  [/\bsk-[A-Za-z0-9_-]{16,}\b/g, 'clave-api'],
   [/\bsk-ant-[A-Za-z0-9_-]{16,}\b/g, 'clave-anthropic'],
+  [/\bsk-[A-Za-z0-9_-]{16,}\b/g, 'clave-api'],
   [/\bAIza[0-9A-Za-z_-]{30,}\b/g, 'clave-google'],
   [/\bgh[pousr]_[A-Za-z0-9]{16,}\b/g, 'token-github'],
   [/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, 'token-github'],
   [/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, 'token-slack'],
+  [/\bxapp-\d-[A-Za-z0-9-]{10,}\b/g, 'token-slack'],
   [/\bAKIA[0-9A-Z]{16}\b/g, 'clave-aws'],
   [/\bASIA[0-9A-Z]{16}\b/g, 'clave-aws-temporal'],
   [/\bglpat-[A-Za-z0-9_-]{16,}\b/g, 'token-gitlab'],
@@ -30,18 +31,22 @@ const PATTERNS = [
   [/\bshp(?:at|ss|ca|pa)_[a-fA-F0-9]{32}\b/g, 'token-shopify'],
   [/\bdapi[a-f0-9]{32}\b/g, 'token-databricks'],
   [/\b\d{8,10}:[A-Za-z0-9_-]{35}\b/g, 'token-telegram'],
+  [/\b[MN][A-Za-z\d]{23,28}\.[A-Za-z\d_-]{6}\.[A-Za-z\d_-]{27,}\b/g, 'token-discord'],
+  [/\bre_[A-Za-z0-9_]{24,}\b/g, 'clave-resend'],
+  [/\bdckr_pat_[A-Za-z0-9_-]{24,}\b/g, 'token-docker'],
+  [/\bSK[0-9a-fA-F]{32}\b/g, 'clave-twilio'],
 
   // Formatos estructurados
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, 'jwt'],
-  [/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g, 'clave-privada'],
+  [/-----BEGIN[A-Z ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY(?: BLOCK)?-----/g, 'clave-privada'],
 
-  // Asignaciones con nombre sensible: TOKEN=..., api_secret: "...", PASSWORD = '...'
-  [/\b([A-Za-z_][A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY|CREDENTIAL|ACCESS_KEY)[A-Za-z0-9_]*)\s*[:=]\s*["']?([^\s"',;\][]{8,})["']?/gi, 'asignacion'],
+  // Asignaciones con nombre sensible: TOKEN=..., api_secret: "...", "password": "..."
+  [/((?:["']|\b)(?:[A-Za-z_][A-Za-z0-9_]*)?(?:SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY|CREDENTIAL|ACCESS_KEY)[A-Za-z0-9_]*["']?\s*[:=]\s*)["']?([^\s"',;\][]{8,})["']?/gi, 'asignacion'],
   // Flags de línea de comando con nombre sensible: --token xxx, --api-key=xxx, --password 'xxx'
   [/((?:^|[\s"'`])--[A-Za-z0-9-]*(?:secret|token|password|passwd|api-?key|private-?key|access-?key)[A-Za-z0-9-]*(?:\s*=\s*|\s+))["']?([^\s"',;\][]{8,})["']?/gi, 'flag-secreto'],
 
   // URL con credenciales embebidas
-  [/\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s:/@]+)@/gi, 'url-con-credencial'],
+  [/\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):(?!\[redactado\]@)([^\s:/@]+)@/gi, 'url-con-credencial'],
 
   // Cabeceras Authorization y X-API-Key
   [/\b(Authorization\s*:\s*(?:Bearer|Basic|token)\s+)([A-Za-z0-9._~+/=-]{12,})/gi, 'cabecera-auth'],
@@ -107,7 +112,11 @@ function safeUserRegexes(lista, flags, clave) {
       }
       continue;
     }
-    try { out.push(new RegExp(p, flags)); } catch {}
+    try {
+      const re = new RegExp(p, flags);
+      if (re.test('')) continue;
+      out.push(re);
+    } catch {}
   }
   return out;
 }
@@ -149,7 +158,7 @@ function redactText(texto, patterns) {
       n++;
       // En asignaciones, URLs y cabeceras se conserva la parte no secreta
       // para que el texto siga siendo legible.
-      if (etiqueta === 'asignacion') return `${grupos[0]}=[redactado: secreto]`;
+      if (etiqueta === 'asignacion') return `${grupos[0]}[redactado: secreto]`;
       if (etiqueta === 'flag-secreto') return `${grupos[0]}[redactado: secreto]`;
       if (etiqueta === 'url-con-credencial') return `${grupos[0]}${grupos[1]}:[redactado]@`;
       if (etiqueta === 'cabecera-auth') return `${grupos[0]}[redactado]`;
@@ -159,7 +168,7 @@ function redactText(texto, patterns) {
 
   // Cadenas largas de alta entropía que ningún patrón nombró.
   out = out.replace(/\b[A-Za-z0-9+/=_-]{40,}\b/g, (m) => {
-    if (!hasHighEntropy(m)) return m;
+    if (isLikelyNonSecretIdentifier(m) || !hasHighEntropy(m)) return m;
     n++;
     return '[redactado: cadena-de-alta-entropia]';
   });
@@ -167,11 +176,24 @@ function redactText(texto, patterns) {
   return { texto: out, redactions: n };
 }
 
+function isLikelyNonSecretIdentifier(s) {
+  // SHA-1 (40 hex) o SHA-256 (64 hex) sueltos suelen ser commits de git; si
+  // venían en SECRET=... o --token=..., los patrones de arriba ya los taparon.
+  if (/^[0-9a-f]{40}$|^[0-9a-f]{64}$/i.test(s)) return true;
+  // Rutas de archivo, ramas de git o identificadores camelCase/kebab-case/snake_case:
+  // si tiene `/` sin `+` ni `=` final (o varios segmentos de letras con `-`/`_`/`/`),
+  // o solo letras/guiones sin dígitos, no es un token aleatorio en base64/urlsafe.
+  if (s.includes('/') && !/[+=]/.test(s)) return true;
+  if (!/\d/.test(s) && !/[+/=]/.test(s)) return true;
+  if ((s.match(/[-_/]/g) ?? []).length >= 3 && !/[+=]/.test(s)) return true;
+  return false;
+}
+
 /**
- * Entropía de Shannon por carácter. Un hash o un token supera ~3.5 bits;
+ * Entropía de Shannon por carácter. Un token aleatorio supera ~4.1 bits;
  * una palabra o un identificador en código queda por debajo.
  */
-function hasHighEntropy(s, umbral = 3.6) {
+function hasHighEntropy(s, umbral = 4.1) {
   const freq = Object.create(null);
   for (const c of s) freq[c] = (freq[c] || 0) + 1;
   let h = 0;
@@ -186,12 +208,15 @@ const DEFAULT_EXCLUSIONS = [
   // Lo que chaski mismo escribe: nunca es parte del trabajo del usuario.
   /(^|[\\/])\.tambo([\\/]|$)/i,
   /(^|[\\/])chaski\.local\.json$/i,
-  /(^|[\\/])\.env($|\.|[\\/])/i,
+  /(^|[\\/])\.env($|\.|rc$|[\\/])/i,
   /(^|[\\/])\.?(credentials|secrets?)($|[\\/.])/i,
-  /\.(pem|key|pfx|p12|keystore|jks)$/i,
+  /\.(pem|key|pfx|p12|keystore|jks|ppk)$/i,
   /(^|[\\/])id_(rsa|dsa|ecdsa|ed25519)($|\.)/i,
-  /(^|[\\/])\.npmrc$/i,
-  /(^|[\\/])\.aws[\\/]/i,
+  /(^|[\\/])\.(?:npmrc|netrc|pypirc|git-credentials|pgpass|htpasswd)$/i,
+  /(^|[\\/])(?:_netrc|\.my\.cnf|application_default_credentials\.json)$/i,
+  /\.(?:tfstate(?:\.backup)?|tfvars)$/i,
+  /(^|[\\/])\.(?:aws|ssh)[\\/]/i,
+  /(^|[\\/])\.(?:docker[\\/]config\.json|kube[\\/]config)$/i,
 ];
 
 export function createPathFilter(config = null) {
