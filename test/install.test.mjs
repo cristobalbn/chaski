@@ -215,6 +215,21 @@ test('un relevo en la ruta antigua de una rama con tag se recupera en la ruta ca
     assert.equal(canonical.facts.branch, branch);
     assert.equal(canonical.narrative, narrative);
     assert.match(run('inject.mjs', 'SessionStart'), /recuperar la decisión/i);
+
+    // También recupera relevos guardados en la carpeta antigua .tambo/ramas/<slug>/
+    rmSync(join(m.proyecto, '.tambo', 'branches'), { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    m.g('tag', '-d', branch);
+    const ramasDir = join(m.proyecto, '.tambo', 'ramas', branchSlug(branch));
+    mkdirSync(ramasDir, { recursive: true });
+    writeFileSync(join(ramasDir, 'estado.json'), JSON.stringify({
+      narrative: 'Pendiente: rescatada desde .tambo/ramas', narrativeAuthor: 'agy',
+      facts: { branch }, writtenAt: new Date().toISOString(), agent: 'agy',
+    }));
+    writeFileSync(join(ramasDir, 'relevo.md'), 'Pendiente: rescatada desde .tambo/ramas');
+    assert.match(m.correr('next'), /rescatada desde \.tambo\/ramas/);
+    run('capture.mjs', 'Stop');
+    assert.match(readFileSync(join(m.proyecto, '.tambo', 'branches', branchSlug(branch), 'relevo.md'), 'utf8'),
+      /rescatada desde \.tambo\/ramas/);
   } finally {
     rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
@@ -464,6 +479,13 @@ describe('uninstall revierte lo que init tocó', () => {
       assert.match(sana, /claude code\s+registrado \(SessionStart, UserPromptSubmit, Stop, SessionEnd, PreCompact, SubagentStop, StopFailure\)/);
       assert.match(sana, /codex\s+registrado \(SessionStart, UserPromptSubmit, Stop\)/);
       assert.match(sana, /agy\s+registrado \(SessionStart, Stop, PreInvocation\)/);
+      assert.doesNotMatch(sana, /apunta a una ruta que no existe/);
+
+      // Si el usuario movió o borró el clon al que apuntaba el hook, doctor lo avisa.
+      const claudeCfg = join(m.casa, '.claude', 'settings.json');
+      writeFileSync(claudeCfg, readFileSync(claudeCfg, 'utf8').replace(/capture\.mjs/g, 'no-existe/capture.mjs'));
+      const rota = m.correr('doctor');
+      assert.match(rota, /⚠ claude code: hook registrado apunta a una ruta que no existe.*no-existe[\\/]capture\.mjs/);
 
       // Mismo texto "chaski", eventos y nombres de script, pero sin un hook real.
       writeFileSync(join(m.casa, '.codex', 'config.toml'),
@@ -2134,6 +2156,18 @@ describe('comandos next, cost, why y share', () => {
       assert.doesNotMatch(salidaMultilinea, /# pendiente: A medias\*\*/);
       assert.ok(!salidaMultilinea.includes(tokenNext));
       assert.ok(!salidaMultilinea.includes('interno'));
+
+      // Sin narrativa, next muestra lastReply como respaldo y avisa si hay turnos abiertos.
+      conTotal.narrative = null;
+      conTotal.lastReply = { text: `Falta revisar el middleware con ${tokenNext}`, at: new Date().toISOString() };
+      writeFileSync(rutaEstado, JSON.stringify(conTotal, null, 2));
+      writeFileSync(join(m.proyecto, '.tambo', 'turns-open.json'), JSON.stringify({
+        s9: { agent: 'codex', at: new Date().toISOString() },
+      }));
+      const salidaSinNarrativa = m.correr('next');
+      assert.match(salidaSinNarrativa, /# última respuesta: Falta revisar el middleware con \[redactado: token-github\]/);
+      assert.ok(!salidaSinNarrativa.includes(tokenNext));
+      assert.match(salidaSinNarrativa, /# turno\(s\) abierto\(s\): codex/);
 
       // Cuando Claude Code vuelve a completar un Stop normal, sale de agotados.
       capturar(m, 'claude-code', {

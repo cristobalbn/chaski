@@ -222,14 +222,10 @@ El README conserva los límites que cambian lo que haces. Aquí queda el resto.
 | Un turno con miles de archivos modificados | el relevo sale **incompleto, y lo dice** | El hook tiene un presupuesto de tiempo propio y sacrifica lo caro y poco informativo antes de agotarlo: primero el detalle de líneas `+/-` por archivo, después el log de commits. La rama, el `HEAD`, la lista de archivos y su total siempre sobreviven. Lo que se omitió aparece declarado en el relevo, porque un relevo incompleto que se presenta como completo es peor que uno recortado. Medido: 5.000 archivos modificados pasaban de 2.000 ms —y perdían el relevo entero— y ahora el hook completo tarda ~220-340 ms |
 
 **Relevos de antes del renombre a `branches/`.** Versiones viejas de chaski
-guardaban el relevo en `.tambo/ramas/<rama>/`. Ni `inject.mjs` ni `doctor`
-migran ni mencionan esa carpeta: si tienes relevos ahí, quedaron huérfanos.
-Para recuperarlos a mano, copia el contenido de
-`.tambo/ramas/<rama>/estado.json` al campo `narrative` (y
-`narrativeAuthor`/`narrativeWrittenAt`) del `estado.json` nuevo en
-`.tambo/branches/<rama>/` — los hechos no se recuperan porque ya están
-obsoletos, pero la narrativa escrita a mano sí vale la pena rescatarla.
-Después puedes borrar `.tambo/ramas/`.
+guardaban el relevo en `.tambo/ramas/<rama>/`. Si todavía no hay un relevo en
+`.tambo/branches/<rama>/`, chaski consulta `.tambo/ramas/<rama>/` como respaldo
+y migra la narrativa a `branches/` en la siguiente captura. Después puedes
+borrar `.tambo/ramas/`.
 
 ## Términos de uso de los proveedores
 

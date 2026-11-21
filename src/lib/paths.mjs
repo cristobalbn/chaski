@@ -166,11 +166,16 @@ export function readOnlyBranchDir(cwd, branch = undefined) {
 export function legacyBranchState(cwd, branch, budget = null) {
   if (!branch || branch === 'HEAD') return null;
   const names = ['heads/' + branch, 'refs/heads/' + branch];
-  if (!names.some((name) => existsSync(join(readOnlyBranchDir(cwd, name), 'estado.json')))) return null;
-  const legacy = git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'], { budget });
-  if (!names.includes(legacy)) return null;
-  const dir = readOnlyBranchDir(cwd, legacy);
-  return existsSync(join(dir, 'estado.json')) ? { dir, branch: legacy } : null;
+  if (names.some((name) => existsSync(join(readOnlyBranchDir(cwd, name), 'estado.json')))) {
+    const legacy = git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'], { budget });
+    if (names.includes(legacy)) {
+      const dir = readOnlyBranchDir(cwd, legacy);
+      if (existsSync(join(dir, 'estado.json'))) return { dir, branch: legacy };
+    }
+  }
+  const ramasDir = join(readOnlyTambo(cwd), 'ramas', branchSlug(branch));
+  if (existsSync(join(ramasDir, 'estado.json'))) return { dir: ramasDir, branch };
+  return null;
 }
 
 export function readOnlyRelayPath(cwd, branch = undefined) { return join(readOnlyBranchDir(cwd, branch), 'relevo.md'); }
