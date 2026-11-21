@@ -56,7 +56,7 @@ export function recordHistory(cwd, estado, config) {
  * candidata, lanza UN `git rev-parse` para ver si la rama sigue viva. No
  * copia nada al estado de la rama actual: se muestra rotulada y aparte.
  */
-export function mergedBranchNarrative(cwd, estado, budget) {
+export function latestMergedBranchEntry(cwd, estado, budget = null) {
   try {
     const ruta = join(readOnlyTambo(cwd), 'historia', 'entries.jsonl');
     if (!existsSync(ruta)) return null;
@@ -87,19 +87,29 @@ export function mergedBranchNarrative(cwd, estado, budget) {
     // no se afirma nada.
     const viva = git(cwd, ['for-each-ref', '--format=%(refname)', `refs/heads/${rama}`], { budget });
     if (viva !== '') return null;
-    const cuerpo = String(ultima.narrative).trim();
-    const corto = cuerpo.length > 900 ? cuerpo.slice(0, 900).trimEnd() + '…' : cuerpo;
-    const hace = ageText(at);
-    return [
-      `## Narrativa más reciente: de la rama \`${rama}\` (ya no existe; probablemente se fusionó)`,
-      '',
-      `_Escrita por ${String(ultima.author ?? 'un agente').replace(/[^\w .-]/g, '')} hace ${hace}, después de la de esta rama. Contrástala con el código: describe el trabajo de esa rama._`,
-      '',
-      corto,
-    ].join('\n');
+    return {
+      at,
+      author: String(ultima.author ?? 'un agente').replace(/[^\w .-]/g, ''),
+      branch: rama,
+      narrative: String(ultima.narrative).trim(),
+    };
   } catch {
     return null;
   }
+}
+
+export function mergedBranchNarrative(cwd, estado, budget) {
+  const ultima = latestMergedBranchEntry(cwd, estado, budget);
+  if (!ultima) return null;
+  const corto = ultima.narrative.length > 900 ? ultima.narrative.slice(0, 900).trimEnd() + '…' : ultima.narrative;
+  const hace = ageText(ultima.at);
+  return [
+    `## Narrativa más reciente: de la rama \`${ultima.branch}\` (ya no existe; probablemente se fusionó)`,
+    '',
+    `_Escrita por ${ultima.author} hace ${hace}, después de la de esta rama. Contrástala con el código: describe el trabajo de esa rama._`,
+    '',
+    corto,
+  ].join('\n');
 }
 
 function lastHistoryEntry(text) {

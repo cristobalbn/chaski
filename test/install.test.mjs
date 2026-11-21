@@ -2301,6 +2301,9 @@ describe('comandos next, cost, why y share', () => {
       const encontrado = m.correr('why', 'graphql');
       assert.match(encontrado, /Descartamos GraphQL/);
       assert.match(encontrado, /\(historia\)/);
+      // Búsqueda por varios términos no adyacentes (autor + palabra clave).
+      assert.match(m.correr('why', 'agy', 'sqlite'), /migrando las colas a SQLite/);
+      assert.match(m.correr('why', 'graphql', 'cdn'), /Descartamos GraphQL/);
 
       const sinMatch = m.correr('why', 'kubernetes');
       assert.match(sinMatch, /No encontré decisiones/);
@@ -3816,6 +3819,8 @@ describe('narrativa de una rama ya fusionada', () => {
       assert.match(r.stdout, /Narrativa más reciente: de la rama `feat\/pagos` \(ya no existe; probablemente se fusionó\)/);
       assert.match(r.stdout, /falta el webhook en pagos\.ts:12/);
       assert.match(r.stdout, /Narrativa vieja de la rama principal/, 'tapó la narrativa propia');
+      assert.match(m.correr('next'), /# narrativa más reciente \(de feat\/pagos, ya no existe\): .*falta el webhook en pagos\.ts:12/);
+      assert.match(m.correr('doctor'), /rama fusionada\s+narrativa más reciente de feat\/pagos \(por claude code\)/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

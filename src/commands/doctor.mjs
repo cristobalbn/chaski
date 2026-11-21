@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { readOnlyGlobalDir, readJson, syncedFolder, tamboIsIgnored, loadConfig, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyBranchDir, legacyBranchState, currentBranch, stripBom } from '../lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from '../lib/ask.mjs';
 import { isValidSignature } from '../lib/signatures.mjs';
+import { latestMergedBranchEntry } from '../lib/history.mjs';
 import { readRelay } from '../lib/relay-store.mjs';
 import { orphanRelays, effectivePruneDays } from '../lib/maintenance.mjs';
 import { pkgVersion, pad } from './common.mjs';
@@ -130,6 +131,10 @@ export function doctor() {
     console.log(`  ${pad('relevo')} ${md.length} caracteres${edad !== null ? `, escrito hace ${edad} min` : ''}`);
     console.log(`  ${pad('firma')} ${estado.signature ? (recovered ? 'válida — vista recuperada del estado' : isValidSignature(md, estado.signature) ? 'válida' : 'NO VALIDA — editado fuera de chaski') : 'sin firma'}`);
     console.log(`  ${pad('narrativa')} ${estado.narrative ? `sí, por ${estado.narrativeAuthor ?? '?'}` : 'no — escribe «relevo» en el chat del agente'}`);
+    const heredada = latestMergedBranchEntry(cwd, estado);
+    if (heredada) {
+      console.log(`  ${pad('rama fusionada')} narrativa más reciente de ${heredada.branch} (por ${heredada.author ?? '?'})`);
+    }
   } else {
     console.log(`  ${pad('relevo')} todavía no existe para esta rama`);
   }
