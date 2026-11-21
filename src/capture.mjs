@@ -14,12 +14,14 @@
 //   - Nunca escribe fuera de .tambo/ del proyecto y ~/.chaski/.
 import { readFileSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, silencedByPlugin, usagePath, resolveTranscript } from './lib/paths.mjs';
+import { statePath, relayPath, readJson, acquireLock, globalDir, git, currentBranch, pruneOrphanRelays, existsSync, projectDir, tambo, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, silencedByPlugin, usagePath } from './lib/paths.mjs';
 import { gitFacts, transcriptFacts } from './lib/facts.mjs';
 import { render, writeAtomic, sign } from './lib/relay.mjs';
 import { redact } from './lib/secrets.mjs';
 import { shouldAsk, askText, askPayload, promptHookAlive, COMPACT_HINT, quotaPressure } from './lib/ask.mjs';
 import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
+import { readStdinJson, canonicalAgent, sessionOf, cwdOf, transcriptOf, eventOf } from './lib/payload.mjs';
+import { MODEL_TEXT_TTL_MS, isFresh } from './lib/time.mjs';
 
 main();
 
@@ -397,12 +399,8 @@ function promote(ev, cwd, config) {
  * abajo se inicialice, y el ReferenceError lo atrapaba el hook en silencio.
  */
 function freshSubagents(lista, ahora = Date.now()) {
-  const SUBAGENT_TTL_MS = 72 * 3600 * 1000;
   if (!Array.isArray(lista)) return null;
-  const vivas = lista.filter((s) => {
-    const t = Date.parse(s?.at ?? '');
-    return Number.isFinite(t) && ahora - t < SUBAGENT_TTL_MS;
-  });
+  const vivas = lista.filter((s) => isFresh(s?.at, MODEL_TEXT_TTL_MS, ahora));
   return vivas.length ? vivas : null;
 }
 
@@ -453,13 +451,11 @@ function replyFrom(texto, config, at) {
 }
 
 function freshReply(r, ahora = Date.now()) {
-  // El vencimiento va DENTRO de la función, como en freshSubagents(): un
-  // `const` de módulo se declara después de que `main()` ya corrió, y leerlo
-  // lanza un error de TDZ que el catch del hook convierte en «captura
-  // omitida». Pasaba en cada turno sin respuesta nueva con un lastReply previo.
-  const REPLY_TTL_MS = 72 * 3600 * 1000;
-  const t = Date.parse(r?.at ?? '');
-  return r?.text && Number.isFinite(t) && ahora - t < REPLY_TTL_MS ? r : null;
+  // El vencimiento viene de lib/time.mjs (un import, resuelto antes de que
+  // main() corra). Como `const` de módulo de este archivo provocaba un error
+  // de TDZ: ver el test «los hooks no declaran const ni let de módulo después
+  // de llamar a main()».
+  return r?.text && isFresh(r.at, MODEL_TEXT_TTL_MS, ahora) ? r : null;
 }
 
 /**
@@ -498,23 +494,19 @@ function summarizeConclusion(texto) {
   return limpio.length > 400 ? limpio.slice(0, 400).trimEnd() + '…' : limpio;
 }
 
-/** Lee el payload JSON de stdin. Cada CLI nombra sus campos distinto. */
+/**
+ * Lee el payload de stdin y lo deja normalizado sobre el mismo objeto, con los
+ * nombres que usa el resto de este archivo. La normalización vive en
+ * lib/payload.mjs, compartida con inject.mjs.
+ */
 function readPayload() {
-  let bruto = '';
-  try { bruto = readFileSync(0, 'utf8'); } catch {}
-  let ev = {};
-  try { ev = JSON.parse(bruto) || {}; } catch {}
-
-  // Normalización defensiva: ninguno de los tres prometió estabilidad, y
-  // Antigravity usa camelCase y nombres propios. Verificado contra payloads
-  // reales de Claude Code y de agy.
-  const ws = Array.isArray(ev.workspacePaths) ? ev.workspacePaths[0] : null;
-  // resolveTranscript(): tras un resume, Claude Code manda la ruta de un
-  // archivo que no existe (ver paths.mjs).
-  ev.transcript_path = resolveTranscript(ev.transcript_path ?? ev.transcriptPath ?? ev.transcript ?? null);
-  ev.hook_event_name = ev.hook_event_name ?? ev.hookEventName ?? ev.event ?? process.argv[2] ?? null;
-  ev.session_id = ev.session_id ?? ev.sessionId ?? ev.conversationId ?? ev.conversation_id ?? null;
-  ev.cwd = ev.cwd ?? ws ?? ev.workspace ?? ev.project_dir ?? process.cwd();
+  const ev = readStdinJson();
+  // Resuelto: tras un resume, Claude Code manda la ruta de un archivo que no
+  // existe (ver resolveTranscript en paths.mjs).
+  ev.transcript_path = transcriptOf(ev);
+  ev.hook_event_name = eventOf(ev);
+  ev.session_id = sessionOf(ev);
+  ev.cwd = cwdOf(ev);
   // agy manda el último prompt del usuario; sirve como pista de la tarea.
   ev.__ultimoPrompt = ev.lastUserInput ?? ev.user_prompt ?? null;
   // Normalizado aquí y no al estampar el latido: `estado.agent` es lo que
@@ -522,19 +514,6 @@ function readPayload() {
   // el evento que lo hubiera escrito.
   ev.__agente = canonicalAgent(process.argv[3] ?? detectAgent(ev));
   return ev;
-}
-
-/**
- * Grafía única para un CLI, venga del argumento del hook o de la detección.
- *
- * Los nombres con espacio viajan con guión en la línea de comando (ver `cmd()`
- * en cli.mjs); aquí vuelven a su forma legible, que es la que lee un agent en
- * el relevo. `doctor` ya comparaba normalizando, así que esto solo cierra el
- * lado de la escritura.
- */
-function canonicalAgent(agent) {
-  const n = String(agent ?? '').trim().toLowerCase().replace(/-/g, ' ');
-  return n === 'claude' ? 'claude code' : (n || 'desconocido');
 }
 
 function detectAgent(ev) {

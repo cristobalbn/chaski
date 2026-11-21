@@ -328,8 +328,11 @@ export function tamboIsIgnored(cwd) {
   }
 }
 
+/** Quita el BOM que algunos editores de Windows ponen al inicio: JSON.parse no lo tolera. */
+export function stripBom(texto) { return String(texto).replace(/^\uFEFF/, ''); }
+
 export function readJson(ruta, porDefecto = null) {
-  try { return JSON.parse(readFileSync(ruta, 'utf8')); } catch { return porDefecto; }
+  try { return JSON.parse(stripBom(readFileSync(ruta, 'utf8'))); } catch { return porDefecto; }
 }
 
 /**
@@ -349,8 +352,7 @@ export function readJsonForWrite(ruta) {
   const bruto = readFileSync(ruta, 'utf8');
   if (!bruto.trim()) return {};
   try {
-    // Se quita el BOM: JSON.parse no lo tolera y es frecuente en Windows.
-    return JSON.parse(bruto.replace(/^﻿/, ''));
+    return JSON.parse(stripBom(bruto));
   } catch (e) {
     throw new Error(
       `${ruta} no es JSON válido (${e.message}).\n` +
@@ -403,14 +405,6 @@ export function promptHookPath() { return join(globalDir(), 'prompt-hook.json');
  * al cerrar el turno. Si sobrevive, el turno se cortó: interrupción, ventana
  * cerrada, cuelgue. Ver openTurn() en inject.mjs.
  */
-/**
- * Marcas de turno abierto de más de esto no se muestran ni se conservan. Vive
- * aquí y no en inject.mjs: allí un `const` de módulo se declara después de que
- * `main()` ya corrió, y leerlo lanza un error de TDZ que el `catch` del hook
- * se traga en silencio. Pasó al escribir esto.
- */
-export const OPEN_TURN_TTL_MS = 72 * 3600 * 1000;
-
 export function openTurnsPath(cwd) { return join(projectDir(cwd), TAMBO, 'turns-open.json'); }
 
 // ----------------------------------------------------------- plugin de Claude Code
@@ -438,11 +432,8 @@ export function claudePluginEnabled(cwd) {
     join(base, '.claude', 'settings.json'),
     join(base, '.claude', 'settings.local.json'),
   ]) {
-    try {
-      const s = JSON.parse(readFileSync(ruta, 'utf8').replace(/^\uFEFF/, ''));
-      const v = s?.enabledPlugins?.[CLAUDE_PLUGIN_ID];
-      if (typeof v === 'boolean') activo = v;
-    } catch {}
+    const v = readJson(ruta, null)?.enabledPlugins?.[CLAUDE_PLUGIN_ID];
+    if (typeof v === 'boolean') activo = v;
   }
   return activo;
 }
@@ -456,12 +447,7 @@ export function claudePluginEnabled(cwd) {
  * sin chaski a todos los demás.
  */
 export function claudePluginEnabledForUser() {
-  try {
-    const s = JSON.parse(readFileSync(join(homedir(), '.claude', 'settings.json'), 'utf8').replace(/^﻿/, ''));
-    return s?.enabledPlugins?.[CLAUDE_PLUGIN_ID] === true;
-  } catch {
-    return false;
-  }
+  return readJson(join(homedir(), '.claude', 'settings.json'), null)?.enabledPlugins?.[CLAUDE_PLUGIN_ID] === true;
 }
 
 /**

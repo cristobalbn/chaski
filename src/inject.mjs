@@ -11,7 +11,9 @@
 //   - Si la signature no valida, imprime igual pero rotulado: fallar en silencio
 //     dejaría al usuario creyendo que funciona.
 import { readFileSync, existsSync, statSync, rmSync, openSync, readSync, closeSync } from 'node:fs';
-import { readOnlyRelayPath, readOnlyStatePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, OPEN_TURN_TTL_MS, silencedByPlugin, resolveTranscript, readOnlyTambo } from './lib/paths.mjs';
+import { readOnlyRelayPath, readOnlyStatePath, readJson, currentBranch, git, projectDir, loadConfig, pendingAskPath, promptHookPath, openTurnsPath, silencedByPlugin, readOnlyTambo } from './lib/paths.mjs';
+import { readStdinJson, canonicalAgent, sessionOf, cwdOf, transcriptOf } from './lib/payload.mjs';
+import { ageText, MODEL_TEXT_TTL_MS } from './lib/time.mjs';
 import { dirname, join } from 'node:path';
 import { askText, promptPayload, shouldDeliverPending, samePendingConversation, PENDING_TTL_MS, PROMPT_HOOK_EVENTS } from './lib/ask.mjs';
 import { preamble, CLOSING_MARK, isValidSignature, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged, writeAtomic } from './lib/relay.mjs';
@@ -28,24 +30,24 @@ function main() {
   // llamada tampoco se justificaba aquí solo, por la misma razón que en
   // capture.mjs: ningún timeout por llamada protege si nadie lo deriva de
   // cuánto queda.
-  const ev = readPayload();
+  const ev = readStdinJson();
   // Instalado por `init` y además como plugin de Claude Code: este proceso es
   // el duplicado, y sin esto el relevo se inyectaría dos veces por sesión.
   // Dentro de try: un payload raro (un cwd que no es texto) no puede tumbar el
   // hook (invariante 4). Antes esta línea estaba fuera y salía con código 1.
-  try { if (silencedByPlugin(agentFromArg(process.argv[3]), cwdFrom(ev))) return; } catch {}
+  try { if (silencedByPlugin(canonicalAgent(process.argv[3]), cwdOf(ev))) return; } catch {}
   // Mismo archivo para los dos hooks de entrada (invariante 8: cada nombre
   // que init escribe en una config ajena queda fijo para siempre, así que no
   // se agrega un tercero). Este camino corre en CADA mensaje del usuario:
   // no lanza git ni re-renderiza nada, lee un JSON chico y sale. En
   // Antigravity es `PreInvocation`, que corre antes de cada llamada al modelo.
   if (process.argv[2] === 'UserPromptSubmit' || process.argv[2] === 'PreInvocation') {
-    return deliverPending(ev, agentFromArg(process.argv[3]));
+    return deliverPending(ev, canonicalAgent(process.argv[3]));
   }
 
   const budget = createBudget(SESSION_START_BUDGET_MS);
   try {
-    const cwd = projectDir(cwdFrom(ev));
+    const cwd = projectDir(cwdOf(ev));
     const ramaActual = currentBranch(cwd, budget);
     // Solo lectura: abrir una sesión no debe crear `.tambo/` en un proyecto
     // donde chaski nunca capturó.
@@ -70,7 +72,7 @@ function main() {
     // primera versión de esto (0.1.7) nunca reconocía una sesión retomada.
     // Resuelta igual que en capture.mjs: tras un resume la ruta del payload no
     // existe, y la que guardó el relevo es la del transcript real.
-    const transcriptActual = resolveTranscript(ev.transcript_path ?? ev.transcriptPath ?? null);
+    const transcriptActual = transcriptOf(ev);
     const mismaConversacion = (estado.transcript && transcriptActual && estado.transcript === transcriptActual)
       || (estado.session && estado.session === sessionOf(ev));
     if (ev.source === 'resume' && mismaConversacion) {
@@ -153,12 +155,6 @@ function main() {
   }
 }
 
-function readPayload() {
-  let ev = {};
-  try { ev = JSON.parse(readFileSync(0, 'utf8')) || {}; } catch {}
-  return ev && typeof ev === 'object' ? ev : {};
-}
-
 /**
  * Entrega, con el mensaje del usuario, la petición de narrativa que `Stop`
  * dejó anotada (#73). La salida de `UserPromptSubmit` llega al agente como
@@ -175,14 +171,14 @@ function deliverPending(ev, agent) {
     // permite a capture.mjs diferir la petición la próxima vez. Ver ask.mjs.
     recordAlive(agent);
     const sesion = sessionOf(ev);
-    openTurn(cwdFrom(ev), sesion, agent);
-    const ruta = pendingAskPath(cwdFrom(ev));
+    openTurn(cwdOf(ev), sesion, agent);
+    const ruta = pendingAskPath(cwdOf(ev));
     if (!existsSync(ruta)) return;
     const pending = readJson(ruta, null);
     const estado = pending?.statePath ? readJson(pending.statePath, {}) ?? {} : {};
     // El transcript resuelto solo se calcula si hay algo que entregar: tras un
     // resume la ruta del payload no existe y resolverla lee la carpeta.
-    const transcript = resolveTranscript(ev.transcript_path ?? ev.transcriptPath ?? null);
+    const transcript = transcriptOf(ev);
     const entregar = shouldDeliverPending(pending, sesion, estado, Date.now(), transcript);
     // Solo se borra la anotación de ESTA sesión (entregada o ya cubierta) o
     // una vencida. La de otra sesión abierta en el mismo proyecto es suya.
@@ -199,11 +195,6 @@ function deliverPending(ev, agent) {
   } finally {
     process.exitCode = 0;
   }
-}
-
-/** Id de la conversación, con el nombre que use cada CLI. */
-function sessionOf(ev) {
-  return ev.session_id ?? ev.sessionId ?? ev.conversationId ?? ev.conversation_id ?? null;
 }
 
 /**
@@ -228,7 +219,7 @@ function openTurn(cwd, session, agent) {
     if (abiertos[session] && Date.now() - Date.parse(abiertos[session].at ?? '') < 60_000) return;
     const ahora = Date.now();
     for (const [s, t] of Object.entries(abiertos)) {
-      if (!(ahora - Date.parse(t?.at ?? '') < OPEN_TURN_TTL_MS)) delete abiertos[s];
+      if (!(ahora - Date.parse(t?.at ?? '') < MODEL_TEXT_TTL_MS)) delete abiertos[s];
     }
     abiertos[session] = { agent, at: new Date(ahora).toISOString() };
     writeAtomic(ruta, JSON.stringify(abiertos, null, 2));
@@ -253,9 +244,8 @@ function interruptedTurns(cwd, estado, sesionActual) {
     const lineas = [];
     for (const [s, t] of Object.entries(abiertos)) {
       const at = Date.parse(t?.at ?? '');
-      if (s === sesionActual || !Number.isFinite(at) || at <= desde || ahora - at > OPEN_TURN_TTL_MS) continue;
-      const min = Math.max(0, Math.round((ahora - at) / 60000));
-      const hace = min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} día(s)`;
+      if (s === sesionActual || !Number.isFinite(at) || at <= desde || ahora - at > MODEL_TEXT_TTL_MS) continue;
+      const hace = ageText(at, ahora);
       lineas.push(`- Un turno de ${String(t.agent ?? 'otro agente').replace(/[^\w .-]/g, '')} empezó hace ${hace} y no terminó: se interrumpió, se cerró la ventana o se cortó (o sigue en curso en otra ventana).`);
     }
     if (!lineas.length) return null;
@@ -321,8 +311,7 @@ function mergedBranchNarrative(cwd, estado, budget) {
     if (viva !== '') return null;
     const cuerpo = String(ultima.narrative).trim();
     const corto = cuerpo.length > 900 ? cuerpo.slice(0, 900).trimEnd() + '…' : cuerpo;
-    const min = Math.max(0, Math.round((Date.now() - at) / 60000));
-    const hace = min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} día(s)`;
+    const hace = ageText(at);
     return [
       `## Narrativa más reciente: de la rama \`${rama}\` (ya no existe; probablemente se fusionó)`,
       '',
@@ -333,12 +322,6 @@ function mergedBranchNarrative(cwd, estado, budget) {
   } catch {
     return null;
   }
-}
-
-/** `claude-code` (como viaja en la línea de comando) → `claude code`. */
-function agentFromArg(arg) {
-  const n = String(arg ?? '').trim().toLowerCase().replace(/-/g, ' ');
-  return n === 'claude' ? 'claude code' : n;
 }
 
 /**
@@ -356,13 +339,6 @@ function recordAlive(agent) {
     r[agent] = new Date().toISOString();
     writeAtomic(ruta, JSON.stringify(r, null, 2));
   } catch {}
-}
-
-function cwdFrom(ev) {
-  // Antigravity usa camelCase y manda un array de rutas de workspace en vez
-  // de un cwd. Documentado en su contrato de hooks.
-  const ws = Array.isArray(ev.workspacePaths) ? ev.workspacePaths[0] : null;
-  return ev.cwd ?? ws ?? ev.workspace ?? ev.project_dir ?? process.cwd();
 }
 
 /**

@@ -17,7 +17,9 @@ import { execFileSync } from 'node:child_process';
 import { transcriptFacts, gitFacts } from '../src/lib/facts.mjs';
 import { redact, isExcludedPath, anonymize } from '../src/lib/secrets.mjs';
 import { render, sign, isValidSignature, writeAtomic, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
-import { branchSlug, pruneOrphanRelays, git, projectDir } from '../src/lib/paths.mjs';
+import { branchSlug, pruneOrphanRelays, git, projectDir, readJson } from '../src/lib/paths.mjs';
+import { canonicalAgent, sessionOf, cwdOf, rawTranscriptOf, eventOf } from '../src/lib/payload.mjs';
+import { ageText, isFresh } from '../src/lib/time.mjs';
 import { createBudget, hasTime, effectiveTimeout, STOP_HOOK_BUDGET_MS } from '../src/lib/budget.mjs';
 import { shouldAsk, askText, askPayload, turnsThreshold, shouldDeliverPending, promptPayload, PENDING_TTL_MS, promptHookAlive, PROMPT_HOOK_EVENTS, quotaPressure, usageSummary } from '../src/lib/ask.mjs';
 
@@ -2112,4 +2114,72 @@ describe('anonymize no rompe texto que no es personal', () => {
     assert.equal(anonymize('ver C:\\Users\\crist\\x.txt', { home: '/home/z' }).texto, 'ver ~\\x.txt');
     assert.equal(anonymize('escribe a yo@mail.com.').texto, 'escribe a [correo].');
   });
+});
+
+describe('lib/payload.mjs: normalización compartida del payload', () => {
+  test('canonicalAgent unifica la grafía de los tres CLIs', () => {
+    assert.equal(canonicalAgent('claude-code'), 'claude code');
+    assert.equal(canonicalAgent('claude'), 'claude code');
+    assert.equal(canonicalAgent(' Codex '), 'codex');
+    assert.equal(canonicalAgent('agy'), 'agy');
+    assert.equal(canonicalAgent(undefined), 'desconocido');
+  });
+
+  test('sessionOf acepta el nombre de cada CLI y rechaza lo que no es texto', () => {
+    assert.equal(sessionOf({ session_id: 'a' }), 'a');
+    assert.equal(sessionOf({ sessionId: 'b' }), 'b');
+    assert.equal(sessionOf({ conversationId: 'c' }), 'c');
+    assert.equal(sessionOf({ session_id: 42 }), null);
+    assert.equal(sessionOf(null), null);
+  });
+
+  test('cwdOf usa workspacePaths de agy y cae al del proceso ante un valor raro', () => {
+    assert.equal(cwdOf({ cwd: '/a' }), '/a');
+    assert.equal(cwdOf({ workspacePaths: ['/b', '/c'] }), '/b');
+    assert.equal(cwdOf({ cwd: { x: 1 } }), process.cwd(), 'un cwd que no es texto tumbaba el hook');
+    assert.equal(cwdOf({}), process.cwd());
+  });
+
+  test('rawTranscriptOf y eventOf aceptan las dos grafías', () => {
+    assert.equal(rawTranscriptOf({ transcriptPath: '/t.jsonl' }), '/t.jsonl');
+    assert.equal(rawTranscriptOf({ transcript_path: 7 }), null);
+    assert.equal(eventOf({ hookEventName: 'Stop' }, []), 'Stop');
+    assert.equal(eventOf({}, ['node', 'x', 'SessionStart']), 'SessionStart');
+  });
+});
+
+describe('lib/time.mjs: antigüedad y vencimientos', () => {
+  const ahora = Date.parse('2026-11-20T12:00:00Z');
+  test('ageText redondea a la unidad grande', () => {
+    assert.equal(ageText(ahora - 5 * 60_000, ahora), '5 min');
+    assert.equal(ageText(ahora - 3 * 3600_000, ahora), '3 h');
+    assert.equal(ageText(ahora - 2 * 86400_000, ahora), '2 día(s)');
+    assert.equal(ageText('no es fecha', ahora), '');
+  });
+
+  test('isFresh: dentro del plazo sí; vencido, del futuro o roto, no', () => {
+    assert.equal(isFresh(ahora - 1000, 60_000, ahora), true);
+    assert.equal(isFresh(ahora - 120_000, 60_000, ahora), false);
+    assert.equal(isFresh(ahora + 3600_000, 60_000, ahora), false);
+    assert.equal(isFresh(undefined, 60_000, ahora), false);
+  });
+
+  test('el relevo sigue mostrando la antigüedad con el formato que reconoce onlyNarrativeChanged', () => {
+    const md = render({
+      version: 1, agent: 'claude code', writtenAt: new Date().toISOString(),
+      facts: { branch: 'main', isRepo: true, dirty: [] }, commands: [],
+      subagents: [{ kind: 'Explore', conclusion: 'nada', at: new Date(Date.now() - 2 * 3600_000).toISOString() }],
+    });
+    assert.match(md, / — hace 2 h/);
+  });
+});
+
+test('readJson tolera el BOM que dejan algunos editores de Windows', () => {
+  const t = join(tmpdir(), `chaski-bom-${process.pid}.json`);
+  writeFileSync(t, '﻿{"a":1}');
+  try {
+    assert.deepEqual(readJson(t), { a: 1 });
+  } finally {
+    rmSync(t, { force: true });
+  }
 });
