@@ -3,7 +3,7 @@ import { join, dirname } from 'node:path';
 import { globalDir, readJsonForWrite } from '../lib/paths.mjs';
 import { writeAtomic } from '../lib/relay.mjs';
 import { pad } from './common.mjs';
-import { MARCA_INI, MARCA_FIN, cmd, CLIS, isInstalled, isProbeHookGroup, removeBlock } from './hook-config.mjs';
+import { PROBE_START, PROBE_END, cmd, findBlock, CLIS, isInstalled, isProbeHookGroup, removeBlock } from './hook-config.mjs';
 
 // --------------------------------------------------------------- probe
 //
@@ -58,15 +58,15 @@ export function probe(sub) {
       } else {
         mkdirSync(dirname(cli.config), { recursive: true });
         const previo = existsSync(cli.config) ? readFileSync(cli.config, 'utf8') : '';
-        const lineas = [MARCA_INI];
+        const lineas = [PROBE_START];
         for (const ev of eventos.slice(0, 2)) {
           lineas.push(`[[hooks.${ev}]]`, `[[hooks.${ev}.hooks]]`, 'type = "command"',
             // JSON.stringify es obligatorio: en TOML, "C:\Program Files\nodejs"
             // interpreta \n como salto de línea y el comando queda destruido.
             'command = ' + JSON.stringify(probeCmd(ev, name, true)), '');
         }
-        lineas.push(MARCA_FIN);
-        writeAtomic(cli.config, removeBlock(previo).trimEnd() + '\n\n' + lineas.join('\n') + '\n');
+        lineas.push(PROBE_END);
+        writeAtomic(cli.config, withoutCodexProbe(previo, cli.config).trimEnd() + '\n\n' + lineas.join('\n') + '\n');
       }
       console.log(`  ${pad(name)} sonda instalada`);
     } catch (e) {
@@ -101,27 +101,62 @@ function probeShow() {
 
 function probeClean() {
   console.log('\nQuitando la sonda\n');
+  let failed = false;
   for (const [name, cli] of Object.entries(CLIS)) {
-    const bak = cli.config + '.chaski-probe';
     try {
-      if (existsSync(bak)) { copyFileSync(bak, cli.config); unlinkSync(bak); console.log(`  ${pad(name)} restaurado`); }
-      else if (existsSync(cli.config)) {
-        if (cli.formato === 'toml-codex') writeAtomic(cli.config, removeBlock(readFileSync(cli.config, 'utf8')).trimEnd() + '\n');
+      if (!existsSync(cli.config)) continue;
+      const before = readFileSync(cli.config, 'utf8');
+      let after;
+      if (cli.formato === 'toml-codex') {
+        after = withoutCodexProbe(before, cli.config);
+      } else {
+        const s = readJsonForWrite(cli.config);
+        const original = JSON.stringify(s);
+        if (cli.formato === 'json-agy') delete s.chaskiProbe;
         else {
-          const s = readJsonForWrite(cli.config);
-          delete s.chaskiProbe;
-          if (s.hooks) for (const ev of Object.keys(s.hooks)) {
-            s.hooks[ev] = (s.hooks[ev] ?? []).filter((g) => !isProbeHookGroup(g));
-            if (!s.hooks[ev].length) delete s.hooks[ev];
+          for (const [ev, groups] of Object.entries(s.hooks ?? {})) {
+            if (!Array.isArray(groups)) continue;
+            const remaining = groups.filter((g) => !isProbeHookGroup(g));
+            if (remaining.length === groups.length) continue;
+            if (remaining.length) s.hooks[ev] = remaining;
+            else delete s.hooks[ev];
           }
-          writeAtomic(cli.config, JSON.stringify(s, null, 2));
         }
+        after = JSON.stringify(s) === original ? before : JSON.stringify(s, null, 2);
+      }
+      if (after !== before) {
+        writeAtomic(cli.config, after);
         console.log(`  ${pad(name)} sonda removida`);
       }
-    } catch (e) { console.log(`  ${pad(name)} FALLÓ: ${e?.message ?? e}`); }
+      const backup = cli.config + '.chaski-probe';
+      if (existsSync(backup)) unlinkSync(backup);
+    } catch (e) {
+      failed = true;
+      console.log(`  ${pad(name)} FALL\u00d3: ${e?.message ?? e}`);
+    }
   }
-  try { unlinkSync(probePath()); } catch {}
+  if (!failed && existsSync(probePath())) unlinkSync(probePath());
   console.log(`\nEl log queda en ${probeLogPath()} por si lo quieres mandar como fixture.\n`);
+}
+
+// Las sondas antiguas reemplazaban el bloque normal. Recupera solo ese
+// bloque del respaldo, junto con las tablas de confianza que contenga.
+function withoutCodexProbe(text, path) {
+  const cleaned = removeBlock(text, PROBE_START, PROBE_END);
+  const legacy = findBlock(cleaned);
+  if (!legacy) return cleaned;
+  const current = cleaned.slice(legacy.from, legacy.to);
+  const legacyCommands = [...current.matchAll(/^command\s*=\s*(".*")\s*$/gm)];
+  const isLegacyProbe = legacyCommands.some(([, encoded]) => {
+    try { return isProbeHookGroup({ command: JSON.parse(encoded) }); }
+    catch { return false; }
+  });
+  if (!isLegacyProbe) return cleaned;
+  const backup = path + '.chaski-probe';
+  const previous = existsSync(backup) ? readFileSync(backup, 'utf8') : '';
+  const original = findBlock(previous);
+  const recovered = original ? previous.slice(original.from, original.to) : '';
+  return cleaned.slice(0, legacy.from) + recovered + cleaned.slice(legacy.to);
 }
 
 function backupForProbe(ruta) {

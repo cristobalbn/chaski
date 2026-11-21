@@ -364,6 +364,67 @@ describe('probe', () => {
     }
   });
 
+  test('probe conserva los hooks normales y --clean conserva los cambios posteriores', () => {
+    const m = montar('chaski-probe-edits-');
+    try {
+      m.correr('init');
+      const claude = join(m.casa, '.claude', 'settings.json');
+      const agy = join(m.casa, '.gemini', 'config', 'hooks.json');
+      const codex = join(m.casa, '.codex', 'config.toml');
+      m.correr('probe');
+      const read = (path) => readFileSync(path, 'utf8');
+      for (const path of [claude, agy, codex]) {
+        assert.match(read(path), /sonda/);
+        assert.match(read(path), /capture/);
+      }
+      const claudeConfig = JSON.parse(read(claude));
+      const userHook = { hooks: [{ type: 'command', command: 'lint.sh' }] };
+      claudeConfig.hooks.Stop.push(userHook);
+      writeFileSync(claude, JSON.stringify(claudeConfig));
+      const agyConfig = JSON.parse(read(agy));
+      agyConfig.user = { Stop: [{ command: 'lint.sh' }] };
+      writeFileSync(agy, JSON.stringify(agyConfig));
+      writeFileSync(codex, 'model = "otro"\n' + read(codex) + '[hooks.state]\n"hooks.Stop:0:0".trusted_hash = "keep"\n');
+      m.correr('probe', '--clean');
+      for (const path of [claude, agy, codex]) {
+        assert.doesNotMatch(read(path), /sonda/);
+        assert.match(read(path), /capture/);
+      }
+      assert.deepEqual(JSON.parse(read(claude)).hooks.Stop.at(-1), userHook);
+      assert.deepEqual(JSON.parse(read(agy)).user, agyConfig.user);
+      assert.match(read(codex), /^model = "otro"/);
+      assert.match(read(codex), /trusted_hash = "keep"/);
+      m.correr('probe');
+      m.correr('uninstall');
+      for (const path of [claude, agy, codex]) {
+        assert.doesNotMatch(read(path), /sonda|capture/);
+      }
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('probe --clean recupera el bloque Codex reemplazado por una sonda antigua', () => {
+    const m = montar('chaski-probe-legacy-');
+    try {
+      m.correr('init');
+      const codex = join(m.casa, '.codex', 'config.toml');
+      const original = readFileSync(codex, 'utf8').trim();
+      writeFileSync(codex + '.chaski-probe', 'model = "viejo"\n' + original);
+      const legacy = [
+        'model = "otro"', '# >>> chaski (no editar a mano) >>>',
+        '[[hooks.Stop]]', '[[hooks.Stop.hooks]]', 'type = "command"',
+        'command = ' + JSON.stringify(join(m.casa, '.chaski', 'codex-sonda-Stop.cmd')),
+        '# <<< chaski <<<', '',
+      ].join('\n');
+      writeFileSync(codex, legacy);
+      m.correr('probe', '--clean');
+      assert.equal(readFileSync(codex, 'utf8'), 'model = "otro"\n' + original + '\n');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   test('probe --show sin sonda instalada no revienta', () => {
     const m = montar('chaski-probe-show-');
     try {

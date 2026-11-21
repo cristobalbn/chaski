@@ -129,11 +129,20 @@ export function isChaskiHookGroup(grupo) {
   return comandos.some((c) => typeof c === 'string' && firma.test(c));
 }
 
-export function removeBlock(texto) {
-  const i = texto.indexOf(MARCA_INI);
-  const j = texto.indexOf(MARCA_FIN);
-  if (i === -1 || j === -1 || j < i) return texto;
-  return texto.slice(0, i) + texto.slice(j + MARCA_FIN.length);
+export const PROBE_START = '# >>> chaski probe >>>';
+export const PROBE_END = '# <<< chaski probe <<<';
+
+export function findBlock(text, start = MARCA_INI, end = MARCA_FIN) {
+  const from = text.indexOf(start);
+  if (from === -1) return null;
+  const last = text.indexOf(end, from + start.length);
+  if (last === -1) return null;
+  return { from, to: last + end.length };
+}
+
+export function removeBlock(text, start, end) {
+  const block = findBlock(text, start, end);
+  return block ? text.slice(0, block.from) + text.slice(block.to) : text;
 }
 
 /**

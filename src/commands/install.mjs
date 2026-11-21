@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { readJsonForWrite, TAMBO, claudePluginEnabled, claudePluginEnabledForUser, CLAUDE_PLUGIN_ID } from '../lib/paths.mjs';
 import { writeAtomic } from '../lib/relay.mjs';
 import { AQUI, pad, backup } from './common.mjs';
-import { CAPTURE, INJECT, cmd, MARCA_INI, MARCA_FIN, CLIS, isInstalled, isChaskiHookGroup, isProbeHookGroup, removeBlock } from './hook-config.mjs';
+import { CAPTURE, INJECT, cmd, MARCA_INI, MARCA_FIN, PROBE_START, PROBE_END, CLIS, isInstalled, isChaskiHookGroup, isProbeHookGroup, removeBlock } from './hook-config.mjs';
 import { projectContext, projectRootNote } from './project.mjs';
 import { installStatusLine, restoreStatusLine } from './statusline.mjs';
 
@@ -472,10 +472,15 @@ export function uninstall() {
         // respaldo pisaba todo lo que el usuario cambió después del primer
         // init (y el trusted_hash que Codex escribe al conceder confianza).
         if (cli.formato === 'toml-codex') {
-          writeAtomic(cli.config, removeBlock(readFileSync(cli.config, 'utf8')).trimEnd() + '\n');
+          const before = readFileSync(cli.config, 'utf8');
+          const after = removeBlock(removeBlock(before), PROBE_START, PROBE_END);
+          if (after !== before) writeAtomic(cli.config, after.trimEnd() + '\n');
         } else {
           const s = readJsonForWrite(cli.config);
-          if (cli.formato === 'json-agy') delete s.chaski;
+          if (cli.formato === 'json-agy') {
+            delete s.chaski;
+            delete s.chaskiProbe;
+          }
           else if (s.hooks) {
             for (const ev of Object.keys(s.hooks)) {
               // La sonda de `probe` también es nuestra: desinstalar la quita.
@@ -484,10 +489,12 @@ export function uninstall() {
             }
             if (!Object.keys(s.hooks).length) delete s.hooks;
           }
-          if (cli.formato === 'json-claude' && restoreStatusLine(s)) {
+          const finalizeStatusLine = cli.formato === 'json-claude' ? restoreStatusLine(s) : null;
+          writeAtomic(cli.config, JSON.stringify(s, null, 2));
+          if (finalizeStatusLine) {
+            finalizeStatusLine();
             console.log(`  ${pad('statusline')} devuelta a como estaba antes de chaski`);
           }
-          writeAtomic(cli.config, JSON.stringify(s, null, 2));
         }
         console.log(`  ${pad(name)} hooks de chaski removidos` +
           (existsSync(bak) ? `; respaldo previo conservado en ${bak}` : ''));
