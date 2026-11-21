@@ -1,6 +1,6 @@
 {
   "name": "chaski",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Relevo de contexto entre Claude Code, Codex y Antigravity: guarda el estado del trabajo al terminar cada turno y lo entrega al agente siguiente.",
   "author": {
     "name": "Cristobal Barrera",

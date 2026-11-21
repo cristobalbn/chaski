@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { globalDir, readJson, currentBranch, usagePath, readOnlyTambo, readOnlyStatePath } from '../lib/paths.mjs';
+import { globalDir, readJson, loadConfig, currentBranch, usagePath, readOnlyTambo, readOnlyStatePath } from '../lib/paths.mjs';
 import { usageSummary } from '../lib/ask.mjs';
 import { writeAtomic } from '../lib/relay.mjs';
 import { redact, anonymize } from '../lib/secrets.mjs';
@@ -22,12 +22,13 @@ export function next() {
     ? `relevo al día (hace ${edadRelevo} min)`
     : 'sin relevo todavía';
 
+  const usage = readJson(usagePath(), {}) ?? {};
   const filas = [];
   for (const [name, cli] of Object.entries(CLIS)) {
     const instalado = isInstalled(cli.bin);
     const q = quota[name];
     // Cuota real, si la statusline de chaski la anotó (#82).
-    const uso = usageSummary((readJson(usagePath(), {}) ?? {})[name]);
+    const uso = usageSummary(usage[name]);
     const minsAgotado = q?.at ? Math.round((Date.now() - new Date(q.at).getTime()) / 60000) : null;
     // Un registro de agotamiento de más de 12 h ya expiró en cualquier ventana
     // de cuota de consumidor.
@@ -119,8 +120,9 @@ export function why(args) {
   const filtro = args.join(' ').trim().toLowerCase();
   console.log(`\nchaski why${filtro ? ` — "${filtro}"` : ''}\n`);
 
+  const tambo = readOnlyTambo(cwd);
   const entradas = [];
-  const histRuta = join(readOnlyTambo(cwd), 'historia', 'entries.jsonl');
+  const histRuta = join(tambo, 'historia', 'entries.jsonl');
   if (existsSync(histRuta)) {
     for (const linea of readFileSync(histRuta, 'utf8').split(/\r?\n/).filter(Boolean)) {
       try {
@@ -132,15 +134,16 @@ export function why(args) {
 
   // También revisa el estado vivo de cada rama por si una narrativa se
   // escribió a mano en estado.json y todavía no pasó por otra captura.
-  const branchesDir = join(readOnlyTambo(cwd), 'branches');
+  const branchesDir = join(tambo, 'branches');
   if (existsSync(branchesDir)) {
+    const config = loadConfig(cwd);
     for (const dir of readdirSync(branchesDir)) {
       const est = readJson(join(branchesDir, dir, 'estado.json'), null);
       if (!est?.narrative) continue;
       // La narrativa de estado.json la escribe el agente tal cual: se redacta
       // al mostrarla, como en el relevo (secretos y <private>). La de
       // historia/ ya se redactó al archivarse.
-      const texto = redact(String(est.narrative).trim(), loadFilterConfig(cwd)).texto;
+      const texto = redact(String(est.narrative).trim(), config).texto;
       const branch = est.facts?.branch ?? dir;
       if (entradas.some((e) => e.branch === branch && e.narrative === texto)) continue;
       entradas.push({
@@ -208,7 +211,7 @@ export function share(args) {
     return;
   }
 
-  const config = loadFilterConfig(cwd);
+  const config = loadConfig(cwd);
   const { texto: sinSecretos, redactions } = redact(String(estado.narrative).trim(), config);
   // decisiones/ se versiona: la carpeta personal (con el nombre de usuario) y
   // los correos no tienen por qué quedar en la historia de git del equipo.
@@ -263,18 +266,6 @@ export function share(args) {
   mkdirSync(decDir, { recursive: true });
   writeAtomic(destino, contenido);
   console.log(`Publicado en decisiones/${nombre}\n`);
-}
-
-function loadFilterConfig(cwd) {
-  const proyecto = readJson(join(cwd, 'chaski.json'), {}) ?? {};
-  const local = readJson(join(cwd, 'chaski.local.json'), {}) ?? {};
-  const global = readJson(join(globalDir(), 'config.json'), {}) ?? {};
-  return {
-    ...global,
-    ...proyecto,
-    ...local,
-    redact: [...(global.redact ?? []), ...(proyecto.redact ?? []), ...(local.redact ?? [])],
-  };
 }
 
 function slugify(s) {

@@ -164,8 +164,10 @@ export function readOnlyRelayPath(cwd, branch = undefined) { return join(readOnl
 export function readOnlyStatePath(cwd, branch = undefined) { return join(readOnlyBranchDir(cwd, branch), 'estado.json'); }
 
 /** Config y estado global de chaski, fuera de cualquier proyecto. */
+export function readOnlyGlobalDir() { return join(homedir(), '.chaski'); }
+
 export function globalDir() {
-  const dir = join(homedir(), '.chaski');
+  const dir = readOnlyGlobalDir();
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -370,18 +372,18 @@ export { existsSync };
  * coincide con lo que capture firmó.
  */
 export function loadConfig(cwd) {
-  const proyecto = readJson(join(cwd, 'chaski.json'), {}) ?? {};
-  const local = readJson(join(cwd, 'chaski.local.json'), {}) ?? {};
-  const global = readJson(join(globalDir(), 'config.json'), {}) ?? {};
-  // `redact` y `excludePaths` se concatenan: el archivo local puede sumar
-  // patrones, nunca quitar los del repo. Las claves escalares las pisa el
-  // nivel más específico.
-  const merged = { ...global, ...proyecto, ...local };
-  merged.redact = [...(global.redact ?? []), ...(proyecto.redact ?? []), ...(local.redact ?? [])];
-  merged.excludePaths = [
-    ...(global.excludePaths ?? []), ...(proyecto.excludePaths ?? []), ...(local.excludePaths ?? []),
-  ];
-  return merged;
+  const layers = [
+    join(globalDir(), 'config.json'),
+    join(cwd, 'chaski.json'),
+    join(cwd, 'chaski.local.json'),
+  ].map((path) => readJson(path, null))
+    .filter((layer) => layer && typeof layer === 'object' && !Array.isArray(layer));
+  const patterns = (key) => layers.flatMap((layer) => Array.isArray(layer[key]) ? layer[key] : []);
+  return {
+    ...layers.reduce((merged, layer) => ({ ...merged, ...layer }), {}),
+    redact: patterns('redact'),
+    excludePaths: patterns('excludePaths'),
+  };
 }
 
 /**
