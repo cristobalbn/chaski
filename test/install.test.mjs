@@ -4490,4 +4490,29 @@ describe('varias ventanas en el mismo proyecto', () => {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  test('doctor distingue plugin de proyecto vs usuario, ignora latidos corruptos y no marca sin-rama ni HEAD como huérfanos', () => {
+    const m = montar('chaski-doc-poda-32-');
+    try {
+      m.correr('init');
+      mkdirSync(join(m.proyecto, '.claude'), { recursive: true });
+      writeFileSync(join(m.proyecto, '.claude', 'settings.json'), JSON.stringify({
+        enabledPlugins: { 'chaski@chaski': true },
+      }));
+      mkdirSync(join(m.casa, '.chaski'), { recursive: true });
+      writeFileSync(join(m.casa, '.chaski', 'latidos.json'), JSON.stringify({
+        'claude code': null,
+        codex: 'fecha-invalida',
+        agy: '2026-11-21T20:00:00.000Z',
+      }));
+      // Crea un relevo en detached HEAD y verifica que doctor no lo cuenta como huérfano.
+      m.g('checkout', '-q', '--detach', 'HEAD');
+      stop(m, 's-detach');
+      const outDoc = m.correr('doctor');
+      assert.match(outDoc, /se silencian en este proyecto; siguen activos en los demás/);
+      assert.doesNotMatch(outDoc, /huérfanos/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });

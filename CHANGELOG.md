@@ -5,6 +5,25 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.32] - 2026-11-21
+
+### Corregido
+- `chaski doctor` diferencia cuando el plugin de Claude Code está activo solo en
+  el proyecto (sin pedir correr `init` para quitar los hooks de usuario que
+  siguen activos en otros repositorios), exige que el CLI esté instalado antes
+  de emitir el aviso de hooks nunca ejecutados e ignora entradas malformadas en
+  `~/.chaski/latidos.json`.
+- `usageSummary` y `quotaPressure` (`src/lib/ask.mjs`) no convierten valores
+  `null` o vacíos en `0 %`, omiten ventanas cuya hora de renovación (`resetsAt`)
+  ya pasó en `chaski next` y las rotulan `(ya renovada)` en `chaski doctor`.
+- `orphanPaths` (`src/lib/maintenance.mjs`) incluye la rama/estado activo
+  (`currentBranch` y `sin-rama` en repositorios sin commits) para no reportar ni
+  podar como huérfanos los relevos en `detached HEAD` o en repos recién
+  inicializados.
+- `loadConfig` (`src/lib/paths.mjs`) resuelve `projectDir(cwd)` para cargar
+  `chaski.json` y `chaski.local.json` también cuando se invoca desde una
+  subcarpeta o carpeta contenedora (como en `chaski probe`).
+
 ## [0.1.31] - 2026-11-21
 
 ### Corregido

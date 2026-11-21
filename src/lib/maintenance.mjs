@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { branchSlug, git, readJson, readOnlyTambo, readOnlyGlobalDir, globalDir, projectDir } from './paths.mjs';
+import { branchSlug, currentBranch, git, readJson, readOnlyTambo, readOnlyGlobalDir, globalDir, projectDir } from './paths.mjs';
 import { hasTime } from './budget.mjs';
 import { DAY_MS } from './time.mjs';
 import { writeAtomic } from './atomic.mjs';
@@ -34,6 +34,9 @@ function orphanPaths(cwd, budget) {
     live.add(branchSlug(full.slice(prefix.length)));
     if (legacy) live.add(branchSlug(legacy));
   }
+  if (!live.size) live.add('sin-rama');
+  const active = currentBranch(cwd, budget);
+  if (active) live.add(branchSlug(active));
   return readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && !live.has(entry.name))
     .map(({ name }) => ({ name, path: join(dir, name) }));

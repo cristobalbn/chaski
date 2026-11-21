@@ -308,10 +308,10 @@ export { existsSync };
  * coincide con lo que capture firmó.
  */
 export function loadConfig(cwd) {
+  const root = cwd ? projectDir(cwd) : cwd;
   const layers = [
     join(readOnlyGlobalDir(), 'config.json'),
-    join(cwd, 'chaski.json'),
-    join(cwd, 'chaski.local.json'),
+    ...(root ? [join(root, 'chaski.json'), join(root, 'chaski.local.json')] : []),
   ].map((path) => readJson(path, null))
     .filter((layer) => layer && typeof layer === 'object' && !Array.isArray(layer));
   const patterns = (key) => layers.flatMap((layer) => Array.isArray(layer[key]) ? layer[key] : []);
