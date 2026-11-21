@@ -18,6 +18,8 @@ falta leerlo.
 - [Turnos cortados](#turnos-cortados)
 - [Límites conocidos: detalle y mediciones](#límites-conocidos-detalle-y-mediciones)
 - [Términos de uso de los proveedores](#términos-de-uso-de-los-proveedores)
+- [Publicación del relevo](#publicación-del-relevo)
+- [Lectura incremental de transcripts](#lectura-incremental-de-transcripts)
 
 ---
 
@@ -66,8 +68,8 @@ conservadores, y en este orden:
 
 ## Capturar payloads (`chaski probe`)
 
-Herramienta de diagnóstico: instala una sonda que vuelca a disco el payload
-crudo que cada CLI le pasa a sus hooks. Sirve para ver por qué un hook no
+Herramienta de diagnóstico: instala una sonda que registra el payload de los
+hooks con redacción de credenciales y datos personales reconocibles. Sirve para ver por qué un hook no
 captura, y para aportar fixtures si agregas soporte a otro CLI.
 
 ```bash
@@ -80,9 +82,15 @@ chaski probe --clean      # quita la sonda
 Tiene que ser una sesión interactiva: ninguno de los tres dispara hooks en
 modo headless. `chaski probe` instala una sonda temporal en
 `~/.chaski/sonda.mjs`; `--show` muestra los payloads capturados en
-`~/.chaski/sonda.log`. `--clean` quita la sonda y conserva los cambios hechos
+`~/.chaski/sonda.log` (tope de 256 KiB). La sonda registra un estado cuando
+la entrada supera 64 KiB o el JSON es inválido. `--clean` quita la sonda y conserva los cambios hechos
 en la configuración mientras estaba activa. Los hooks normales siguen activos
 en los tres CLIs.
+
+La sonda analiza JSON antes de redactar. Así mantiene útiles las claves y
+los tipos ordinarios para crear fixtures. El log se reemplaza bajo un lock
+y recorta registros completos. El límite de tamaño permite inspeccionar el
+archivo con `--show` y protege las escrituras de varias sesiones.
 
 ## Actualizar: por qué `init` no es opcional
 
@@ -232,7 +240,7 @@ riesgo tu cuenta no debería estar a un flag de distancia.
 
 `estado.json` guarda los hechos, la narrativa y una copia acotada del Markdown
 firmado. La captura lo reemplaza primero y después publica `relevo.md`. El
-arranque puede usar la copia firmada si la vista falta o si su firma coincide
+arranque puede usar la copia firmada si la vista falta, no se puede abrir o su firma coincide
 con la última vista publicada. Los relevos anteriores conservan su lectura
 habitual. Una vista editada conserva el aviso de firma inválida.
 

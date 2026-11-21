@@ -13,7 +13,7 @@ node src/cli.mjs cost         # reporta gasto externo ($0) y turnos extra pedido
 node src/cli.mjs why [tema]   # busca decisiones pasadas en .tambo/historia/ y decisiones/
 node src/cli.mjs share [tema] # publica la narrativa en decisiones/ (con confirmación o --yes)
 node src/cli.mjs uninstall    # revierte desde respaldo
-node src/cli.mjs probe        # captura el payload crudo de los hooks
+node src/cli.mjs probe        # captura el payload de los hooks con redacción
 node src/cli.mjs version      # imprime la versión de package.json (--version / -v)
 npm run check                      # chequeo de sintaxis (no hay build)
 npm test                           # node:test, sin dependencias

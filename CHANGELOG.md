@@ -5,7 +5,11 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.14] - 2026-11-21
+
 ### Corregido
+- La sonda conserva el JSON útil para diagnóstico y redacta credenciales
+  antes de escribir. También limita el tamaño de la entrada y el historial.
 - El lector reconoce rollouts de Codex sin ordinal y comprueba que el
   transcript sea un archivo regular antes de leerlo.
 - Los subcomandos recorren el perfil de Codex indicado por `CODEX_HOME`.

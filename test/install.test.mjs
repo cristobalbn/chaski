@@ -570,6 +570,46 @@ describe('probe', () => {
     }
   });
 
+  test('la sonda conserva JSON útil, redacta valores y acota el log', () => {
+    const m = montar('chaski-probe-mask-');
+    try {
+      m.correr('probe');
+      const script = join(m.casa, '.chaski', 'sonda.mjs');
+      const log = join(m.casa, '.chaski', 'sonda.log');
+      writeFileSync(join(m.proyecto, 'chaski.json'), JSON.stringify({ redact: ['local-secret-[0-9]+'] }));
+      const args = [script, 'Stop', 'codex'];
+      const run = (input) => execFileSync(process.execPath, args, { env: m.entorno, encoding: 'utf8', input });
+      const token = 'ghp_1234567890abcdefghijklmnopqrstuvwxAB';
+      const input = JSON.stringify({
+        cwd: m.proyecto, apiKey: 'low-entropy-key',
+        metadata: { max_tokens: 400, label: 'local-secret-934' },
+        prompt: 'Mensaje con ' + token,
+      });
+      run(input);
+      const raw = readFileSync(log, 'utf8');
+      if (process.platform !== 'win32') assert.equal(statSync(log).mode & 0o777, 0o600);
+      assert.match(raw, /===== Stop \| codex/);
+      const entry = JSON.parse(raw.trimEnd().split('\n').at(-1));
+      assert.equal(entry.metadata.max_tokens, 400);
+      assert.match(entry.apiKey, /redactado/);
+      assert.match(entry.metadata.label, /redactado/);
+      assert.match(entry.prompt, /redactado/);
+      for (const secret of [token, 'low-entropy-key', 'local-secret-934']) {
+        assert.ok(input.includes(secret));
+        assert.ok(!raw.includes(secret));
+      }
+      run(JSON.stringify({ prompt: 'a'.repeat(66_000) }));
+      assert.match(readFileSync(log, 'utf8'), /input-too-large/);
+      writeFileSync(log, 'entrada de diagnóstico antigua\n'.repeat(12_000));
+      run('{malformado');
+      const bounded = readFileSync(log, 'utf8');
+      assert.match(bounded, /invalid-json/);
+      assert.ok(Buffer.byteLength(bounded) <= 256 * 1024);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   test('probe conserva los hooks normales y --clean conserva los cambios posteriores', () => {
     const m = montar('chaski-probe-edits-');
     try {
@@ -2395,6 +2435,29 @@ describe('narrativa guardada después de la última captura', () => {
       committed.relay.markdown += '\nTexto alterado\n';
       writeFileSync(ruta, JSON.stringify(committed));
       assert.equal(inject(m), '');
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('una vista bloqueada permite archivar la narrativa confirmada', () => {
+    const { m, dir, ruta } = preparar('chaski-view-blocked-');
+    try {
+      const view = join(dir, 'relevo.md');
+      rmSync(view);
+      mkdirSync(view);
+      const state = JSON.parse(readFileSync(ruta, 'utf8'));
+      state.narrative = 'Narrativa archivada con vista pendiente.';
+      state.narrativeWrittenAt = new Date().toISOString();
+      writeFileSync(ruta, JSON.stringify(state));
+      const captured = spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'claude-code'], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ cwd: m.proyecto, session_id: 'n1' }),
+      });
+      assert.equal(captured.status, 0);
+      assert.match(captured.stderr, /vista del relevo pendiente/);
+      assert.match(inject(m), /Narrativa archivada con vista pendiente/);
+      assert.match(readFileSync(join(m.proyecto, '.tambo', 'historia', 'entries.jsonl'), 'utf8'), /Narrativa archivada con vista pendiente/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

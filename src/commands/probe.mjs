@@ -7,7 +7,7 @@ import { PROBE_START, PROBE_END, cmd, findBlock, CLIS, isInstalled, isProbeHookG
 
 // --------------------------------------------------------------- probe
 //
-// Captura el payload crudo que cada CLI le pasa a sus hooks.
+// Registra la estructura del payload con valores sensibles redactados.
 //
 // Existe porque los payloads de Codex y agy no están documentados campo por
 // campo, y porque NINGUNO de los tres dispara hooks en modo headless: hay que
@@ -26,12 +26,9 @@ export function probe(sub) {
 
   console.log('\nchaski probe — captura de payloads\n');
   writeAtomic(probePath(), [
-    "import { appendFileSync, readFileSync } from 'node:fs';",
-    "let raw = ''; try { raw = readFileSync(0, 'utf8'); } catch {}",
-    `appendFileSync(${JSON.stringify(probeLogPath())},`,
-    "  '\\n===== ' + (process.argv[2] || '?') + ' | ' + (process.argv[3] || '?') +",
-    "  ' | ' + new Date().toISOString() + '\\n' + raw.slice(0, 4000) + '\\n');",
-  ].join('\n'));
+    `import { captureProbe } from ${JSON.stringify(new URL('../lib/probe-log.mjs', import.meta.url).href)};`,
+    `captureProbe(${JSON.stringify(probeLogPath())}, process.argv[2], process.argv[3]);`,
+  ].join('\n'), { mode: 0o600 });
   try { unlinkSync(probeLogPath()); } catch {}
 
   for (const [name, cli] of Object.entries(CLIS)) {
