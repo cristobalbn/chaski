@@ -60,7 +60,7 @@ function main() {
     // equivocada— y derivaría los facts de git del árbol del hijo, que puede
     // ser otro worktree.
     if (ev.hook_event_name === 'SubagentStop') {
-      return promote(ev, cwd, config);
+      return promote(ev, cwd, config, budget);
     }
 
     // Los demás eventos de un subagente se descartan: su exploración
@@ -234,9 +234,10 @@ function main() {
     //
     // La cuota (#82) viene de la statusline de ese CLI (statusline.mjs); sin
     // ella, `cuota` es null y la política queda como antes.
-    const cuota = ev.hook_event_name === 'Stop'
+    const puedePedir = ev.hook_event_name === 'Stop' && !estado.sealedAtLimit;
+    const cuota = puedePedir
       ? quotaPressure((readJson(usagePath(), {}) ?? {})[estado.agent], config) : null;
-    const motivo = ev.hook_event_name === 'Stop'
+    const motivo = puedePedir
       ? shouldAsk(ev, estado, { ...conversacion, head: previo.head }, config, Date.now(), cuota) : null;
     if (motivo) {
       estado.askedAt = estado.writtenAt;
@@ -332,14 +333,15 @@ function ok() { process.exitCode = 0; }
  * Resultó innecesario: el payload de `SubagentStop` ya trae la conclusión, así
  * que un archivo intermedio solo agregaría algo que limpiar.
  */
-function promote(ev, cwd, config) {
+function promote(ev, cwd, config, budget = null) {
   let liberar = null;
   try {
     if (!existsSync(join(readOnlyTambo(cwd), 'branches'))) return ok();
-    liberar = acquireLock(cwd);
+    const waitMs = budget ? Math.max(0, Math.min(220, budget.remaining() - 350)) : 220;
+    liberar = acquireLock(cwd, undefined, waitMs);
     if (!liberar) return ok();
 
-    const dir = readOnlyBranchDir(cwd, currentBranch(cwd));
+    const dir = readOnlyBranchDir(cwd, currentBranch(cwd, budget));
     const rutaEstado = join(dir, 'estado.json');
     const estado = readJson(rutaEstado, null);
     // Sin relevo del padre no hay dónde promote. Crear uno desde un subagente

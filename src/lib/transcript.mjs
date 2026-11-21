@@ -109,8 +109,12 @@ function extract(event, res, lookup) {
  * `set -e`, que no informan nada de lo que pasó en la sesión.
  */
 function meaningfulLine(comando) {
+  const colapsado = String(comando)
+    .replace(/<private>[\s\S]*?(?:<\/private>|$)/gi, '<private></private>')
+    .replace(/-----BEGIN[A-Z ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY(?: BLOCK)?-----/g,
+      '-----BEGIN PRIVATE KEY-----x-----END PRIVATE KEY-----');
   const RUIDO = /^\s*(cd\s|set\s+-|export\s|source\s|\.\s|#|echo\s+"?===|if\s|fi$|then$|else$|done$|do$)/i;
-  const lineas = comando.split('\n').map((l) => l.trim()).filter(Boolean);
+  const lineas = colapsado.split('\n').map((l) => l.trim()).filter(Boolean);
   const util = lineas.find((l) => !RUIDO.test(l));
   let elegida = util ?? lineas[0] ?? '';
   // `cd <ruta> && comando` es el patrón más común de todos: lo que informa

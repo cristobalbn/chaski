@@ -6,7 +6,7 @@
 // Ninguna función lanza: las llaman los hooks (invariante 4).
 import { existsSync, readFileSync, mkdirSync, fstatSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
-import { tambo, readOnlyTambo, git } from './paths.mjs';
+import { tambo, readOnlyTambo, git, loadConfig } from './paths.mjs';
 import { writeAtomic } from './atomic.mjs';
 import { redact } from './secrets.mjs';
 import { canonicalAgent } from './payload.mjs';
@@ -29,8 +29,8 @@ export function recordHistory(cwd, estado, config) {
     const branch = estado.facts?.branch ?? 'sin-rama';
     if (ultima && ultima.branch === branch && ultima.narrative === texto) return true;
     const entrada = {
-      at: estado.narrativeWrittenAt ?? estado.writtenAt,
-      author: canonicalAgent(estado.narrativeAuthor ?? estado.agent),
+      at: estado.narrativeWrittenAt || estado.writtenAt,
+      author: canonicalAgent(estado.narrativeAuthor || estado.agent),
       branch,
       head: estado.head ?? null,
       narrative: texto,
@@ -102,7 +102,8 @@ export function latestMergedBranchEntry(cwd, estado, budget = null) {
 export function mergedBranchNarrative(cwd, estado, budget) {
   const ultima = latestMergedBranchEntry(cwd, estado, budget);
   if (!ultima) return null;
-  const corto = ultima.narrative.length > 900 ? ultima.narrative.slice(0, 900).trimEnd() + '…' : ultima.narrative;
+  const limpio = redact(ultima.narrative, loadConfig(cwd)).texto.trim();
+  const corto = limpio.length > 900 ? limpio.slice(0, 900).trimEnd() + '…' : limpio;
   const hace = ageText(ultima.at);
   return [
     `## Narrativa más reciente: de la rama \`${ultima.branch}\` (ya no existe; probablemente se fusionó)`,

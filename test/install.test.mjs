@@ -4400,4 +4400,94 @@ describe('varias ventanas en el mismo proyecto', () => {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  test('SubagentStop espera el lock breve, Stop con límite de cuota no pide narrativa, inject detecta reset de HEAD e inyecta rama fusionada sin relevo propio', () => {
+    const m = montar('chaski-hooks-31-');
+    try {
+      // 1. Stop de agy sellado por límite de cuota no debe pedir narrativa.
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 1;\n');
+      const rLimite = spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', 'agy'], {
+        cwd: m.proyecto,
+        env: m.entorno,
+        input: JSON.stringify({
+          cwd: m.proyecto,
+          conversationId: 's-lim',
+          hook_event_name: 'Stop',
+          terminationReason: 'MAX_TOKEN_BUDGET_EXCEEDED',
+          error: 'quota exceeded',
+          executionNum: 0,
+        }),
+        encoding: 'utf8',
+      });
+      assert.equal(rLimite.status, 0);
+      assert.equal(rLimite.stdout.trim(), '', 'un Stop sellado por cuota no debe pedir narrativa');
+
+      // 2. SubagentStop espera si el lock se libera dentro de la ventana.
+      const lock = join(m.proyecto, '.tambo', '.lock');
+      mkdirSync(lock, { recursive: true });
+      spawn(process.execPath, ['-e', `setTimeout(() => require('node:fs').rmSync(${JSON.stringify(lock)}, { recursive: true, force: true }), 40)`], {
+        stdio: 'ignore',
+      });
+      const rSub = spawnSync(process.execPath, [join(SRC, 'capture.mjs'), 'SubagentStop', 'claude-code'], {
+        cwd: m.proyecto,
+        env: m.entorno,
+        input: JSON.stringify({
+          cwd: m.proyecto,
+          session_id: 's-lim',
+          hook_event_name: 'SubagentStop',
+          agent_type: 'Explore',
+          stop_reason: 'end_turn',
+          last_assistant_message: 'Conclusión promovida tras esperar el lock.',
+        }),
+        encoding: 'utf8',
+      });
+      assert.equal(rSub.status, 0);
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const est = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'branches', rama, 'estado.json'), 'utf8'));
+      assert.equal(est.subagents?.length, 1, 'SubagentStop debía esperar el lock y guardar la conclusión');
+
+      // 3. detectDrift avisa si HEAD retrocede con git reset --hard.
+      m.g('add', '-A');
+      m.g('commit', '-qm', 'c2');
+      stop(m, 's-lim');
+      m.g('reset', '--hard', 'HEAD~1');
+      const rInjectReset = spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'SessionStart', 'claude-code'], {
+        cwd: m.proyecto,
+        env: m.entorno,
+        input: JSON.stringify({ cwd: m.proyecto, session_id: 's-nueva', hook_event_name: 'SessionStart' }),
+        encoding: 'utf8',
+      });
+      assert.match(rInjectReset.stdout, /El HEAD cambió de `[0-9a-f]+` a `[0-9a-f]+` \(posible reset o rebase\)/);
+
+      // 4. Narrativa de rama fusionada se inyecta aunque la rama actual no tenga relevo propio y se re-redacta con chaski.json.
+      m.g('checkout', '-qb', 'feat/efimera');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 2;\n');
+      stop(m, 's-efimera');
+      const dirEfimera = join(m.proyecto, '.tambo', 'branches');
+      const slugEfimera = readdirSync(dirEfimera).find((d) => d.startsWith('feat-efimera'));
+      const rutaEfimera = join(dirEfimera, slugEfimera, 'estado.json');
+      const estEfimera = JSON.parse(readFileSync(rutaEfimera, 'utf8'));
+      estEfimera.narrative = 'Cerramos feat/efimera con CLAVE_INTERNA_987654.';
+      estEfimera.narrativeAuthor = 'codex';
+      estEfimera.narrativeWrittenAt = new Date(Date.now() + 2000).toISOString();
+      writeFileSync(rutaEfimera, JSON.stringify(estEfimera, null, 2));
+      stop(m, 's-efimera'); // archiva en historia/entries.jsonl
+      m.g('checkout', '-q', rama);
+      m.g('branch', '-D', 'feat/efimera');
+      rmSync(join(m.proyecto, '.tambo', 'branches', rama), { recursive: true, force: true });
+      writeFileSync(join(m.proyecto, 'chaski.json'), JSON.stringify({ redact: ['CLAVE_INTERNA_\\d+'] }));
+
+      const rInjectMerged = spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'SessionStart', 'claude-code'], {
+        cwd: m.proyecto,
+        env: m.entorno,
+        input: JSON.stringify({ cwd: m.proyecto, session_id: 's-main-limpia', hook_event_name: 'SessionStart' }),
+        encoding: 'utf8',
+      });
+      assert.match(rInjectMerged.stdout, /Narrativa más reciente: de la rama `feat\/efimera`/);
+      assert.doesNotMatch(rInjectMerged.stdout, /CLAVE_INTERNA_987654/);
+      assert.match(rInjectMerged.stdout, /\[redactado: patron-usuario\]/);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });

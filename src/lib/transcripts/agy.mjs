@@ -65,8 +65,8 @@ export function extractAgy(ev, res, { byId, pending, recordCommand, redactComman
       return;
     }
     // Si la lectura incremental arrancó después del PLANNER_RESPONSE, asocia
-    // el task id o la cabecera explícita de salida al comando pendiente.
-    const unresolved = res.commands.find((c) => c.exit === null);
+    // el task id o la cabecera explícita de salida al comando pendiente más reciente.
+    const unresolved = res.commands.findLast((c) => c.exit === null);
     if (!unresolved) return;
     if (taskId) {
       unresolved.id = taskId;
@@ -82,7 +82,7 @@ export function extractAgy(ev, res, { byId, pending, recordCommand, redactComman
     const taskId = stepFinishedTaskId(contenido);
     const exit = taskId ? stepHeaderExit(contenido) : null;
     if (taskId && exit !== null) {
-      const command = byId.get(taskId) ?? res.commands.find((c) => c.exit === null);
+      const command = byId.get(taskId);
       if (command) command.exit = exit;
     }
     return;

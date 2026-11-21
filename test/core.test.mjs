@@ -329,6 +329,49 @@ describe('Antigravity actual: tool_calls y pasos GENERIC', () => {
     assert.equal(completed.commands[0].exit, 0);
   });
 
+  test('SYSTEM_MESSAGE de un taskId desplazado no cierra otra tarea abierta y GENERIC incremental cierra el comando más reciente', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-agy-order-'));
+    try {
+      const ruta = join(dir, 't.jsonl');
+      writeFileSync(ruta, [
+        JSON.stringify({ step_index: 1, type: 'PLANNER_RESPONSE', status: 'DONE', tool_calls: [{ name: 'run_command', args: { CommandLine: 'npm test' } }] }),
+        '',
+      ].join('\n'));
+      const first = transcriptFacts(ruta, 0, null, null, [{ cmd: 'npm run dev', id: 'conv-1/task-1', exit: null }]);
+      writeFileSync(ruta, readFileSync(ruta, 'utf8') + [
+        JSON.stringify({ step_index: 2, type: 'GENERIC', status: 'DONE', content: 'Command exited with code 0.\n' }),
+        JSON.stringify({ step_index: 3, type: 'SYSTEM_MESSAGE', status: 'DONE', content: 'Task id "conv-1/task-evicted" finished with result:\nCommand exited with code 1.\n' }),
+        '',
+      ].join('\n'));
+      const second = transcriptFacts(ruta, first.offset, null, null, first.commands, first.identity);
+      assert.equal(second.commands[0].cmd, 'npm run dev');
+      assert.equal(second.commands[0].exit, null, 'no debía cerrar la tarea en segundo plano anterior');
+      assert.equal(second.commands[1].cmd, 'npm test');
+      assert.equal(second.commands[1].exit, 0, 'debía cerrar el comando más reciente');
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('meaningfulLine colapsa bloques multilínea <private> y PRIVATE KEY antes de elegir la línea', () => {
+    const pem = ['-----BEGIN ', 'PRIVATE KEY-----\nsecreto_corto\n-----END ', 'PRIVATE KEY-----'].join('');
+    const result = parse([
+      {
+        type: 'PLANNER_RESPONSE', status: 'DONE',
+        tool_calls: [
+          { name: 'run_command', args: { CommandLine: `export KEY="${pem}"` } },
+          { name: 'run_command', args: { CommandLine: '# <private>\ncurl https://acme.internal/client\n# </private>' } },
+        ],
+      },
+    ]);
+    assert.equal(result.commands.length, 2);
+    assert.doesNotMatch(result.commands[0].cmd, /secreto_corto/);
+    assert.match(result.commands[0].cmd, /\[redactado: clave-privada\]/);
+    assert.doesNotMatch(result.commands[1].cmd, /acme\.internal/);
+    assert.match(result.commands[1].cmd, /\[privado\]/);
+    assert.ok(result.redactions >= 2);
+  });
+
   test('lee solo la cabecera previa a Command output y desenrolla args en JSON compacto', () => {
     const token = ['sk', '-', 'a'.repeat(32)].join('');
     const result = parse([
