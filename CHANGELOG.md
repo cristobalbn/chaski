@@ -5,6 +5,21 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.33] - 2026-11-21
+
+### Corregido
+- `chaski why` ordena cronológicamente los resultados entre
+  `.tambo/historia/entries.jsonl`, `branches/` y `decisiones/` antes de recortar
+  a los 10 más recientes (evitando que 10+ archivos antiguos en `decisiones/`
+  oculten o queden por encima de narrativas recientes) e ignora narrativas en
+  blanco.
+- `chaski doctor` usa coincidencia no-greedy en `command = "..."` de
+  `config.toml` para no absorber comentarios en la misma línea con comillas, y
+  reconoce rutas sin comillas en `missingStatusLineTarget`.
+- `chaski init --statusline` propaga código de salida `1` si `installStatusLine`
+  falla, y `installClaude` / `uninstall` toleran entradas no-array o vacías en
+  `settings.json → hooks`.
+
 ## [0.1.32] - 2026-11-21
 
 ### Corregido

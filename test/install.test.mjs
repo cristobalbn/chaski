@@ -4515,4 +4515,53 @@ describe('varias ventanas en el mismo proyecto', () => {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  test('why ordena cronológicamente entre historia y decisiones, doctor ignora comillas en comentario TOML y uninstall tolera hooks no-array', () => {
+    const m = montar('chaski-why-orden-33-');
+    try {
+      // 1. Archivos antiguos en decisiones/ no desplazan ni aparecen por encima de historia/ reciente.
+      mkdirSync(join(m.proyecto, 'decisiones'), { recursive: true });
+      for (let i = 1; i <= 11; i++) {
+        const dia = String(i).padStart(2, '0');
+        writeFileSync(join(m.proyecto, 'decisiones', `2026-01-${dia}-vieja.md`), `Decisión vieja ${i} sobre pagos.\n`);
+      }
+      mkdirSync(join(m.proyecto, '.tambo', 'historia'), { recursive: true });
+      writeFileSync(join(m.proyecto, '.tambo', 'historia', 'entries.jsonl'), JSON.stringify({
+        at: '2026-11-21T20:00:00.000Z',
+        author: 'codex',
+        branch: 'feat/pagos',
+        head: 'abc1234',
+        narrative: 'Narrativa reciente de hoy sobre pagos.',
+      }) + '\n');
+
+      const outWhy = m.correr('why', 'pagos');
+      const posReciente = outWhy.indexOf('Narrativa reciente de hoy sobre pagos.');
+      const posVieja = outWhy.indexOf('Decisión vieja 11 sobre pagos.');
+      assert.ok(posReciente !== -1, 'las decisiones viejas desplazaron la narrativa reciente de historia/');
+      assert.ok(posReciente < posVieja, 'la narrativa reciente debe aparecer antes que la decisión vieja');
+
+      // 2. doctor no confunde un comentario inline con comillas en config.toml.
+      mkdirSync(join(m.casa, '.codex'), { recursive: true });
+      writeFileSync(join(m.casa, '.codex', 'config.toml'), [
+        '[[hooks.Stop]]',
+        '[[hooks.Stop.hooks]]',
+        'type = "command"',
+        'command = "otro-script.sh" # comentario sobre "capture.mjs"',
+        '',
+      ].join('\n'));
+      const outDoc = m.correr('doctor');
+      assert.match(outDoc, /codex\s+hooks NO registrados/);
+
+      // 3. uninstall tolera hooks[ev] no-array y hooks vacío sin reescribir.
+      mkdirSync(join(m.casa, '.claude'), { recursive: true });
+      const claudeCfg = join(m.casa, '.claude', 'settings.json');
+      const raw = '{\n  "hooks": { "Stop": "invalido" }\n}\n';
+      writeFileSync(claudeCfg, raw);
+      const outUninst = m.correr('uninstall');
+      assert.match(outUninst, /claude code\s+nada que revertir/);
+      assert.equal(readFileSync(claudeCfg, 'utf8'), raw);
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });

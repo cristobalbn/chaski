@@ -220,7 +220,7 @@ function inspectRegisteredHooks(cli) {
         evento = m ? m[1] : null;
         continue;
       }
-      const c = l.match(/^command\s*=\s*(".*"|'.*')/);
+      const c = l.match(/^command\s*=\s*("(?:\\.|[^"\\])*"|'[^']*')/);
       if (evento && c) {
         let valor;
         try { valor = c[1].startsWith('"') ? JSON.parse(c[1]) : c[1].slice(1, -1); } catch { valor = c[1]; }
@@ -282,7 +282,8 @@ function missingHookTarget(comando) {
 }
 
 function missingStatusLineTarget(comando) {
-  const m = String(comando ?? '').match(/["']([^"']+?statusline\.mjs)["']/);
-  if (m && !existsSync(m[1])) return m[1];
+  const m = String(comando ?? '').match(/["']([^"']+?statusline\.mjs)["']|((?:[A-Za-z]:)?[^\s"']+?statusline\.mjs)\b/);
+  const target = m?.[1] ?? m?.[2];
+  if (target && !existsSync(target)) return target;
   return null;
 }

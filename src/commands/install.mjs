@@ -108,15 +108,17 @@ export function init(args = []) {
   if (estado.configurados.length || estado.yaEstaban.length) tambo(cwd);
   // Opt-in (#82): la statusline es UNA sola entrada en settings.json y suele
   // ser algo que el usuario armó a su gusto. Solo se toca si lo pide.
-  if (args.includes('--statusline')) installStatusLine();
+  const statuslineFallida = args.includes('--statusline') && !installStatusLine();
   finalSummary(cwd, estado);
 
   // Un CLI que no se pudo configurar tiene que verse en el código de salida,
   // no solo en una línea del informe: si un agent o un script corre init,
   // el exit 0 le dice que todo salió bien.
-  if (fallos) {
-    console.error(`
+  if (fallos || statuslineFallida) {
+    if (fallos) {
+      console.error(`
 chaski: ${fallos} CLI(s) no se pudieron configurar. Ver arriba.`);
+    }
     process.exitCode = 1;
   }
 }
@@ -208,8 +210,9 @@ function installClaude(ruta, { viaPlugin = false } = {}) {
     if (!existsSync(ruta)) return null;
     let quitados = 0;
     for (const ev of Object.keys(s.hooks ?? {})) {
-      const antes = (s.hooks[ev] ?? []).length;
-      s.hooks[ev] = (s.hooks[ev] ?? []).filter((g) => !isChaskiHookGroup(g));
+      if (!Array.isArray(s.hooks[ev])) continue;
+      const antes = s.hooks[ev].length;
+      s.hooks[ev] = s.hooks[ev].filter((g) => !isChaskiHookGroup(g));
       quitados += antes - s.hooks[ev].length;
       if (!s.hooks[ev].length) delete s.hooks[ev];
     }
@@ -490,13 +493,17 @@ export function uninstall() {
             delete s.chaski;
             delete s.chaskiProbe;
           }
-          else if (s.hooks) {
+          else if (s.hooks && typeof s.hooks === 'object' && !Array.isArray(s.hooks)) {
+            let removedAny = false;
             for (const ev of Object.keys(s.hooks)) {
+              if (!Array.isArray(s.hooks[ev])) continue;
               // La sonda de `probe` también es nuestra: desinstalar la quita.
-              s.hooks[ev] = (s.hooks[ev] ?? []).filter((g) => !isChaskiHookGroup(g) && !isProbeHookGroup(g));
-              if (!s.hooks[ev].length) delete s.hooks[ev];
+              const beforeLen = s.hooks[ev].length;
+              s.hooks[ev] = s.hooks[ev].filter((g) => !isChaskiHookGroup(g) && !isProbeHookGroup(g));
+              if (s.hooks[ev].length !== beforeLen) removedAny = true;
+              if (!s.hooks[ev].length && beforeLen > 0) delete s.hooks[ev];
             }
-            if (!Object.keys(s.hooks).length) delete s.hooks;
+            if (removedAny && !Object.keys(s.hooks).length) delete s.hooks;
           }
           finalizeStatusLine = cli.formato === 'json-claude' ? restoreStatusLine(s) : null;
           if (JSON.stringify(s) !== original || finalizeStatusLine) {
