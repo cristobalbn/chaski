@@ -43,7 +43,8 @@ export function next() {
   // Preferimos sugerir un CLI disponible distinto del que acaba de sellar por
   // límite; si todos están disponibles, el primero instalado.
   const disponibles = filas.filter((f) => f.instalado && !f.agotado);
-  const sugerido = disponibles.find((f) => estado.sealedAtLimit ? f.name !== estado.agent : true)
+  const agenteSellado = estado.agent ? canonicalAgent(estado.agent) : null;
+  const sugerido = disponibles.find((f) => estado.sealedAtLimit ? f.name !== agenteSellado : true)
     ?? disponibles[0]
     ?? null;
 
@@ -118,7 +119,8 @@ function activeOpenTurns(cwd, ahora = Date.now()) {
   const agentes = [];
   for (const t of Object.values(crudo)) {
     if (isFresh(t?.at, MODEL_TEXT_TTL_MS, ahora)) {
-      agentes.push(String(t?.agent ?? 'otro agente').replace(/[^\w .-]/g, ''));
+      const nombre = t?.agent ? canonicalAgent(t.agent) : 'otro agente';
+      agentes.push(String(nombre).replace(/[^\w .-]/g, ''));
     }
   }
   return [...new Set(agentes)];
@@ -153,7 +155,7 @@ export function cost() {
 
   console.log('Por CLI');
   for (const name of Object.keys(CLIS)) {
-    const de = (l) => l.filter((x) => x.agent === name);
+    const de = (l) => l.filter((x) => canonicalAgent(x?.agent) === name);
     const n7 = de(narr7d).length;
     const nTot = de(narratives).length;
     console.log(`  ${pad(name)} ${n7} narrativa(s) en 7d (${nTot} total) · ${enStop(de(asks7d)).length} en Stop y ${diferidas(de(asks7d)).length} diferida(s) en 7d`);
@@ -279,7 +281,9 @@ export function share(args) {
 
   const branch = currentBranch(cwd);
   const estado = readBranchState(cwd, branch);
-  if (!estado.narrative || !String(estado.narrative).trim()) {
+  const tienePropia = Boolean(estado.narrative && String(estado.narrative).trim());
+  const heredada = tienePropia ? null : latestMergedBranchEntry(cwd, estado);
+  if (!tienePropia && !heredada) {
     console.error('\nchaski share: la rama actual no tiene narrativa para publicar.');
     console.error('Escribe «relevo» en tu agente antes de compartir una decisión.\n');
     process.exitCode = 1;
@@ -292,10 +296,16 @@ export function share(args) {
     const { texto, redactions } = redact(value, config);
     return { ...anonymize(texto, { home }), redactions };
   };
-  const body = redactForShare(String(estado.narrative).trim());
-  const branchLabel = redactForShare(branch || 'decision');
+  const narrativeRaw = tienePropia ? String(estado.narrative).trim() : String(heredada.narrative).trim();
+  const branchRaw = tienePropia ? (branch || 'decision') : (heredada.branch || branch || 'decision');
+  const authorRaw = tienePropia
+    ? (estado.narrativeAuthor || estado.agent ? canonicalAgent(estado.narrativeAuthor ?? estado.agent) : 'desconocido')
+    : (heredada.author ? canonicalAgent(heredada.author) : 'desconocido');
+  const headRaw = tienePropia ? estado.head : null;
+  const body = redactForShare(narrativeRaw);
+  const branchLabel = redactForShare(branchRaw);
   const title = temaArgs ? redactForShare(temaArgs) : branchLabel;
-  const author = redactForShare(estado.narrativeAuthor || estado.agent ? canonicalAgent(estado.narrativeAuthor ?? estado.agent) : 'desconocido');
+  const author = redactForShare(authorRaw);
   const redactions = body.redactions + branchLabel.redactions + (temaArgs ? title.redactions : 0) + author.redactions;
   const anonymized = body.anonymized + branchLabel.anonymized + (temaArgs ? title.anonymized : 0) + author.anonymized;
   const slug = slugify(title.texto);
@@ -303,7 +313,7 @@ export function share(args) {
   const decDir = join(cwd, 'decisiones');
   const nombre = decisionName(decDir, fecha, slug);
   const titulo = temaArgs ? title.texto : `Decisión en ${branchLabel.texto}`;
-  const head = /^[0-9a-f]{4,64}$/i.test(estado.head ?? '') ? ` (${estado.head})` : '';
+  const head = /^[0-9a-f]{4,64}$/i.test(headRaw ?? '') ? ` (${headRaw})` : '';
   const contenido = [
     `# ${titulo}`,
     '',

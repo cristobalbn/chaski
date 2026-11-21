@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readOnlyGlobalDir, readJson, syncedFolder, tamboIsIgnored, loadConfig, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyBranchDir, legacyBranchState, currentBranch, stripBom } from '../lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from '../lib/ask.mjs';
+import { canonicalAgent } from '../lib/payload.mjs';
 import { isValidSignature } from '../lib/signatures.mjs';
 import { latestMergedBranchEntry } from '../lib/history.mjs';
 import { readRelay } from '../lib/relay-store.mjs';
@@ -52,7 +53,7 @@ export function doctor() {
   // paso pendiente, no de un bug. Se diagnostica aquí en lugar de dejar al
   // usuario adivinando por qué .tambo/ sigue vacío.
   const sinLatido = cliStatus.filter(({ name, events }) => events?.length
-    && !Object.keys(lat).some((key) => key.replace(/-/g, ' ') === name));
+    && !Object.keys(lat).some((key) => canonicalAgent(key) === name));
   for (const { name } of sinLatido) {
     console.log(`\n  ⚠ ${name}: hooks registrados pero nunca ejecutados.`);
     if (name === 'codex') {
@@ -91,8 +92,13 @@ export function doctor() {
     if (!isChaskiStatusLine(sl?.command)) {
       console.log(`  ${pad('claude code')} sin dato — ejecuta \`chaski init --statusline\` para pedir la narrativa antes de que se acabe`);
     } else {
-      const resumen = usageSummary((readJson(usagePath(), {}) ?? {})['claude code'], Date.now(), Infinity);
-      console.log(`  ${pad('claude code')} ${resumen ?? 'statusline instalada; todavía sin dato (solo planes Pro, Max y Ultra, tras la primera respuesta)'}`);
+      const rota = missingStatusLineTarget(sl.command);
+      if (rota) {
+        console.log(`  ⚠ claude code: statusline apunta a una ruta que no existe (${rota}) — ejecuta \`chaski init --statusline\``);
+      } else {
+        const resumen = usageSummary((readJson(usagePath(), {}) ?? {})['claude code'], Date.now(), Infinity);
+        console.log(`  ${pad('claude code')} ${resumen ?? 'statusline instalada; todavía sin dato (solo planes Pro, Max y Ultra, tras la primera respuesta)'}`);
+      }
     }
   }
 
@@ -259,5 +265,11 @@ function missingHookTarget(comando) {
   }
   const scriptMatch = String(comando ?? '').match(/["']([^"']+?(?:capture|inject|capturar|leer)\.mjs)["']/);
   if (scriptMatch && !existsSync(scriptMatch[1])) return scriptMatch[1];
+  return null;
+}
+
+function missingStatusLineTarget(comando) {
+  const m = String(comando ?? '').match(/["']([^"']+?statusline\.mjs)["']/);
+  if (m && !existsSync(m[1])) return m[1];
   return null;
 }
