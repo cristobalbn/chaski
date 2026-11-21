@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { readJsonForWrite, TAMBO, claudePluginEnabled, claudePluginEnabledForUser, CLAUDE_PLUGIN_ID } from '../lib/paths.mjs';
+import { readJsonForWrite, tambo, TAMBO, claudePluginEnabled, claudePluginEnabledForUser, CLAUDE_PLUGIN_ID } from '../lib/paths.mjs';
 import { writeAtomic } from '../lib/atomic.mjs';
 import { AQUI, pad, backup } from './common.mjs';
 import { CAPTURE, INJECT, cmd, MARCA_INI, MARCA_FIN, PROBE_START, PROBE_END, CLIS, isInstalled, isChaskiHookGroup, isProbeHookGroup, removeBlock } from './hook-config.mjs';
@@ -103,6 +103,9 @@ export function init(args = []) {
   ensureGitignore(cwd);
   installSkill(cwd);
   ensureAgentsMd(cwd);
+  // En un proyecto habilitado hay que anotar desde el primer turno, aunque
+  // ninguna ventana haya llegado todavía al primer Stop.
+  if (estado.configurados.length || estado.yaEstaban.length) tambo(cwd);
   // Opt-in (#82): la statusline es UNA sola entrada en settings.json y suele
   // ser algo que el usuario armó a su gusto. Solo se toca si lo pide.
   if (args.includes('--statusline')) installStatusLine();

@@ -7,7 +7,7 @@
 //      10.000 caracteres, Claude Code deja de inyectar el contenido y manda
 //      solo una ruta, así que un relevo gordo simplemente no funciona.
 import { redact } from './secrets.mjs';
-import { ageText } from './time.mjs';
+import { ageText, isFresh, MODEL_TEXT_TTL_MS } from './time.mjs';
 
 export const MAX_CHARS = 6000; // ~1.500 tokens, con margen bajo el techo de 10.000
 
@@ -229,6 +229,19 @@ export function render(estado, config = null) {
     L.push(`_Tomada del transcript${antiguedad(estado.lastReply.at)}. No es narrativa: hubo trabajo después de la última, y esto es lo único que quedó del porqué._`);
     L.push('');
     L.push(redact(String(estado.lastReply.text), config).texto);
+    L.push('');
+  }
+
+  const now = Date.parse(estado.writtenAt);
+  const otherReplies = Array.isArray(estado.conversations) ? estado.conversations.filter((entry) =>
+    entry?.lastReply?.text && isFresh(entry.lastReply.at, MODEL_TEXT_TTL_MS, now)).slice(0, 3) : [];
+  if (otherReplies.length) {
+    L.push('## Respuestas de otras conversaciones de esta rama');
+    L.push('');
+    for (const { agent, lastReply } of otherReplies) {
+      const text = redact(String(lastReply.text), config).texto;
+      L.push(`- ${boldLabel(agent)} — ${inlineCode(oneLine(text, 240))}`);
+    }
     L.push('');
   }
 

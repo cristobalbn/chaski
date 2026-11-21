@@ -44,33 +44,27 @@ export function openTurn(cwd, session, agent) {
 }
 
 /**
- * Turnos de OTRAS sesiones que empezaron después del relevo y no terminaron.
- *
- * «Después del relevo» es la condición que importa: si hubo una captura
- * posterior, el relevo ya refleja el estado de después del corte. Si no, lo
- * que el agente nuevo lee es de antes de un turno que hizo algo y no llegó a
- * cerrar: puede haber archivos a medio editar o un comando a medio correr.
- * Los hechos de git se recalculan igual al arrancar; lo que puede faltar son
- * los comandos y el porqué.
+ * Turnos de otras sesiones que siguen abiertos en este árbol de trabajo.
+ * Un Stop de otra ventana actualiza Git y deja este turno abierto.
  */
-export function interruptedTurns(cwd, estado, sesionActual) {
+export function interruptedTurns(cwd, sesionActual) {
   try {
     const abiertos = readOpenTurns(openTurnsPath(cwd));
-    const desde = Date.parse(estado?.writtenAt ?? '') || 0;
     const ahora = Date.now();
     const lineas = [];
     for (const [s, t] of Object.entries(abiertos)) {
       const at = Date.parse(t?.at ?? '');
-      if (s === sesionActual || !Number.isFinite(at) || at <= desde || ahora - at > MODEL_TEXT_TTL_MS) continue;
+      if (s === sesionActual || !Number.isFinite(at) || at > ahora || ahora - at > MODEL_TEXT_TTL_MS) continue;
       const hace = ageText(at, ahora);
       lineas.push(`- Un turno de ${String(t.agent ?? 'otro agente').replace(/[^\w .-]/g, '')} empezó hace ${hace} y no terminó: se interrumpió, se cerró la ventana o se cortó (o sigue en curso en otra ventana).`);
+      if (lineas.length === 3) break;
     }
     if (!lineas.length) return null;
     return [
-      '**ATENCIÓN: hubo un turno cortado después de este relevo.**',
+      '**ATENCIÓN: hay turnos abiertos de otras conversaciones.**',
       ...lineas,
       '',
-      'Lo que ese turno hizo no está en el relevo. Revisa `git status` y `git diff` antes de seguir: puede haber archivos a medio editar.',
+      'Pueden faltar comandos y cambios posteriores a la captura. Revisa `git status` y `git diff` antes de seguir.',
     ].join('\n');
   } catch {
     return null;

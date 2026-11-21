@@ -5,6 +5,17 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.16] - 2026-11-21
+
+### Corregido
+- Las ventanas de una misma rama conservan sus marcas de lectura y sus
+  pedidos de narrativa. El relevo muestra respuestas recientes de otras ventanas.
+- Un turno abierto sigue visible al guardar desde otra ventana. `init` prepara
+  `.tambo/` para registrar turnos desde el primer mensaje.
+- `Stop` puede esperar brevemente a otro escritor. Si la espera vence, avisa.
+- Ante varios transcripts recientes, se omite la sustitución de una ruta ausente.
+- Un pedido diferido indica la rama de origen incluso después de cambiar de rama.
+
 ## [0.1.15] - 2026-11-21
 
 ### Mejorado
