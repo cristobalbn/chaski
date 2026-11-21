@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readFileSync, readSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { readOnlyGlobalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath, legacyBranchState, openTurnsPath } from '../lib/paths.mjs';
@@ -17,10 +17,12 @@ export function next() {
   const { cwd } = projectContext();
   console.log('\nchaski next\n');
   const branch = currentBranch(cwd);
+  const rama = branch ?? 'sin-rama';
   const estado = readBranchState(cwd, branch);
   const quota = readJson(join(readOnlyGlobalDir(), 'quota.json'), {}) ?? {};
-  const edadRelevo = estado.writtenAt
-    ? Math.max(0, Math.round((Date.now() - new Date(estado.writtenAt).getTime()) / 60000))
+  const writtenMs = Date.parse(estado.writtenAt ?? '');
+  const edadRelevo = Number.isFinite(writtenMs)
+    ? Math.max(0, Math.round((Date.now() - writtenMs) / 60000))
     : null;
   const detalleRelevo = edadRelevo !== null
     ? `relevo al día (hace ${edadRelevo} min)`
@@ -62,7 +64,12 @@ export function next() {
 
   console.log('');
   const sucios = estado.facts?.dirtyTotal ?? estado.facts?.dirty?.length ?? 0;
-  console.log(`  # ${sucios ? `${sucios} archivo(s) sin commitear` : 'árbol limpio'} en ${branch}`);
+  const estadoArbol = sucios
+    ? `${sucios} archivo(s) sin commitear`
+    : (estado.facts?.dirtyUnknown || !Number.isFinite(writtenMs))
+      ? 'estado del árbol sin comprobar'
+      : 'árbol limpio';
+  console.log(`  # ${estadoArbol} en ${rama}`);
   if (estado.facts?.upstream?.ahead > 0) {
     const colisiones = estado.facts.upstream.collisions?.length
       ? ` (${estado.facts.upstream.collisions.length} archivo(s) en común)` : '';
@@ -354,8 +361,7 @@ export function share(args) {
 
   if (!autoConfirm) {
     process.stdout.write(`¿Escribir en decisiones/${nombre}? [s/N]: `);
-    let resp = '';
-    try { resp = readFileSync(0, 'utf8').trim(); } catch {}
+    const resp = readStdinLine();
     if (!/^(s|si|sí|y|yes)$/i.test(resp)) {
       console.log('\nCancelado: no se escribió ningún archivo.\n');
       process.exitCode = 1;
@@ -390,4 +396,17 @@ function slugify(s) {
     .replace(/^-+|-+$/g, '')
     .slice(0, 50);
   return limpio || 'decision';
+}
+
+function readStdinLine() {
+  const bytes = [];
+  const buf = Buffer.alloc(1);
+  while (bytes.length < 256) {
+    let n = 0;
+    try { n = readSync(0, buf, 0, 1, null); } catch { break; }
+    if (n <= 0) break;
+    if (buf[0] === 0x0a) break;
+    bytes.push(buf[0]);
+  }
+  return Buffer.from(bytes).toString('utf8').trim();
 }

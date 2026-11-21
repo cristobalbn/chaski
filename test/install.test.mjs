@@ -4345,4 +4345,59 @@ describe('varias ventanas en el mismo proyecto', () => {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+
+  test('share interactivo no espera EOF tras recibir s + Enter y next no afirma árbol limpio sin captura', async () => {
+    const m = montar('chaski-share-tty-next-');
+    try {
+      const outNextSinCaptura = m.correr('next');
+      assert.match(outNextSinCaptura, /# estado del árbol sin comprobar en /);
+      assert.doesNotMatch(outNextSinCaptura, /en null/);
+
+      prompt(m, 's1');
+      writeFileSync(join(m.proyecto, 'app.js'), 'export const a = 7;\n');
+      stop(m, 's1');
+      const rama = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+      const estadoRuta = join(m.proyecto, '.tambo', 'branches', rama, 'estado.json');
+      const est = JSON.parse(readFileSync(estadoRuta, 'utf8'));
+      est.narrative = '**Intención**: Probar share sin cerrar stdin.\n\n**Siguiente paso**: Verificar archivo.';
+      est.narrativeAuthor = 'codex';
+      est.narrativeWrittenAt = new Date().toISOString();
+      writeFileSync(estadoRuta, JSON.stringify(est, null, 2));
+
+      await new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [join(SRC, 'cli.mjs'), 'share', 'interactivo'], {
+          cwd: m.proyecto,
+          env: m.entorno,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        let sent = false;
+        const timer = setTimeout(() => {
+          child.kill('SIGKILL');
+          reject(new Error('chaski share se colgó esperando EOF tras s + Enter'));
+        }, 5000);
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk.toString('utf8');
+          if (!sent && stdout.includes('[s/N]:')) {
+            sent = true;
+            // No llamamos a child.stdin.end(): simula una terminal interactiva
+            // donde Enter envía '\n' pero el descriptor 0 sigue abierto.
+            child.stdin.write('s\n');
+          }
+        });
+        child.on('exit', (code) => {
+          clearTimeout(timer);
+          try {
+            assert.equal(code, 0, `share salió con ${code}: ${stdout}`);
+            assert.match(stdout, /Publicado en decisiones\//);
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });

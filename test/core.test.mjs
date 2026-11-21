@@ -805,6 +805,13 @@ describe('filtro de secretos', () => {
     ['clave privada', p('-----BEGIN RSA ', 'PRIVATE KEY-----\nMIIEoggg\n-----END RSA ', 'PRIVATE KEY-----'),
       'MIIEoggg'],
     ['asignación de secreto', p('DATABASE_PASS', 'WORD=sup3rs3cr3t0_largo'), 'sup3rs3cr3t0_largo'],
+    ['asignación de TOKEN sin prefijo', p('TOK', 'EN=mi_token_secreto_123'), 'mi_token_secreto_123'],
+    ['asignación JSON entrecomillada', p('{"pass', 'word": "clave_json_secreta_99"}'), 'clave_json_secreta_99'],
+    ['clave PGP privada', p('-----BEGIN PGP ', 'PRIVATE KEY BLOCK-----\nmQINBF\n-----END PGP ', 'PRIVATE KEY BLOCK-----'), 'mQINBF'],
+    ['token Discord', p('MTIzNDU2Nzg5MDEyMzQ1Njc4OQ', '.GaBcDe.', 'abcdefghijklmnopqrstuvwxyz12345'), 'abcdefghijklmnopqrstuvwxyz12345'],
+    ['clave Resend', p('re_', '1234567890abcdefghijklmnop'), '1234567890abcdefghijklmnop'],
+    ['PAT Docker Hub', p('dckr_pat_', '1234567890abcdefghijklmnop'), '1234567890abcdefghijklmnop'],
+    ['clave Twilio', p('SK', '0123456789abcdef0123456789abcdef'), '0123456789abcdef0123456789abcdef'],
     ['flag CLI de secreto con espacio', p('deploy --api-token ', 'mi_token_secreto_123'), 'mi_token_secreto_123'],
     ['flag CLI de secreto con =', p('login --password=', 'clavesecreta987'), 'clavesecreta987'],
     ['URL con credencial', p('postgres://usuario:', 'clave123456', '@host:5432/db'), 'clave123456'],
@@ -837,11 +844,42 @@ describe('filtro de secretos', () => {
     const { redactions } = redact('MI_COSA_ABC123', { redact: ['MI_COSA_[A-Z0-9]+'] });
     assert.ok(redactions > 0);
   });
+
+  test('no re-redacta en una segunda pasada ni aplica patrones de usuario que coinciden con cadena vacía', () => {
+    const primera = redact('postgres://user:secretpass123@db.local/app TOKEN=mi_token_secreto_123 sk-ant-api03-' + 'a'.repeat(32));
+    assert.equal(primera.redactions, 3);
+    assert.match(primera.texto, /\[redactado: clave-anthropic\]/);
+    const segunda = redact(primera.texto);
+    assert.equal(segunda.redactions, 0);
+    assert.equal(segunda.texto, primera.texto);
+
+    const conVacio = redact('texto normal', { redact: ['a*', '^', '(x)?'] });
+    assert.equal(conVacio.redactions, 0);
+    assert.equal(conVacio.texto, 'texto normal');
+  });
+
+  test('alta entropía redacta tokens aleatorios pero no rutas, ramas, SHA-1 de git ni identificadores de código', () => {
+    const limpio = [
+      'src/components/authentication/UserSessionProvider.tsx',
+      'git checkout -b feat/statusline-mkdir-y-uninstall-idempotente-0.1.29',
+      'git show 0123456789abcdef0123456789abcdef01234567',
+      'getAuthenticatedUserSessionWithPermissions()',
+    ].join('\n');
+    const rLimpio = redact(limpio);
+    assert.equal(rLimpio.redactions, 0, `falso positivo en texto de código: ${rLimpio.texto}`);
+    assert.equal(rLimpio.texto, limpio);
+
+    const tokenAleatorio = 'x9A2kL7mP4qR8sT1vW3yZ6bC5dF0gH2jN4pQ7rS9uV1wX3z';
+    const rSecreto = redact(`header ${tokenAleatorio}`);
+    assert.equal(rSecreto.redactions, 1);
+    assert.ok(!rSecreto.texto.includes(tokenAleatorio));
+  });
 });
 
 describe('rutas excluidas', () => {
-  for (const r of ['.env', 'config/.env.local', 'certs/server.pem', '.ssh/id_rsa',
-    'infra/.npmrc', '.aws/credentials', '.tambo/branches/main/relevo.md', 'chaski.local.json']) {
+  for (const r of ['.env', '.envrc', 'config/.env.local', 'certs/server.pem', '.ssh/id_rsa',
+    'infra/.npmrc', '.netrc', '.pypirc', '.git-credentials', 'prod.tfstate', 'vars.tfvars',
+    '.kube/config', '.docker/config.json', '.aws/credentials', '.tambo/branches/main/relevo.md', 'chaski.local.json']) {
     test(`excluye ${r}`, () => assert.ok(isExcludedPath(r), `debería excluir ${r}`));
   }
 

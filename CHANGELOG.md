@@ -5,6 +5,29 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.30] - 2026-11-21
+
+### Corregido
+- `chaski share` lee la confirmación interactiva hasta el salto de línea (`\n`)
+  en lugar de esperar `EOF` en el descriptor `0`, evitando que quede bloqueado
+  en terminales interactivas tras pulsar `s` + Enter.
+- `chaski next` no imprime `en null` fuera de git ni afirma `árbol limpio`
+  cuando todavía no hubo captura o cuando `git status` se omitió por presupuesto
+  de tiempo (`dirtyUnknown`).
+- El filtro de secretos (`src/lib/secrets.mjs`) redacta asignaciones sin
+  prefijo (`TOKEN=`, `PASSWORD=`, `SECRET=`, `API_KEY=`) y claves JSON
+  entrecomilladas (`"password": "..."`), evita re-redactar URLs con credencial
+  ya redactadas, descarta patrones de usuario que coinciden con la cadena vacía
+  y elimina falsos positivos de alta entropía sobre rutas de archivo, ramas de
+  git, SHA-1/SHA-256 de commits e identificadores de código.
+
+### Mejorado
+- Nuevos patrones de redacción (bloques `PGP PRIVATE KEY BLOCK`, tokens de
+  Discord, Resend, Docker Hub PAT, Twilio y Slack App-Level `xapp-`) y nuevas
+  rutas sensibles excluidas por defecto (`.envrc`, `.tfstate`, `.tfvars`,
+  `.netrc`, `.pypirc`, `.git-credentials`, `.pgpass`, `.htpasswd`, `.kube/config`,
+  `.docker/config.json`, `.ssh/`, `.ppk`).
+
 ## [0.1.29] - 2026-11-21
 
 ### Mejorado
