@@ -36,9 +36,9 @@ const PATTERNS = [
   [/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g, 'clave-privada'],
 
   // Asignaciones con nombre sensible: TOKEN=..., api_secret: "...", PASSWORD = '...'
-  [/\b([A-Za-z_][A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY|CREDENTIAL|ACCESS_KEY)[A-Za-z0-9_]*)\s*[:=]\s*["']?([^\s"',;]{8,})["']?/gi, 'asignacion'],
+  [/\b([A-Za-z_][A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API_KEY|PRIVATE_KEY|CREDENTIAL|ACCESS_KEY)[A-Za-z0-9_]*)\s*[:=]\s*["']?([^\s"',;\][]{8,})["']?/gi, 'asignacion'],
   // Flags de línea de comando con nombre sensible: --token xxx, --api-key=xxx, --password 'xxx'
-  [/((?:^|[\s"'`])--[A-Za-z0-9-]*(?:secret|token|password|passwd|api-?key|private-?key|access-?key)[A-Za-z0-9-]*(?:\s*=\s*|\s+))["']?([^\s"',;]{8,})["']?/gi, 'flag-secreto'],
+  [/((?:^|[\s"'`])--[A-Za-z0-9-]*(?:secret|token|password|passwd|api-?key|private-?key|access-?key)[A-Za-z0-9-]*(?:\s*=\s*|\s+))["']?([^\s"',;\][]{8,})["']?/gi, 'flag-secreto'],
 
   // URL con credenciales embebidas
   [/\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s:/@]+)@/gi, 'url-con-credencial'],
