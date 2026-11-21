@@ -22,6 +22,14 @@ Compatible con **Claude Code**, **Codex CLI** y **Antigravity CLI (`agy`)**. Con
 uno solo ya sirve: el relevo entre sesiones de la misma herramienta tiene valor
 propio.
 
+El relevo automático usa hooks de los agentes locales. En la app de ChatGPT,
+la integración de OpenAI corresponde a **Codex en modo local**, con los hooks
+habilitados y aprobados para el perfil que abre el proyecto. ChatGPT web y las
+tareas en la nube quedan fuera de esta integración automática. Chaski verifica
+los contratos de los tres CLI en CI con payloads y transcripts sintéticos.
+[Hooks de Codex](https://learn.chatgpt.com/docs/hooks) ·
+[Entornos de Codex](https://learn.chatgpt.com/docs/environments/modes)
+
 Necesitas Node.js 20 o superior: compruébalo con `node --version` y, si no lo
 tienes, descárgalo de [nodejs.org](https://nodejs.org).
 
