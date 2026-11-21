@@ -2157,9 +2157,12 @@ describe('comandos next, cost, why y share', () => {
       assert.ok(!salidaMultilinea.includes(tokenNext));
       assert.ok(!salidaMultilinea.includes('interno'));
 
-      // Sin narrativa, next muestra lastReply como respaldo y avisa si hay turnos abiertos.
+      // Sin narrativa, next muestra lastReply como respaldo y avisa si hay turnos abiertos,
+      // divergencia con upstream o tareas en segundo plano.
       conTotal.narrative = null;
       conTotal.lastReply = { text: `Falta revisar el middleware con ${tokenNext}`, at: new Date().toISOString() };
+      conTotal.facts.upstream = { ref: 'origin/main', ahead: 2, collisions: ['app.js'] };
+      conTotal.backgroundTasks = [{ description: 'npm run watch', kind: 'shell' }];
       writeFileSync(rutaEstado, JSON.stringify(conTotal, null, 2));
       writeFileSync(join(m.proyecto, '.tambo', 'turns-open.json'), JSON.stringify({
         s9: { agent: 'codex', at: new Date().toISOString() },
@@ -2167,6 +2170,8 @@ describe('comandos next, cost, why y share', () => {
       const salidaSinNarrativa = m.correr('next');
       assert.match(salidaSinNarrativa, /# última respuesta: Falta revisar el middleware con \[redactado: token-github\]/);
       assert.ok(!salidaSinNarrativa.includes(tokenNext));
+      assert.match(salidaSinNarrativa, /# upstream \(origin\/main\) tiene 2 commit\(s\) que no tienes \(1 archivo\(s\) en común\)/);
+      assert.match(salidaSinNarrativa, /# en segundo plano: npm run watch/);
       assert.match(salidaSinNarrativa, /# turno\(s\) abierto\(s\): codex/);
 
       // Cuando Claude Code vuelve a completar un Stop normal, sale de agotados.

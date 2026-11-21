@@ -63,6 +63,11 @@ export function next() {
   console.log('');
   const sucios = estado.facts?.dirtyTotal ?? estado.facts?.dirty?.length ?? 0;
   console.log(`  # ${sucios ? `${sucios} archivo(s) sin commitear` : 'árbol limpio'} en ${branch}`);
+  if (estado.facts?.upstream?.ahead > 0) {
+    const colisiones = estado.facts.upstream.collisions?.length
+      ? ` (${estado.facts.upstream.collisions.length} archivo(s) en común)` : '';
+    console.log(`  # upstream (${estado.facts.upstream.ref}) tiene ${estado.facts.upstream.ahead} commit(s) que no tienes${colisiones}`);
+  }
   if (estado.lastFile) {
     console.log(`  # último archivo tocado: ${estado.lastFile}`);
   }
@@ -80,6 +85,15 @@ export function next() {
     const pendienteHeredado = summarizePending(redact(String(heredada.narrative), config).texto);
     if (pendienteHeredado) {
       console.log(`  # narrativa más reciente (de ${heredada.branch}, ya no existe): ${pendienteHeredado}`);
+    }
+  }
+  if (Array.isArray(estado.backgroundTasks) && estado.backgroundTasks.length) {
+    const tareas = estado.backgroundTasks
+      .map((t) => redact(String(t?.description ?? ''), config).texto.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    if (tareas.length) {
+      console.log(`  # en segundo plano: ${tareas.join('; ')}`);
     }
   }
   const abiertos = activeOpenTurns(cwd);
