@@ -139,7 +139,7 @@ export function render(estado, config = null) {
     L.push('');
     L.push(redact(estado.narrative.trim(), config).texto);
     L.push('');
-    L.push(`_Interpretación escrita por ${estado.narrativeAuthor ?? 'un agent'} el ${shortDate(estado.narrativeWrittenAt)}._`);
+    L.push(`_Interpretación escrita por ${oneLine(estado.narrativeAuthor || 'un agent', 60)} el ${shortDate(estado.narrativeWrittenAt)}._`);
     L.push('');
   } else {
     L.push('## Qué se está haciendo');

@@ -29,7 +29,23 @@ export function readStdinJson() {
  */
 export function canonicalAgent(agent) {
   const n = String(agent ?? '').trim().toLowerCase().replace(/-/g, ' ');
-  return n === 'claude' ? 'claude code' : (n || 'desconocido');
+  if (n === 'claude' || n === 'claude code') return 'claude code';
+  if (n === 'codex' || n === 'codex cli') return 'codex';
+  if (n === 'agy' || n === 'antigravity' || n === 'antigravity cli') return 'agy';
+  return n || 'desconocido';
+}
+
+/**
+ * CLI que disparó el hook: del argumento registrado o inferido del entorno/payload.
+ */
+export function agentOf(ev, argv = process.argv) {
+  const arg = typeof argv[3] === 'string' ? argv[3].trim() : '';
+  if (arg) return canonicalAgent(arg);
+  const event = eventOf(ev, argv);
+  if (process.env.CLAUDECODE || event === 'StopFailure') return 'claude code';
+  if (process.env.CODEX_HOME || process.env.CODEX_SESSION) return 'codex';
+  if (process.env.AGY_SESSION || process.env.ANTIGRAVITY_SESSION || Array.isArray(ev?.workspacePaths)) return 'agy';
+  return 'desconocido';
 }
 
 /** Id de la conversación, con el nombre que use cada CLI. */

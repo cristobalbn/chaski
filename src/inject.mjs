@@ -13,7 +13,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readOnlyBranchDir, legacyBranchState, readOnlyTambo, currentBranch, git, projectDir, loadConfig, silencedByPlugin } from './lib/paths.mjs';
-import { readStdinJson, canonicalAgent, sessionOf, cwdOf, transcriptOf } from './lib/payload.mjs';
+import { readStdinJson, agentOf, sessionOf, cwdOf, transcriptOf } from './lib/payload.mjs';
 import { askText, promptPayload } from './lib/ask.mjs';
 import { createRedactor } from './lib/secrets.mjs';
 import { isValidSignature } from './lib/signatures.mjs';
@@ -37,18 +37,19 @@ function main() {
   // capture.mjs: ningún timeout por llamada protege si nadie lo deriva de
   // cuánto queda.
   const ev = readStdinJson();
+  const agent = agentOf(ev);
   // Instalado por `init` y además como plugin de Claude Code: este proceso es
   // el duplicado, y sin esto el relevo se inyectaría dos veces por sesión.
   // Dentro de try: un payload raro (un cwd que no es texto) no puede tumbar el
   // hook (invariante 4). Antes esta línea estaba fuera y salía con código 1.
-  try { if (silencedByPlugin(canonicalAgent(process.argv[3]), cwdOf(ev))) return; } catch {}
+  try { if (silencedByPlugin(agent, cwdOf(ev))) return; } catch {}
   // Mismo archivo para los dos hooks de entrada (invariante 8: cada nombre
   // que init escribe en una config ajena queda fijo para siempre, así que no
   // se agrega un tercero). Este camino corre en CADA mensaje del usuario:
   // no lanza git ni re-renderiza nada, lee un JSON chico y sale. En
   // Antigravity es `PreInvocation`, que corre antes de cada llamada al modelo.
   if (process.argv[2] === 'UserPromptSubmit' || process.argv[2] === 'PreInvocation') {
-    return deliverPending(ev, canonicalAgent(process.argv[3]));
+    return deliverPending(ev, agent);
   }
 
   const budget = createBudget(SESSION_START_BUDGET_MS);
@@ -101,7 +102,7 @@ function main() {
         '',
         CLOSING_MARK,
       ].join('\n');
-      process.stdout.write(emitir(salida, process.argv[3]));
+      process.stdout.write(emitir(salida, agent));
       return;
     }
 
@@ -165,7 +166,7 @@ function main() {
     if (salida.length > MAX_CHARS + 1200) {
       salida = salida.slice(0, MAX_CHARS + 1000) + '\n\n_[Recortado.]_\n' + CLOSING_MARK;
     }
-    process.stdout.write(emitir(salida, process.argv[3]));
+    process.stdout.write(emitir(salida, agent));
   } catch (e) {
     process.stderr.write(`chaski: no se pudo inyectar el relevo (${e?.message ?? e})\n`);
   } finally {
@@ -213,7 +214,7 @@ function deliverPending(ev, agent) {
  *     plano no inyecta nada — falla en silencio, que es el peor caso.
  */
 function emitir(texto, agent) {
-  if (/^agy$/i.test(agent ?? '')) {
+  if (agent === 'agy') {
     return JSON.stringify({
       injectSteps: [{ systemMessage: { systemMessage: texto } }],
     }) + '\n';

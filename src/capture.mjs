@@ -28,7 +28,7 @@ import { previousConversation, saveConversation } from './lib/conversations.mjs'
 import { redact } from './lib/secrets.mjs';
 import { shouldAsk, askText, askPayload, promptHookAlive, COMPACT_HINT, quotaPressure } from './lib/ask.mjs';
 import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
-import { readStdinJson, canonicalAgent, sessionOf, cwdOf, transcriptOf, eventOf } from './lib/payload.mjs';
+import { readStdinJson, canonicalAgent, agentOf, sessionOf, cwdOf, transcriptOf, eventOf } from './lib/payload.mjs';
 import { MODEL_TEXT_TTL_MS, isFresh } from './lib/time.mjs';
 
 main();
@@ -499,15 +499,8 @@ function readPayload() {
   // Normalizado aquí y no al estampar el latido: `estado.agent` es lo que
   // encabeza el relevo que lee el agent siguiente, y la grafía cambiaba según
   // el evento que lo hubiera escrito.
-  ev.__agente = canonicalAgent(process.argv[3] ?? detectAgent(ev));
+  ev.__agente = agentOf(ev);
   return ev;
-}
-
-function detectAgent(ev) {
-  if (process.env.CLAUDECODE || ev.hook_event_name === 'StopFailure') return 'claude code';
-  if (process.env.CODEX_HOME || process.env.CODEX_SESSION) return 'codex';
-  if (process.env.AGY_SESSION || process.env.ANTIGRAVITY_SESSION) return 'agy';
-  return 'desconocido';
 }
 
 
