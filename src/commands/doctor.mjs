@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readOnlyGlobalDir, readJson, syncedFolder, tamboIsIgnored, loadConfig, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyBranchDir, stripBom } from '../lib/paths.mjs';
+import { readOnlyGlobalDir, readJson, syncedFolder, tamboIsIgnored, loadConfig, promptHookPath, claudePluginEnabled, CLAUDE_PLUGIN_ID, usagePath, readOnlyBranchDir, legacyBranchState, currentBranch, stripBom } from '../lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from '../lib/ask.mjs';
 import { isValidSignature } from '../lib/signatures.mjs';
 import { readRelay } from '../lib/relay-store.mjs';
@@ -111,7 +111,12 @@ export function doctor() {
     console.log(`  ${pad('huérfanos')} ${huerfanos.length} relevo(s) de ramas que ya no existen` + nota);
   }
 
-  const relay = readRelay(readOnlyBranchDir(cwd));
+  const branch = currentBranch(cwd);
+  const relay = readRelay(readOnlyBranchDir(cwd, branch))
+    ?? (() => {
+      const legacy = legacyBranchState(cwd, branch);
+      return legacy ? readRelay(legacy.dir) : null;
+    })();
   if (relay) {
     const { state: estado, markdown: md, recovered } = relay;
     const edad = estado.writtenAt ? Math.round((Date.now() - new Date(estado.writtenAt).getTime()) / 60000) : null;

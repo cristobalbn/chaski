@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { readOnlyBranchDir, legacyBranchState, readOnlyTambo, currentBranch, git, projectDir, loadConfig, silencedByPlugin } from './lib/paths.mjs';
 import { readStdinJson, canonicalAgent, sessionOf, cwdOf, transcriptOf } from './lib/payload.mjs';
 import { askText, promptPayload } from './lib/ask.mjs';
+import { createRedactor } from './lib/secrets.mjs';
 import { isValidSignature } from './lib/signatures.mjs';
 import { preamble, CLOSING_MARK, render, MAX_CHARS, neutralizeMarks, onlyNarrativeChanged } from './lib/relay.mjs';
 import { readRelay } from './lib/relay-store.mjs';
@@ -266,9 +267,14 @@ function changesSinceRelay(cwd, estado, budget = null) {
 
   const rango = `${base}..${head}`;
   const log = git(cwd, ['log', rango, '--format=%h|%an|%s'], { budget }) ?? '';
+  const redactText = log ? createRedactor(loadConfig(cwd)) : null;
   const commits = log.split('\n').filter(Boolean).map((l) => {
     const [h, autor, ...resto] = l.split('|');
-    return { h, autor, asunto: resto.join('|') };
+    return {
+      h,
+      autor: redactText ? redactText(autor).texto : autor,
+      asunto: redactText ? redactText(resto.join('|')).texto : resto.join('|'),
+    };
   });
 
   if (commits.length) {

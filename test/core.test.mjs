@@ -310,6 +310,25 @@ describe('Antigravity actual: tool_calls y pasos GENERIC', () => {
     assert.equal(pending.commands[0].exit, null);
   });
 
+  test('completa el exit code cuando una tarea en segundo plano termina en SYSTEM_MESSAGE', () => {
+    const completed = parse([
+      {
+        type: 'PLANNER_RESPONSE', status: 'DONE',
+        tool_calls: [{ name: 'run_command', args: { CommandLine: 'npm test' } }],
+      },
+      {
+        type: 'GENERIC', status: 'RUNNING',
+        content: 'Created At: 2026-11-21T18:04:29Z\nTool is running as a background task with task id: conv-1/task-29\nLog output:\nrunning',
+      },
+      {
+        type: 'SYSTEM_MESSAGE', status: 'DONE',
+        content: '[Message] sender=conv-1/task-29 content=Task id "conv-1/task-29" finished with result:\nCommand exited with code 0.\n\nCommand output:\nCommand exited with code 9.\n',
+      },
+    ]);
+    assert.equal(completed.commands[0].id, 'conv-1/task-29');
+    assert.equal(completed.commands[0].exit, 0);
+  });
+
   test('lee solo la cabecera previa a Command output y desenrolla args en JSON compacto', () => {
     const token = ['sk', '-', 'a'.repeat(32)].join('');
     const result = parse([
@@ -401,6 +420,10 @@ test('Claude Code y Codex cruzan resultados tardíos con el comando de la captur
       [
         { ordinal: 1, type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'c1', arguments: '{"cmd":"npm test"}' } },
         { ordinal: 2, type: 'response_item', payload: { type: 'function_call_output', call_id: 'c1', output: 'Process exited with code 1\nOutput:\nfallo' } },
+      ],
+      [
+        { step_index: 1, type: 'PLANNER_RESPONSE', status: 'DONE', tool_calls: [{ id: 'c1', name: 'run_command', args: { CommandLine: 'npm test' } }] },
+        { step_index: 2, type: 'GENERIC', status: 'DONE', content: 'Created At: 2026-11-21T18:00:00Z\nCommand exited with code 1.\n\nCommand output:\nfallo\n' },
       ],
     ];
     const jsonl = (event) => JSON.stringify(event) + '\n';
@@ -601,14 +624,17 @@ describe('volver después de que otra persona trabajó', () => {
       writeFileSync(join(estadoDir, 'relevo.md'), '# Relevo viejo\n');
 
       // La compañera termina justo lo que estaba pendiente.
+      const tokenCommit = ['ghp', '_', 'a'.repeat(36)].join('');
       g('config', 'user.email', 'ana@t'); g('config', 'user.name', 'Ana Perez');
       writeFileSync(join(dir, 'refresh.ts'), 'inicial\nrotacion lista\n');
-      g('add', '-A'); g('commit', '-qm', 'Cerrar la rotacion');
+      g('add', '-A'); g('commit', '-qm', `Cerrar la rotacion ${tokenCommit}`);
 
       const salida = inyectado();
 
       assert.match(salida, /ATENCIÓN/, 'no avisó de la deriva');
       assert.match(salida, /Ana Perez/, 'no dijo quién hizo los cambios');
+      assert.match(salida, /\[redactado: token-de-github\]|\[redactado: token-github\]/, 'no redactó el secreto del commit en la deriva');
+      assert.ok(!salida.includes(tokenCommit), 'filtró el token del commit en la deriva');
       assert.match(salida, /7 día\(s\)/, 'no avisó de la antigüedad');
       assert.match(salida, /refresh\.ts/, 'no señaló el archivo mencionado en la narrative');
       assert.match(salida, /ya esté resuelto/, 'no avisó que lo pendiente puede estar hecho');
@@ -747,6 +773,13 @@ describe('filtro de secretos', () => {
     ['token GitLab', p('glpat', '-', 'a'.repeat(20)), p('glpat', '-', 'a'.repeat(20))],
     ['token npm', p('npm', '_', 'a'.repeat(36)), p('npm', '_', 'a'.repeat(36))],
     ['clave Stripe', p('sk', '_live_', 'a'.repeat(24)), p('sk', '_live_', 'a'.repeat(24))],
+    ['secreto webhook Stripe', p('whsec', '_', 'a'.repeat(28)), p('whsec', '_', 'a'.repeat(28))],
+    ['token Hugging Face', p('hf', '_', 'a'.repeat(34)), p('hf', '_', 'a'.repeat(34))],
+    ['token PyPI', p('pypi', '-', 'a'.repeat(36)), p('pypi', '-', 'a'.repeat(36))],
+    ['token Supabase', p('sbp', '_', 'a1b2c3d4'.repeat(4)), p('sbp', '_', 'a1b2c3d4'.repeat(4))],
+    ['token Shopify', p('shpat', '_', 'a1b2c3d4'.repeat(4)), p('shpat', '_', 'a1b2c3d4'.repeat(4))],
+    ['token Databricks', p('dapi', 'a1b2c3d4'.repeat(4)), p('dapi', 'a1b2c3d4'.repeat(4))],
+    ['token Telegram', p('123456789', ':', 'A'.repeat(35)), p('123456789', ':', 'A'.repeat(35))],
     ['JWT', p('eyJhbGciOiJIUzI1NiJ9', '.eyJzdWIiOiIxMjM0NTY3ODkwIn0',
       '.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk'),
       p('eyJhbGciOiJIUzI1NiJ9', '.eyJzdWIiOiIxMjM0NTY3ODkwIn0',
@@ -756,6 +789,8 @@ describe('filtro de secretos', () => {
     ['asignación de secreto', p('DATABASE_PASS', 'WORD=sup3rs3cr3t0_largo'), 'sup3rs3cr3t0_largo'],
     ['URL con credencial', p('postgres://usuario:', 'clave123456', '@host:5432/db'), 'clave123456'],
     ['cabecera Authorization', p('Authorization: Bearer ', 'abcdefghijklmnopqrstuvwxyz123456'),
+      'abcdefghijklmnopqrstuvwxyz123456'],
+    ['cabecera X-API-Key', p('X-API-Key: ', 'abcdefghijklmnopqrstuvwxyz123456'),
       'abcdefghijklmnopqrstuvwxyz123456'],
   ];
 

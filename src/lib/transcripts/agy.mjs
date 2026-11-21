@@ -7,7 +7,7 @@
  * sus salidas llegan en los pasos `GENERIC` siguientes, en el mismo orden.
  * También se conserva el formato anterior de pasos `RUN_COMMAND` / `VIEW_FILE`.
  */
-export function extractAgy(ev, res, { pending, previousCount, redactCommand, isExcluded }) {
+export function extractAgy(ev, res, { byId, pending, recordCommand, redactCommand, isExcluded }) {
   const kind = String(ev.type ?? '').toUpperCase();
   const contenido = typeof ev.content === 'string' ? ev.content : '';
   const stepIndex = ev.step_index ?? ev.stepIndex ?? null;
@@ -34,7 +34,7 @@ export function extractAgy(ev, res, { pending, previousCount, redactCommand, isE
           if (texto) {
             const id = call?.id ?? (stepIndex !== null ? `${stepIndex}:${index}` : null);
             const command = { cmd: texto, id, exit: null };
-            res.commands.push(command);
+            recordCommand(command);
             pending.push({ kind: 'command', command });
             return;
           }
@@ -52,17 +52,39 @@ export function extractAgy(ev, res, { pending, previousCount, redactCommand, isE
 
   if (kind === 'GENERIC') {
     const next = pending.shift() ?? null;
+    const taskId = stepBackgroundTaskId(contenido);
     if (next) {
       if (next.kind !== 'command') return;
+      if (taskId) {
+        next.command.id = taskId;
+        byId.set(taskId, next.command);
+        return;
+      }
       const exit = stepCommandExit(ev, contenido);
       if (exit !== null) next.command.exit = exit;
       return;
     }
-    // Si la lectura incremental arrancó después del PLANNER_RESPONSE, solo una
-    // cabecera explícita de comando confirma el código de salida.
+    // Si la lectura incremental arrancó después del PLANNER_RESPONSE, asocia
+    // el task id o la cabecera explícita de salida al comando pendiente.
+    const unresolved = res.commands.find((c) => c.exit === null);
+    if (!unresolved) return;
+    if (taskId) {
+      unresolved.id = taskId;
+      byId.set(taskId, unresolved);
+      return;
+    }
     const exit = stepHeaderExit(contenido);
-    const unresolved = exit !== null ? res.commands.find((c, index) => index >= previousCount && c.exit === null) : null;
-    if (unresolved) unresolved.exit = exit;
+    if (exit !== null) unresolved.exit = exit;
+    return;
+  }
+
+  if (kind === 'SYSTEM_MESSAGE') {
+    const taskId = stepFinishedTaskId(contenido);
+    const exit = taskId ? stepHeaderExit(contenido) : null;
+    if (taskId && exit !== null) {
+      const command = byId.get(taskId) ?? res.commands.find((c) => c.exit === null);
+      if (command) command.exit = exit;
+    }
     return;
   }
 
@@ -104,10 +126,24 @@ function unwrapJsonString(value) {
   return value;
 }
 
+function stepHeader(contenido) {
+  return contenido.split(/\r?\n(?:\r?\nCommand output:|Log output:)\r?\n/)[0];
+}
+
+function stepBackgroundTaskId(contenido) {
+  const match = /^Tool is running as a background task with task id:\s*(\S+)\s*$/m.exec(stepHeader(contenido));
+  return match ? match[1] : null;
+}
+
+function stepFinishedTaskId(contenido) {
+  const match = /Task id "([^"\r\n]+)" finished with result:/m.exec(stepHeader(contenido));
+  return match ? match[1] : null;
+}
+
 function stepHeaderExit(contenido) {
   // Solo la cabecera previa a "Command output:" pertenece al runner; el stdout
   // del proceso puede contener líneas con el mismo texto.
-  const header = contenido.split(/\r?\n\r?\nCommand output:\r?\n/)[0];
+  const header = stepHeader(contenido);
   const match = /^Command exited with code (-?\d+)\.\s*$/m.exec(header);
   return match ? Number(match[1]) : null;
 }
@@ -115,7 +151,7 @@ function stepHeaderExit(contenido) {
 function stepCommandExit(ev, contenido) {
   const exit = stepHeaderExit(contenido);
   if (exit !== null) return exit;
-  const header = contenido.split(/\r?\n\r?\nCommand output:\r?\n/)[0];
+  const header = stepHeader(contenido);
   if (/^(FAILED|ERROR)$/i.test(String(ev.status ?? ''))) return 1;
   if (/^Encountered error in (?:step|tool) execution:/m.test(header)) return 1;
   return null;

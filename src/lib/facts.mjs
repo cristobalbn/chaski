@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { git, currentBranch, projectDir } from './paths.mjs';
-import { createPathFilter } from './secrets.mjs';
+import { createPathFilter, createRedactor } from './secrets.mjs';
 import { hasTime } from './budget.mjs';
 
 // Calibrado con árboles de hasta 10.000 archivos modificados. La reserva
@@ -80,7 +80,10 @@ export function gitFacts(cwd, config, budget = null, snapshot = readGitSnapshot(
     const log = hasTime(budget)
       ? git(cwd, ['log', '-5', '--format=%h %s', head ?? 'HEAD', '--'], { budget }) : null;
     if (log === null) facts.trimmed.push('últimos commits: no se pudieron consultar');
-    else facts.commits = log.split('\n').filter(Boolean);
+    else {
+      const redactCommit = createRedactor(config);
+      facts.commits = log.split('\n').filter(Boolean).map((line) => redactCommit(line).texto);
+    }
   }
 
   // Los nuevos sin seguimiento nunca aparecen en numstat. Para el resto se

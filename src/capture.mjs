@@ -367,7 +367,7 @@ function promote(ev, cwd, config) {
     // es la huella de quien mandó el mensaje del usuario como si fuera la
     // conclusión de un subagente.
     if ('agent_type' in ev && !String(ev.agent_type ?? '').trim()) return ok();
-    const kind = String(ev.agent_type ?? '').trim() || 'subagente';
+    const kind = redact(String(ev.agent_type ?? '').trim(), config).texto || 'subagente';
 
     const { texto } = redact(String(ev.last_assistant_message ?? '').trim(), config);
     const conclusion = summarizeConclusion(texto);
@@ -379,7 +379,8 @@ function promote(ev, cwd, config) {
       at: new Date().toISOString(),
       // `stop_reason` distinto de end_turn suele significar que no terminó
       // lo que estaba haciendo, y eso es justamente lo que hay que avisar.
-      reason: ev.stop_reason && ev.stop_reason !== 'end_turn' ? ev.stop_reason : null,
+      reason: ev.stop_reason && ev.stop_reason !== 'end_turn'
+        ? redact(String(ev.stop_reason), config).texto : null,
     };
 
     const previas = (estado.subagents ?? []).filter((s) => s.conclusion !== conclusion);
