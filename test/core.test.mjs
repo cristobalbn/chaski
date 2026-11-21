@@ -116,6 +116,12 @@ describe('contrato de transcript: Codex', () => {
   });
 });
 
+test('Codex conserva turnos y resultados de rollouts sin ordinal', () => {
+  const result = transcriptFacts(fixture('codex-legacy.transcript.jsonl'));
+  assert.equal(result.turns, 1);
+  assert.deepEqual(result.commands, [{ cmd: 'npm test', id: 'legacy-1', exit: 1 }]);
+});
+
 describe('Codex actual: comandos reales y resultados confirmados', () => {
   const r = transcriptFacts(fixture('codex-code-mode.transcript.jsonl'), 0, {});
   const parse = (events) => {
@@ -452,6 +458,17 @@ test('la lectura retoma desde el registro siguiente si se acaba el tiempo de par
     const rest = transcriptFacts(path, partial.offset);
     assert.equal(partial.turns + rest.turns, 100);
     assert.equal(rest.trimmed, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test('un directorio en la ruta del transcript conserva la marca de agua', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chaski-transcript-directory-'));
+  try {
+    const result = transcriptFacts(dir, 123);
+    assert.equal(result.offset, 123);
+    assert.equal(result.turns, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }

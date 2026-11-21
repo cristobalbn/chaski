@@ -103,7 +103,7 @@ export const CLIS = {
   },
   'codex': {
     bin: 'codex',
-    config: join(homedir(), '.codex', 'config.toml'),
+    config: resolve(process.env.CODEX_HOME || join(homedir(), '.codex'), 'config.toml'),
     formato: 'toml-codex',
   },
   'agy': {
