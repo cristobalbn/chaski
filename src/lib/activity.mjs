@@ -3,7 +3,7 @@ import { globalDir, readOnlyGlobalDir, readJson, promptHookPath } from './paths.
 import { canonicalAgent } from './payload.mjs';
 import { PROMPT_HOOK_EVENTS } from './ask.mjs';
 import { withFileLock } from './lock.mjs';
-import { writeAtomic } from './relay.mjs';
+import { writeAtomic } from './atomic.mjs';
 import { MINUTE_MS } from './time.mjs';
 
 function readActivity(path) {

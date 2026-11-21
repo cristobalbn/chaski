@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { readOnlyGlobalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath } from '../lib/paths.mjs';
 import { usageSummary } from '../lib/ask.mjs';
-import { writeAtomic } from '../lib/relay.mjs';
+import { writeAtomic } from '../lib/atomic.mjs';
 import { withFileLock } from '../lib/lock.mjs';
 import { redact, anonymize } from '../lib/secrets.mjs';
 import { pad } from './common.mjs';

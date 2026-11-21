@@ -235,3 +235,11 @@ La recuperación cubre una interrupción del proceso entre escrituras. La
 durabilidad ante pérdida de energía exige garantías adicionales del sistema
 de archivos. [Node.js](https://nodejs.org/api/fs.html#fsrenamesyncoldpath-newpath) ·
 [SQLite y commit atómico](https://sqlite.org/atomiccommit.html)
+
+La consulta de estado usa `git --no-optional-locks status` para evitar que un
+hook compita por la escritura del índice. Esto puede repetir una comprobación
+de archivos cuando el índice todavía necesita actualizarse. [Git](https://git-scm.com/docs/git-status#_background_refresh)
+
+Stop toma la respuesta final del payload si está disponible y conserva el
+transcript como respaldo. [Claude Code](https://code.claude.com/docs/en/hooks#stop-input) ·
+[Codex](https://learn.chatgpt.com/docs/hooks#stop)

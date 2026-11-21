@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { globalDir, readJsonForWrite } from '../lib/paths.mjs';
-import { writeAtomic } from '../lib/relay.mjs';
+import { writeAtomic } from '../lib/atomic.mjs';
 import { pad, backup } from './common.mjs';
 import { STATUSLINE, CLIS, isInstalled } from './hook-config.mjs';
 

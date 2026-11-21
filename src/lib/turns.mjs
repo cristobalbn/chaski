@@ -11,7 +11,7 @@
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { readJson, openTurnsPath } from './paths.mjs';
-import { writeAtomic } from './relay.mjs';
+import { writeAtomic } from './atomic.mjs';
 import { ageText, MODEL_TEXT_TTL_MS } from './time.mjs';
 import { withFileLock } from './lock.mjs';
 

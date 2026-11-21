@@ -24,7 +24,7 @@ export function readGitSnapshot(cwd, budget = null) {
   }
 
   const status = hasTime(budget, 100)
-    ? git(root, ['-c', 'status.aheadBehind=true', 'status', '--porcelain=v2', '--branch', '-z'], {
+    ? git(root, ['--no-optional-locks', '-c', 'status.aheadBehind=true', 'status', '--porcelain=v2', '--branch', '-z'], {
       budget, raw: true, timeout: budget ? STATUS_TIMEOUT_MS : undefined,
     }) : null;
   const records = status === null ? null : status.split('\0');

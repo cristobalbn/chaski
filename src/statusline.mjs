@@ -24,7 +24,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { readJson, globalDir, readOnlyGlobalDir, usagePath } from './lib/paths.mjs';
-import { writeAtomic } from './lib/relay.mjs';
+import { writeAtomic } from './lib/atomic.mjs';
 import { withFileLock } from './lib/lock.mjs';
 
 main();

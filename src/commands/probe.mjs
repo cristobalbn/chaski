@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { globalDir, readJsonForWrite } from '../lib/paths.mjs';
-import { writeAtomic } from '../lib/relay.mjs';
+import { writeAtomic } from '../lib/atomic.mjs';
 import { pad } from './common.mjs';
 import { PROBE_START, PROBE_END, cmd, findBlock, CLIS, isInstalled, isProbeHookGroup, removeBlock } from './hook-config.mjs';
 

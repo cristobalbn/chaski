@@ -84,7 +84,7 @@ test('la firma usa una sola clave al iniciar varios procesos con el mismo HOME',
   const casa = mkdtempSync(join(tmpdir(), 'chaski-key-race-'));
   try {
     const env = { ...process.env, HOME: casa, USERPROFILE: casa };
-    const relay = pathToFileURL(join(SRC, 'lib', 'relay.mjs')).href;
+    const relay = pathToFileURL(join(SRC, 'lib', 'signatures.mjs')).href;
     const helper = `
       import { sign, isValidSignature } from ${JSON.stringify(relay)};
       const [mode, signature] = process.argv.slice(1);
@@ -2603,6 +2603,26 @@ describe('#73: la petición de narrativa se entrega antes de la respuesta', () =
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+});
+
+test('Stop conserva la respuesta del payload cuando el transcript todavía no la tiene', () => {
+  const m = montar('chaski-payload-reply-');
+  try {
+    const transcript = join(m.proyecto, 'transcript.jsonl');
+    writeFileSync(transcript, JSON.stringify({ last_assistant_message: 'Respuesta previa del transcript.' }) + '\n');
+    const branch = m.g('rev-parse', '--abbrev-ref', 'HEAD').trim();
+    const state = join(m.proyecto, '.tambo', 'branches', branch, 'estado.json');
+    for (const [index, agent] of ['claude-code', 'codex'].entries()) {
+      const reply = `Respuesta final ${agent}`;
+      execFileSync(process.execPath, [join(SRC, 'capture.mjs'), 'Stop', agent], {
+        cwd: m.proyecto, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ cwd: m.proyecto, session_id: 'reply-' + index, transcript_path: transcript, last_assistant_message: reply }),
+      });
+      assert.equal(JSON.parse(readFileSync(state, 'utf8')).lastReply.text, reply);
+    }
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
 });
 
 test('una captura sin respuesta nueva conserva lastReply y no deja nada en stderr', () => {

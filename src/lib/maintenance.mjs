@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { branchSlug, git, readJson, readOnlyTambo, readOnlyGlobalDir, globalDir, projectDir } from './paths.mjs';
 import { hasTime } from './budget.mjs';
 import { DAY_MS } from './time.mjs';
-import { writeAtomic } from './relay.mjs';
+import { writeAtomic } from './atomic.mjs';
 import { withFileLock } from './lock.mjs';
 
 const FACT_DAYS = 30;

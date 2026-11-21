@@ -178,7 +178,7 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
 6. **Redactar antes de escribir.** El filtro de `lib/secrets.mjs` corre antes
    de que algo toque el disco, no solo antes de enviarlo a algún lado.
 
-7. **Escritura atómica siempre.** `writeAtomic()` de `lib/relay.mjs`:
+7. **Escritura atómica siempre.** `writeAtomic()` de `lib/atomic.mjs`:
    temporal más `rename`. Nunca `writeFileSync` directo sobre un archivo que
    otro proceso pueda leer — los clientes de sincronización bloquean archivos
    mientras los suben.

@@ -7,7 +7,7 @@
 import { existsSync, readFileSync, mkdirSync, fstatSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { tambo, readOnlyTambo, git } from './paths.mjs';
-import { writeAtomic } from './relay.mjs';
+import { writeAtomic } from './atomic.mjs';
 import { redact } from './secrets.mjs';
 import { canonicalAgent } from './payload.mjs';
 import { ageText, DAY_MS } from './time.mjs';

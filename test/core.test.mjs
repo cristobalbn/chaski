@@ -8,16 +8,17 @@
 // lugar de fallar en silencio en la máquina de alguien.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync, statSync, readdirSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
+import { writeAtomic } from '../src/lib/atomic.mjs';
 import { gitFacts } from '../src/lib/facts.mjs';
 import { transcriptFacts } from '../src/lib/transcript.mjs';
 import { redact, isExcludedPath, anonymize, createRedactor, createPathFilter } from '../src/lib/secrets.mjs';
-import { render, writeAtomic, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
+import { render, MAX_CHARS, preamble } from '../src/lib/relay.mjs';
 import { branchSlug, git, projectDir, readJson } from '../src/lib/paths.mjs';
 import { canonicalAgent, sessionOf, cwdOf, rawTranscriptOf, eventOf } from '../src/lib/payload.mjs';
 import { pruneOrphanRelays } from '../src/lib/maintenance.mjs';
@@ -828,6 +829,23 @@ describe('invariantes del relevo', () => {
     assert.match(md, /12 commit/);
     assert.match(md, /src\/a\.ts/);
   });
+});
+
+test('una publicación rechazada conserva la causa y limpia su temporal', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chaski-atomic-cause-'));
+  try {
+    const target = join(dir, 'destino');
+    mkdirSync(target);
+    assert.throws(() => writeAtomic(target, 'texto'), (error) => {
+      assert.match(error.message, /no se pudo reemplazar/);
+      assert.ok(error.cause?.code);
+      return true;
+    });
+    assert.equal(statSync(target).isDirectory(), true);
+    assert.deepEqual(readdirSync(dir), ['destino']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
 });
 
 test('escritura atómica: no deja el archivo a medias', () => {
