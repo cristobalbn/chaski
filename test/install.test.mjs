@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { branchSlug } from '../src/lib/paths.mjs';
+import { notePendingAsk, takePendingAsk } from '../src/lib/pending.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const SRC = join(AQUI, '..', 'src');
@@ -3730,6 +3731,29 @@ describe('hallazgos de la auditoría del 2026-11-20', () => {
   });
 });
 
+test('un pedido sobrevive si el lock está ocupado durante todo el intento', () => {
+  const m = montar('chaski-pending-busy-');
+  try {
+    const tambo = join(m.proyecto, '.tambo');
+    mkdirSync(tambo);
+    const pending = { session: 'sesion', at: new Date().toISOString(), reason: 'guardar narrativa' };
+    const path = join(tambo, 'pending-ask.json');
+    const lock = path + '.lock';
+    const take = () => takePendingAsk(m.proyecto, pending.session, () => null);
+
+    assert.equal(notePendingAsk(m.proyecto, pending), true);
+    const before = readFileSync(path, 'utf8');
+    mkdirSync(lock);
+    assert.equal(take(), null);
+    assert.equal(readFileSync(path, 'utf8'), before);
+    rmSync(lock, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    assert.deepEqual(take(), pending);
+    assert.equal(take(), null);
+  } finally {
+    rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
 test('varios procesos registran y consumen pedidos y turnos sin pisarse', async () => {
   const m = montar('chaski-state-race-');
   try {
@@ -3740,6 +3764,8 @@ test('varios procesos registran y consumen pedidos y turnos sin pisarse', async 
     const helper = `
       import { notePendingAsk, takePendingAsk } from ${JSON.stringify(pending)};
       import { openTurn, closeTurn } from ${JSON.stringify(turns)};
+      import { readFileSync } from 'node:fs';
+      import { join } from 'node:path';
       const [mode, id] = process.argv.slice(1);
       const cwd = process.cwd();
       for (let i = 0; i < 6; i++) {
@@ -3748,7 +3774,15 @@ test('varios procesos registran y consumen pedidos y turnos sin pisarse', async 
           if (!notePendingAsk(cwd, { session, at: new Date().toISOString(), reason: session })) process.exit(2);
           openTurn(cwd, session, 'codex');
         } else {
-          if (takePendingAsk(cwd, session, () => null)?.reason !== session) process.exit(3);
+          // Con el lock ocupado, el próximo mensaje puede consumir el pedido.
+          // Comprueba que sigue guardado antes de simular un nuevo intento.
+          let pedido = takePendingAsk(cwd, session, () => null);
+          for (let intento = 0; pedido === null && intento < 4; intento++) {
+            const guardados = JSON.parse(readFileSync(join(cwd, '.tambo', 'pending-ask.json'), 'utf8'));
+            if (guardados[session]?.reason !== session) process.exit(3);
+            pedido = takePendingAsk(cwd, session, () => null);
+          }
+          if (pedido?.reason !== session) process.exit(4);
           closeTurn(cwd, session);
         }
       }
