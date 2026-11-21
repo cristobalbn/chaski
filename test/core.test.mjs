@@ -852,8 +852,10 @@ describe('rutas excluidas', () => {
     assert.ok(isExcludedPath('infra/secretos/x.tf', { excludePaths: ['^infra/secretos/'] }));
     // `(a+)+` tendría que colgar con esta entrada; se descarta antes de ejecutarse.
     const t0 = Date.now();
-    const r = isExcludedPath('a'.repeat(40) + '!', { excludePaths: ['(a+)+$'] });
-    assert.equal(r, false, 'un patrón catastrófico no debe aplicarse');
+    for (const patron of ['(a+)+$', '((a)+)+$', '((a+))+$', '(a+){10}$']) {
+      const r = isExcludedPath('a'.repeat(40) + '!', { excludePaths: [patron] });
+      assert.equal(r, false, `un patrón catastrófico (${patron}) no debe aplicarse`);
+    }
     assert.ok(Date.now() - t0 < 1000, 'ejecutó el patrón catastrófico');
     // Y uno pasado del tope de longitud también se descarta.
     assert.equal(isExcludedPath('zzz', { excludePaths: ['z'.repeat(201)] }), false);

@@ -5,6 +5,18 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.1.21] - 2026-11-21
+
+### Mejorado
+- `chaski next` y `chaski doctor` informan también la narrativa más reciente de
+  una rama ya borrada o fusionada cuando es más nueva que la de la rama actual.
+- `chaski why` permite buscar por varios términos aunque no aparezcan seguidos
+  (p. ej. autor + palabra clave o dos términos de una decisión).
+- El filtro contra expresiones regulares de retroceso catastrófico
+  (`isCatastrophicShape`) detecta también grupos anidados con paréntesis
+  intermedios (`((a)+)+`, `((a+))+`) y repeticiones acotadas sobre grupos
+  cuantificados (`(a+){10}`).
+
 ## [0.1.20] - 2026-11-21
 
 ### Mejorado

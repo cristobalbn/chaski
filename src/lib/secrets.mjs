@@ -73,7 +73,15 @@ const MAX_USER_PATTERN_LEN = 200;
  * línea de defensa para lo que se escapa de la heurística.
  */
 function isCatastrophicShape(source) {
-  return /\([^()]*[+*|][^()]*\)(?:[*+]|\{\d+,\})/.test(source);
+  let s = String(source);
+  for (let i = 0; i < 4; i++) {
+    const next = s
+      .replace(/\(([^()+*|{}]+)\)(?=[*+?]|\{\d)/g, '$1')
+      .replace(/\(([^()]+)\)(?![*+?{])/g, '$1');
+    if (next === s) break;
+    s = next;
+  }
+  return /\([^()]*[+*|][^()]*\)(?:[*+]|\{\d+,|\{[4-9]\d*\}|\{\d{2,}\})/.test(s);
 }
 
 /**

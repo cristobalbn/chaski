@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { readOnlyGlobalDir, readJson, loadConfig, currentBranch, usagePath, tambo, readOnlyTambo, readOnlyStatePath, legacyBranchState, openTurnsPath } from '../lib/paths.mjs';
 import { usageSummary } from '../lib/ask.mjs';
+import { latestMergedBranchEntry } from '../lib/history.mjs';
 import { isFresh, MODEL_TEXT_TTL_MS } from '../lib/time.mjs';
 import { writeAtomic } from '../lib/atomic.mjs';
 import { withFileLock } from '../lib/lock.mjs';
@@ -66,11 +67,18 @@ export function next() {
   const config = loadConfig(cwd);
   const narrativaRedactada = estado.narrative ? redact(String(estado.narrative), config).texto : null;
   const pendiente = summarizePending(narrativaRedactada);
+  const heredada = latestMergedBranchEntry(cwd, estado);
   if (pendiente) {
     console.log(`  # pendiente: ${pendiente}`);
-  } else if (estado.lastReply?.text && isFresh(estado.lastReply.at, MODEL_TEXT_TTL_MS)) {
+  } else if (!heredada && estado.lastReply?.text && isFresh(estado.lastReply.at, MODEL_TEXT_TTL_MS)) {
     const respaldo = summarizeLastReply(redact(String(estado.lastReply.text), config).texto);
     if (respaldo) console.log(`  # última respuesta: ${respaldo}`);
+  }
+  if (heredada) {
+    const pendienteHeredado = summarizePending(redact(String(heredada.narrative), config).texto);
+    if (pendienteHeredado) {
+      console.log(`  # narrativa más reciente (de ${heredada.branch}, ya no existe): ${pendienteHeredado}`);
+    }
   }
   const abiertos = activeOpenTurns(cwd);
   if (abiertos.length) {
@@ -157,12 +165,14 @@ export function cost() {
 export async function why(args) {
   const { cwd } = projectContext();
   const filtro = args.join(' ').trim().toLowerCase();
+  const terminos = filtro ? filtro.split(/\s+/).filter(Boolean) : [];
   console.log(`\nchaski why${filtro ? ` — "${filtro}"` : ''}\n`);
 
   const tambo = readOnlyTambo(cwd);
   const coincidencias = [];
   const addMatch = (entry) => {
-    if (filtro && !`${entry.branch ?? ''} ${entry.author ?? ''} ${entry.narrative}`.toLowerCase().includes(filtro)) return;
+    const texto = `${entry.branch ?? ''} ${entry.author ?? ''} ${entry.narrative}`.toLowerCase();
+    if (terminos.length && !terminos.every((t) => texto.includes(t))) return;
     coincidencias.push(entry);
     if (coincidencias.length > 10) coincidencias.shift();
   };
