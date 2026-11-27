@@ -19,7 +19,7 @@ En Claude Code, Codex, agy y OpenCode:
 ## Pasos para guardar el relevo
 
 1. **Ubica la raíz del repositorio Git** (si el espacio de trabajo es una carpeta contenedora con un único repo hijo o una subcarpeta del repo, usa la raíz de ese repositorio).
-2. **Usa la ruta de `estado.json` si la petición automática ya la indica.** La petición puede referirse a la rama del turno anterior. Para un guardado manual, ubica `.tambo/branches/<slug>/estado.json` de la rama actual (`git rev-parse --abbrev-ref HEAD`):
+2. **Usa la ruta de `estado.json` si la petición automática ya la indica.** En un worktree enlazado (`.git` es un archivo), `.tambo/` está en el árbol principal, no en el worktree: la carpeta padre de `git rev-parse --path-format=absolute --git-common-dir`. En detached HEAD dentro de un worktree enlazado, `<slug>` es `HEAD-<nombre del worktree>`. La petición puede referirse a la rama del turno anterior. Para un guardado manual, ubica `.tambo/branches/<slug>/estado.json` de la rama actual (`git rev-parse --abbrev-ref HEAD`):
    - Si el nombre de la rama solo contiene letras, números, `.`, `_` o `-` y hasta 60 caracteres (por ejemplo `main`, `develop`, `feat-pagos`), `<slug>` es el nombre de la rama tal cual: `.tambo/branches/main/estado.json`.
    - Si el nombre de la rama contiene `/` u otros caracteres especiales (por ejemplo `feat/pagos` o `fix/login`), chaski reemplaza esos caracteres por `-` y agrega un sufijo hash de 6 caracteres: `.tambo/branches/feat-pagos-<hash>/estado.json` (dentro del archivo, `"facts.branch"` coincide exactamente con la rama actual). Lista `.tambo/branches/` para tomar la carpeta `<rama-con-guiones>-*` sin adivinar el hash.
 3. **Actualiza únicamente los tres campos de narrativa** en ese JSON (codificación UTF-8):

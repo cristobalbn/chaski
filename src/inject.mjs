@@ -23,6 +23,7 @@ import { createBudget, SESSION_START_BUDGET_MS } from './lib/budget.mjs';
 import { takePendingAsk } from './lib/pending.mjs';
 import { openTurn, interruptedTurns } from './lib/turns.mjs';
 import { mergedBranchNarrative } from './lib/history.mjs';
+import { otherWorktreeRelays } from './lib/worktrees.mjs';
 import { recordPromptActivity } from './lib/activity.mjs';
 
 main();
@@ -71,6 +72,7 @@ function main() {
         const extras = [
           interruptedTurns(cwd, sessionOf(ev)),
           mergedBranchNarrative(cwd, {}, budget),
+          otherWorktreeRelays(cwd, canonical),
         ].filter(Boolean);
         if (!extras.length) return;
         const salida = [
@@ -176,6 +178,9 @@ function main() {
 
     const heredada = mergedBranchNarrative(cwd, estado, budget);
     if (heredada) partes.push('', neutralizeMarks(heredada));
+
+    const otros = otherWorktreeRelays(cwd, canonical);
+    if (otros) partes.push('', neutralizeMarks(otros));
 
     partes.push('', CLOSING_MARK);
 

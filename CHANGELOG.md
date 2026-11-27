@@ -5,6 +5,26 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.2.2] - 2026-11-27
+
+### Corregido
+- El relevo de una sesión abierta en un worktree enlazado (los que crea Codex
+  en `~/.codex/worktrees/<id>/`) se guarda en el `.tambo/` del árbol principal
+  y no en el del worktree, donde el siguiente agente no lo veía y se perdía al
+  borrarse el worktree. Los cambios sin commitear siguen siendo los del
+  worktree. En detached HEAD la carpeta es `HEAD-<nombre del worktree>`, para
+  que dos worktrees sin rama no compartan relevo, y la poda la conserva
+  mientras el worktree exista.
+- Al arrancar, el relevo señala hasta tres relevos recientes (72 h) escritos
+  desde otro worktree, con su ruta. `estado.json` guarda el árbol del turno en
+  `worktree`.
+- El test de `agentOf` ya no falla si la suite corre con `CLAUDECODE` u otra
+  variable de un CLI definida.
+- `actions/checkout` y `actions/setup-node` pasan a v7 (runtime Node 24): las
+  v4 corrían sobre Node 20.
+- `docs/referencia.md` y `docs/diseno.html` dicen cuántos CLIs se soportan
+  (cuatro) y cuáles cubre la sonda.
+
 ## [0.2.1] - 2026-11-27
 
 ### Corregido
