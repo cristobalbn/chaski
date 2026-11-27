@@ -41,6 +41,24 @@ const env = {
 };
 for (const k of ['CLAUDECODE', 'CLAUDE_PLUGIN_ROOT', 'CODEX_SESSION', 'AGY_SESSION', 'ANTIGRAVITY_SESSION']) delete env[k];
 
+/**
+ * CLIs falsos al frente del PATH: `init` solo configura (e instala la skill
+ * y el bloque de AGENTS.md) si detecta algún CLI. En una máquina con los CLIs
+ * reales pasaba igual sin esto; en el CI, sin ninguno, no instalaba nada.
+ */
+function fakeClis(dir) {
+  mkdirSync(dir, { recursive: true });
+  for (const name of ['claude', 'codex', 'agy', 'opencode']) {
+    if (process.platform === 'win32') writeFileSync(join(dir, name + '.cmd'), '@echo off\r\nexit /b 0\r\n');
+    else writeFileSync(join(dir, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  }
+  return dir;
+}
+const fakeBin = fakeClis(join(tmp, 'bin'));
+const sep = win ? ';' : ':';
+env.PATH = fakeBin + sep + process.env.PATH;
+env.Path = fakeBin + sep + (process.env.Path ?? process.env.PATH);
+
 let failed = false;
 const check = (ok, label, detail = '') => {
   console.log(`${ok ? 'ok  ' : 'FAIL'}  ${label}${!ok && detail ? `\n      ${String(detail).trim().split('\n').join('\n      ')}` : ''}`);

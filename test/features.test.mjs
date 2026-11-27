@@ -23,6 +23,20 @@ const RAIZ = join(AQUI, '..');
 const SRC = join(RAIZ, 'src');
 const limpiar = (dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 
+/**
+ * CLIs falsos al frente del PATH: `init` solo configura (e instala la skill
+ * y el bloque de AGENTS.md) si detecta algún CLI. En una máquina con los CLIs
+ * reales pasaba igual sin esto; en el CI, sin ninguno, no instalaba nada.
+ */
+function fakeClis(dir) {
+  mkdirSync(dir, { recursive: true });
+  for (const name of ['claude', 'codex', 'agy', 'opencode']) {
+    if (process.platform === 'win32') writeFileSync(join(dir, name + '.cmd'), '@echo off\r\nexit /b 0\r\n');
+    else writeFileSync(join(dir, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  }
+  return dir;
+}
+
 /** Repo git descartable con un HOME descartable al lado. */
 function montar(prefijo) {
   const raiz = mkdtempSync(join(tmpdir(), prefijo));
@@ -43,6 +57,10 @@ function montar(prefijo) {
     CODEX_HOME: join(casa, '.codex'),
     XDG_CONFIG_HOME: join(casa, '.config'),
   };
+  const bin = fakeClis(join(raiz, 'bin'));
+  const sep = process.platform === 'win32' ? ';' : ':';
+  entorno.PATH = bin + sep + process.env.PATH;
+  entorno.Path = bin + sep + (process.env.Path ?? process.env.PATH);
   // Las variables de una sesión real (CLAUDECODE, CLAUDE_PLUGIN_ROOT…)
   // cambiarían qué CLI cree el hook que lo llamó.
   for (const k of ['CLAUDECODE', 'CLAUDE_PLUGIN_ROOT', 'CODEX_SESSION', 'AGY_SESSION', 'ANTIGRAVITY_SESSION']) delete entorno[k];
