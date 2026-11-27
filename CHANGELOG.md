@@ -15,10 +15,12 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   versión más alta (antes tomaba el más reciente, que podía ser la sesión que
   corría la verificación, de una versión anterior), ya no descarta los
   transcripts chicos de agy, y avisa cuando la versión del transcript no es la
-  del binario en el `PATH`: una sesión abierta desde la terminal de VS Code
-  corre el Codex de su extensión, no el instalado con npm.
-- Re-verificados con sesiones interactivas nuevas: Claude Code 2.1.332 y agy
-  1.5.18. Codex 0.172.0 queda pendiente.
+  del binario en el `PATH`: Codex registra la sesión desde su servidor
+  residente (`app-server-daemon`), que se actualiza solo y después del
+  binario, así que una sesión abierta justo tras actualizar queda con la
+  versión vieja.
+- Re-verificados con sesiones interactivas nuevas: Claude Code 2.1.332, Codex
+  0.172.0 y agy 1.5.18.
 
 ## [0.2.0] - 2026-11-27
 

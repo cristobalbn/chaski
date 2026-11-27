@@ -76,8 +76,10 @@ function elegir(cli) {
 
 /**
  * Versión del binario que está primero en el PATH. Si no coincide con la del
- * transcript, la sesión la corrió otro binario: pasó con la terminal de
- * VS Code, que antepone el Codex de su extensión al instalado con npm.
+ * transcript, la sesión la registró otro proceso. Pasó con Codex el
+ * 2026-11-27: la sesión la escribe su servidor residente (`app-server-daemon`,
+ * en ~/.codex/packages), que se actualiza solo y minutos después del binario
+ * de npm. Una sesión abierta antes queda con la versión vieja; `/new` lo arregla.
  */
 function instalada(cli) {
   try {
@@ -110,7 +112,8 @@ function verificar(cli, archivo, fecha) {
 
   console.log(`\n${cli}  ·  versión del transcript: ${version}  ·  en el PATH: ${enPath ?? '?'}  ·  transcript del ${fecha}  ·  ${real.length} registros`);
   if (enPath && /^\d/.test(version) && comparar(version, enPath) !== 0) {
-    console.log(`  ⚠ el transcript es de ${version} y el PATH tiene ${enPath}: esa sesión la corrió otro binario (¿la terminal de un IDE?). No verifica ${enPath}.`);
+    console.log(`  ⚠ el transcript es de ${version} y el PATH tiene ${enPath}: esa sesión la registró otro proceso`
+      + ` (en Codex, el servidor residente antes de actualizarse). Abre una sesión nueva. No verifica ${enPath}.`);
   }
   console.log(`  turnos ${t.turns} · comandos ${t.commands.length} (${exits.ok} ok, ${exits.error} error, ${exits.desconocido} sin código)`
     + ` · archivos leídos ${t.filesRead.length} · última respuesta ${t.lastMessage ? 'sí' : 'NO'}`);
