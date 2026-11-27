@@ -43,8 +43,8 @@ versión sin haber corrido el CLI.
 | Claude Code | 2.1.332 | 2026-11-27 | `node scripts/verify-local.mjs` sobre una sesión interactiva nueva (la versión figura en el transcript) |
 | Codex CLI | 0.172.0 | 2026-11-27 | `scripts/verify-local.mjs` sobre una sesión interactiva nueva (`/new`). Ojo: la sesión la registra el servidor residente (`app-server-daemon`), que se actualiza solo y después del binario; una sesión abierta antes de eso queda con la versión vieja |
 | agy | 1.5.18 | 2026-11-27 | `scripts/verify-local.mjs` sobre una sesión interactiva nueva; el transcript no trae versión, el `cli.log` y `agy --version` dicen 1.5.18 |
-| OpenCode 1.x | 1.19.6 | 2026-11-27 | turno real con el plugin en un HOME aislado: captura, inyección y compactación |
-| OpenCode 2.x | 2.4.2 | 2026-11-27 | ídem, con `@opencode/cli` instalado en un prefijo aparte |
+| OpenCode 1.x | 1.19.6 | 2026-11-27 | turno real con el plugin en un HOME aislado: captura, inyección y compactación; re-verificado el ciclo de la petición de narrativa (pedido, entrega y narrativa escrita por el modelo) |
+| OpenCode 2.x | 2.4.2 | 2026-11-27 | ídem, con `@opencode/cli` instalado en un prefijo aparte; solo la llamada del agente pasa por `context` (no la del título) |
 
 Los tres `*-prompt` / `*-preinvocation` no salen de `chaski probe`: reemplázalos por una captura real en cuanto haya una. Si la forma difiere, el test de contrato lo dice.
 

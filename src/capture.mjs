@@ -26,7 +26,7 @@ import { writeAtomic } from './lib/atomic.mjs';
 import { publishRelay } from './lib/relay-store.mjs';
 import { previousConversation, saveConversation } from './lib/conversations.mjs';
 import { redact } from './lib/secrets.mjs';
-import { shouldAsk, askText, askPayload, promptHookAlive, COMPACT_HINT, quotaPressure } from './lib/ask.mjs';
+import { shouldAsk, askText, askPayload, promptHookAlive, COMPACT_HINT, quotaPressure, DEFERRED_ONLY } from './lib/ask.mjs';
 import { createBudget, STOP_HOOK_BUDGET_MS } from './lib/budget.mjs';
 import { readStdinJson, canonicalAgent, agentOf, sessionOf, cwdOf, transcriptOf, eventOf } from './lib/payload.mjs';
 import { MODEL_TEXT_TTL_MS, isFresh } from './lib/time.mjs';
@@ -467,6 +467,7 @@ function freshReply(r, ahora = Date.now()) {
  */
 function canDefer(agent) {
   try {
+    if (DEFERRED_ONLY.has(canonicalAgent(agent))) return true;
     return promptHookAlive(readJson(promptHookPath(), {}), agent);
   } catch {
     return false;

@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 import { transcriptFacts } from '../src/lib/transcript.mjs';
-import { reduceMessages, reduceMessagesV2, chaskiPlugin, chaskiPluginV2, chaskiDefinition } from '../src/opencode.mjs';
+import { reduceMessages, reduceMessagesV2, chaskiPlugin, chaskiPluginV2, chaskiDefinition, resolveNode } from '../src/opencode.mjs';
 import { promptPayload, PROMPT_HOOK_EVENTS } from '../src/lib/ask.mjs';
 import { canonicalAgent } from '../src/lib/payload.mjs';
 import { opencodeSupported } from '../src/commands/hook-config.mjs';
@@ -541,6 +541,73 @@ describe('el plugin de punta a punta, con un cliente falso', () => {
         const ev2 = { ...structuredClone(eventosV2['hook.context']), sessionID: 'ses_v2_pedido' };
         await a.hooks.context(ev2);
         assert.equal(ev2.system.length, antes, 'la sesión borrada siguió recibiendo el pedido');
+      });
+    } finally {
+      limpiar(m.raiz);
+    }
+  });
+
+  // Sin anotar nada a mano: el fin de turno del plugin tiene que anotar el
+  // pedido, y el mensaje siguiente entregarlo. Hasta 0.2.4 shouldAsk()
+  // descartaba a OpenCode (no tiene salida en Stop) y el pedido nunca se
+  // generaba; los tests de arriba no lo veían porque lo anotan ellos. Sin
+  // ~/.chaski/prompt-hook.json, como en la primera sesión de un usuario.
+  test('1.x: el fin de turno anota el pedido de narrativa y el mensaje siguiente lo recibe', async () => {
+    const m = montar('chaski-oc-ciclo-');
+    try {
+      execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      const Chaski = (await import(pathToFileURL(m.plugin).href + '?t=' + Date.now())).default.server;
+      await conEntorno(m, async () => {
+        assert.ok(!existsSync(join(m.casa, '.chaski', 'prompt-hook.json')));
+        const hooks = await Chaski({ client: cliente(mensajes), directory: m.proyecto });
+        await hooks.event(eventos['session.idle']);
+        const pedidos = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'pending-ask.json'), 'utf8'));
+        assert.deepEqual(Object.keys(pedidos), ['ses_fixture']);
+
+        await hooks['chat.message']({ sessionID: 'ses_fixture' });
+        const salida = { system: ['base'] };
+        await hooks['experimental.chat.system.transform']({ sessionID: 'ses_fixture' }, salida);
+        assert.match(salida.system[0], /todavía no tiene narrativa/);
+        assert.ok(!existsSync(join(m.proyecto, '.tambo', 'pending-ask.json')), 'el pedido entregado no se borró');
+      });
+    } finally {
+      limpiar(m.raiz);
+    }
+  });
+
+  test('2.x: el fin de turno anota el pedido de narrativa y el hook prompt lo entrega', async () => {
+    const m = montar('chaski-oc-v2ciclo-', 'opencode v2.4.2');
+    try {
+      execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      const def = (await import(pathToFileURL(m.plugin).href + '?t=' + Date.now())).default;
+      await conEntorno(m, async () => {
+        const a = ctxFalso(m.proyecto);
+        await def.setup(a.ctx);
+        await a.emitir(eventosV2['session.execution.succeeded']);
+        const pedidos = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'pending-ask.json'), 'utf8'));
+        assert.deepEqual(Object.keys(pedidos), ['ses_v2']);
+
+        await a.hooks.prompt(structuredClone(eventosV2['hook.prompt']));
+        const ev = structuredClone(eventosV2['hook.context']);
+        await a.hooks.context(ev);
+        assert.match(ev.system.at(-1).text, /todavía no tiene narrativa/);
+      });
+    } finally {
+      limpiar(m.raiz);
+    }
+  });
+
+  test('si la ruta de node del plugin ya no existe, usa node del PATH y captura igual', async () => {
+    const m = montar('chaski-oc-node-');
+    try {
+      execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      const inexistente = join(m.raiz, 'nvm', 'v0.0.0', 'node.exe');
+      assert.equal(resolveNode(inexistente), 'node');
+      assert.equal(resolveNode(process.execPath), process.execPath);
+      await conEntorno(m, async () => {
+        const hooks = await chaskiDefinition({ node: inexistente }).server({ client: cliente(mensajes), directory: m.proyecto });
+        await hooks.event(eventos['session.idle']);
+        assert.ok(existsSync(join(m.proyecto, '.tambo', 'branches')), 'con la ruta rota no se capturó');
       });
     } finally {
       limpiar(m.raiz);
