@@ -40,9 +40,9 @@ versión sin haber corrido el CLI.
 
 | CLI | Versión | Fecha | Cómo |
 |---|---|---|---|
-| Claude Code | 2.1.330 | 2026-11-27 | `node scripts/verify-local.mjs` sobre un transcript real; hooks activos en la misma sesión |
-| Codex CLI | 0.171.0 | 2026-11-27 | `scripts/verify-local.mjs` sobre una sesión del 2026-11-22; `estado.json` escrito por su hook `Stop` |
-| agy | 1.5.14 | 2026-11-27 | `scripts/verify-local.mjs` sobre un transcript del 2026-11-21, día en que se instaló 1.5.14 (el transcript no trae versión) |
+| Claude Code | 2.1.332 | 2026-11-27 | `node scripts/verify-local.mjs` sobre una sesión interactiva nueva (la versión figura en el transcript) |
+| Codex CLI | 0.172.0 | 2026-11-27 | `scripts/verify-local.mjs` sobre una sesión interactiva nueva (`/new`). Ojo: la sesión la registra el servidor residente (`app-server-daemon`), que se actualiza solo y después del binario; una sesión abierta antes de eso queda con la versión vieja |
+| agy | 1.5.18 | 2026-11-27 | `scripts/verify-local.mjs` sobre una sesión interactiva nueva; el transcript no trae versión, el `cli.log` y `agy --version` dicen 1.5.18 |
 | OpenCode 1.x | 1.19.6 | 2026-11-27 | turno real con el plugin en un HOME aislado: captura, inyección y compactación |
 | OpenCode 2.x | 2.4.2 | 2026-11-27 | ídem, con `@opencode/cli` instalado en un prefijo aparte |
 
