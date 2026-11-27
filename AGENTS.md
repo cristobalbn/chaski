@@ -447,6 +447,15 @@ el mínimo soportado) y 2.x a `setup()`. Ninguna importa `@opencode/plugin`
 | mensajes | `client.session.messages()` → `reduceMessages()` | `ctx.session.context()` → `reduceMessagesV2()` |
 | subagente | `client.session.get()` → `data.parentID` | `ctx.session.get()` → `parentID` |
 
+- **La petición de narrativa siempre es diferida** (`DEFERRED_ONLY` en
+  `src/lib/ask.mjs`). El plugin no puede hacer actuar al modelo en `Stop`
+  (descarta el stdout de capture), y su hook de entrega viaja en el mismo
+  archivo, así que no se exige la prueba de vida de `prompt-hook.json`. Hasta
+  0.2.4 `shouldAsk()` descartaba a OpenCode y la petición nunca se generaba:
+  los tests de entrega anotaban el pedido a mano y no lo vieron. El ciclo
+  entero (Stop → pedido → mensaje siguiente) tiene test sin atajos.
+- **Si la ruta de `node` del plugin ya no existe** (nvm, fnm, volta),
+  `resolveNode()` usa `node` del PATH; `doctor` igual pide `init`.
 - **No hay transcript en disco** (OpenCode guarda en SQLite). Al terminar el
   turno el plugin pide los mensajes, los reduce a un JSONL determinista —el
   mismo en las dos versiones, así el adaptador no las distingue— y lo manda en
@@ -466,7 +475,9 @@ el mínimo soportado) y 2.x a `setup()`. Ninguna importa `@opencode/plugin`
   alarma, y el workflow `upstream.yml` avisa de versiones nuevas.
 - Para depurar: `opencode debug paths` (1.x), el log en
   `~/.local/share/opencode/log/` y un HOME aislado con `HOME`, `USERPROFILE` y
-  `XDG_*_HOME` en la misma línea. Para probar 2.x sin reemplazar el 1.x
+  `XDG_*_HOME` en la misma línea, **y `PWD`**: OpenCode toma la carpeta de
+  trabajo de `PWD` antes que del cwd del proceso, y la heredada de Git Bash
+  hizo correr una prueba sobre el repo de chaski en vez del temporal. Para probar 2.x sin reemplazar el 1.x
   instalado: `npm i --prefix <dir> @opencode/cli` y ejecuta
   `<dir>/node_modules/@opencode/cli/bin/opencode.exe` (o `opencode` fuera de
   Windows). Los modelos `opencode/*-free` no piden credenciales.

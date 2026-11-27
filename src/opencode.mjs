@@ -29,6 +29,7 @@
 // Regla de los hooks (invariante 4): nada de aquí puede lanzar. Un error en
 // un plugin de OpenCode le rompe la sesión al usuario.
 import { spawn, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const CAPTURE = fileURLToPath(new URL('./capture.mjs', import.meta.url));
@@ -38,6 +39,21 @@ const INJECT = fileURLToPath(new URL('./inject.mjs', import.meta.url));
 const HOOK_TIMEOUT_MS = 10_000;
 /** Por parte de texto. El relevo usa ~700 caracteres de la última respuesta. */
 const MAX_TEXT = 4000;
+
+/**
+ * La ruta de Node que escribió `init`, o `node` del PATH si ya no existe.
+ *
+ * `init` fija `process.execPath` en el plugin porque dentro de OpenCode el
+ * ejecutable es OpenCode. Esa ruta se rompe con nvm, fnm o volta al cambiar
+ * de versión, o al reinstalar Node en otra carpeta, y entonces cada hook
+ * fallaba en silencio hasta volver a correr `init` (doctor lo marcaba, pero
+ * nadie lo corre a diario). Con el respaldo sigue funcionando; doctor
+ * igual pide `init` para dejar la ruta fija.
+ */
+export function resolveNode(node) {
+  if (typeof node !== 'string' || !node) return node;
+  try { return existsSync(node) ? node : 'node'; } catch { return node; }
+}
 
 /** Línea del JSONL común: `{ info: { id, role }, parts }`. */
 function line(id, role, parts) {
@@ -340,6 +356,9 @@ export function chaskiPluginV2({ node } = {}) {
       if (text && Array.isArray(ev?.system)) ev.system.push({ type: 'text', text });
     };
 
+    // En 2.x no hace falta el filtro de la llamada del título que tiene 1.x
+    // (isTitleCall): verificado con 2.4.2 (2026-11-27), solo la llamada del
+    // agente (`agent: "build"`) pasa por `context`; la del título no.
     try {
       await ctx.session.hook('context', async (ev) => {
         try {
@@ -381,6 +400,7 @@ export function chaskiPluginV2({ node } = {}) {
  * Las APIs no se traducen solas: cada una tiene su adaptador arriba.
  */
 export function chaskiDefinition({ node } = {}) {
+  node = resolveNode(node);
   const v1 = chaskiPlugin({ node });
   const v2 = chaskiPluginV2({ node });
   return {

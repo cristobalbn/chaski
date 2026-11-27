@@ -5,6 +5,25 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.2.5] - 2026-11-27
+
+### Corregido
+- **OpenCode nunca recibía la petición de narrativa.** `shouldAsk()`
+  descartaba a todo CLI sin salida en `Stop`, y OpenCode no la tiene: el
+  plugin descarta el stdout de la captura. Ahora OpenCode recibe siempre la
+  petición diferida, con el mensaje siguiente, sin exigir la prueba de vida
+  del hook de entrega (viaja en el mismo plugin). Verificado de punta a punta
+  con OpenCode 1.19.6 y 2.4.2 reales: captura, pedido, entrega y narrativa
+  escrita por el modelo. Los tests de entrega anotaban el pedido a mano y no
+  lo veían; el nuevo test recorre el ciclo entero en 1.x y 2.x.
+- Si la ruta de `node` que `init` escribió en el plugin de OpenCode ya no
+  existe (nvm, fnm, volta, reinstalación), el plugin usa `node` del PATH en
+  vez de fallar en silencio en cada hook.
+
+### Verificado
+- En OpenCode 2.4.2 la llamada que genera el título no pasa por el hook
+  `context`: no hace falta el filtro que tiene 1.x.
+
 ## [0.2.4] - 2026-11-27
 
 ### Agregado

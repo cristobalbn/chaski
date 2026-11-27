@@ -71,8 +71,9 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now(), cuota 
   if (config?.askNarrative === false) return null;
 
   // Los tres soportan mantener al agent un turno más, pero NO con el mismo
-  // contrato (ver `askPayload`). Un CLI desconocido no se intenta.
-  if (!askPayload(estado.agent, '')) return null;
+  // contrato (ver `askPayload`). OpenCode no tiene ese contrato pero sí la
+  // entrega diferida (DEFERRED_ONLY). Un CLI desconocido no se intenta.
+  if (!askPayload(estado.agent, '') && !DEFERRED_ONLY.has(canonicalAgent(estado.agent))) return null;
 
   // Protección contra bucles. Sin esto, un hook que bloquea vuelve a
   // bloquear en el turno que él mismo provocó, y no termina nunca.
@@ -266,6 +267,18 @@ export function askPayload(agent, reason) {
 //   - Antigravity: `PreInvocation` con `injectSteps`. Corre antes de CADA
 //     llamada al modelo, no una vez por mensaje, así que la anotación se borra
 //     al entregarla y la petición sale una sola vez.
+
+/**
+ * CLIs que solo reciben la petición diferida, nunca en `Stop`.
+ *
+ * OpenCode: el plugin no tiene cómo hacer actuar al modelo al terminar el
+ * turno (descarta el stdout de capture.mjs), y su hook de entrega
+ * (`chat.message` en 1.x, `prompt` en 2.x) viaja en el mismo archivo que la
+ * captura, así que existe siempre que la captura existe: no hace falta la
+ * prueba de vida que exigen los demás. Antes de 0.2.5 shouldAsk() lo
+ * descartaba por no tener askPayload(), y OpenCode nunca recibía la petición.
+ */
+export const DEFERRED_ONLY = new Set(['opencode']);
 
 /** Evento que entrega la petición anotada, por CLI. */
 export const PROMPT_HOOK_EVENTS = Object.freeze({
