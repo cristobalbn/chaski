@@ -5,6 +5,21 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.2.1] - 2026-11-27
+
+### Corregido
+- `init` y `doctor` en Windows con Node reciente ya no muestran el aviso
+  `DEP0190` al leer `opencode --version`: el comando va como un solo texto en
+  vez de argumentos sueltos junto con `shell`.
+- `scripts/verify-local.mjs` elige, entre los transcripts recientes, el de la
+  versión más alta (antes tomaba el más reciente, que podía ser la sesión que
+  corría la verificación, de una versión anterior), ya no descarta los
+  transcripts chicos de agy, y avisa cuando la versión del transcript no es la
+  del binario en el `PATH`: una sesión abierta desde la terminal de VS Code
+  corre el Codex de su extensión, no el instalado con npm.
+- Re-verificados con sesiones interactivas nuevas: Claude Code 2.1.332 y agy
+  1.5.18. Codex 0.172.0 queda pendiente.
+
 ## [0.2.0] - 2026-11-27
 
 ### Agregado

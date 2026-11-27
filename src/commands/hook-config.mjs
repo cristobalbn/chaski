@@ -157,13 +157,15 @@ export const OPENCODE_MIN = [1, 18, 29];
 /**
  * Versión del OpenCode instalado como `[mayor, menor, parche]`, o null si no
  * se pudo leer. 1.x imprime `1.19.6`; 2.x, `opencode v2.4.2`.
- * Con `shell` en Windows porque `opencode` es un shim .cmd/.ps1 de npm.
+ * Con `shell` en Windows porque `opencode` es un shim .cmd/.ps1 de npm. El
+ * comando va como un solo texto fijo: pasar argumentos aparte junto con
+ * `shell` está deprecado en Node (DEP0190) y ensuciaba la salida de init.
  */
 export function opencodeVersion() {
   try {
-    const r = spawnSync('opencode', ['--version'], {
-      encoding: 'utf8', timeout: 8000, windowsHide: true, shell: process.platform === 'win32',
-    });
+    const r = process.platform === 'win32'
+      ? spawnSync('opencode --version', { encoding: 'utf8', timeout: 8000, windowsHide: true, shell: true })
+      : spawnSync('opencode', ['--version'], { encoding: 'utf8', timeout: 8000 });
     const m = /(\d+)\.(\d+)\.(\d+)/.exec(String(r.stdout ?? ''));
     return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
   } catch {
