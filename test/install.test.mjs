@@ -37,7 +37,7 @@ const SRC = join(AQUI, '..', 'src');
 function clisDeMentira(dir) {
   mkdirSync(dir, { recursive: true });
   const win = process.platform === 'win32';
-  for (const name of ['claude', 'codex', 'agy']) {
+  for (const name of ['claude', 'codex', 'agy', 'opencode']) {
     if (win) {
       writeFileSync(join(dir, name + '.cmd'), '@echo off\r\nexit /b 0\r\n');
     } else {
@@ -71,6 +71,9 @@ function montar(prefijo) {
     HOME: casa,
     USERPROFILE: casa,
     CODEX_HOME: join(casa, '.codex'),
+    // OpenCode lee su carpeta de plugins de XDG_CONFIG_HOME si está definida:
+    // heredarla del entorno escribiría el plugin en la config real.
+    XDG_CONFIG_HOME: join(casa, '.config'),
     // Los CLIs falsos van al frente, para que `isInstalled()` los encuentre.
     PATH: bin + (process.platform === 'win32' ? ';' : ':') + process.env.PATH,
     Path: bin + (process.platform === 'win32' ? ';' : ':') + (process.env.Path ?? process.env.PATH),
@@ -480,6 +483,7 @@ describe('uninstall revierte lo que init tocó', () => {
       assert.match(sana, /claude code\s+registrado \(SessionStart, UserPromptSubmit, Stop, SessionEnd, PreCompact, SubagentStop, StopFailure\)/);
       assert.match(sana, /codex\s+registrado \(SessionStart, UserPromptSubmit, Stop\)/);
       assert.match(sana, /agy\s+registrado \(SessionStart, Stop, PreInvocation\)/);
+      assert.match(sana, /opencode\s+registrado \(SessionStart, UserPromptSubmit, Stop, PreCompact\)/);
       assert.doesNotMatch(sana, /apunta a una ruta que no existe/);
 
       // Si el usuario movió o borró el clon al que apuntaba el hook, doctor lo avisa.
@@ -499,10 +503,14 @@ describe('uninstall revierte lo que init tocó', () => {
       writeFileSync(join(m.casa, '.gemini', 'config', 'hooks.json'), JSON.stringify({
         chaski: { nota: 'SessionStart Stop inject.mjs' },
       }));
+      // Un chaski.js que no generó chaski, aunque nombre sus scripts.
+      writeFileSync(join(m.casa, '.config', 'opencode', 'plugins', 'chaski.js'),
+        '// SessionStart Stop capture.mjs inject.mjs opencode.mjs\nexport const X = async () => ({});\n');
       const falsa = m.correr('doctor');
       assert.match(falsa, /claude code\s+hooks NO registrados/, 'claude code: falso positivo');
       assert.match(falsa, /codex\s+hooks NO registrados/, 'codex: falso positivo por comentarios');
       assert.match(falsa, /agy\s+hooks NO registrados/, 'agy: falso positivo');
+      assert.match(falsa, /opencode\s+hooks NO registrados/, 'opencode: falso positivo');
       assert.doesNotMatch(falsa, /hooks registrados pero nunca ejecutados/,
         'mandó a conceder confianza a hooks que no existen');
     } finally {
@@ -522,7 +530,8 @@ describe('uninstall revierte lo que init tocó', () => {
       }
 
       // Cada ruta de configuración es un directorio: ningún instalador puede escribir.
-      for (const r of [['.claude', 'settings.json'], ['.codex', 'config.toml'], ['.gemini', 'config', 'hooks.json']]) {
+      for (const r of [['.claude', 'settings.json'], ['.codex', 'config.toml'], ['.gemini', 'config', 'hooks.json'],
+        ['.config', 'opencode', 'plugins', 'chaski.js']]) {
         mkdirSync(join(m.casa, ...r), { recursive: true });
       }
       const r = spawnSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'],
@@ -532,7 +541,7 @@ describe('uninstall revierte lo que init tocó', () => {
       assert.match(r.stdout, /chaski NO quedó instalado/);
       assert.doesNotMatch(r.stdout, /chaski quedó instalado/, 'anunció éxito con todo fallado');
       assert.doesNotMatch(r.stdout, /CONECTADOS|CONFIGURADOS AHORA/, 'listó como conectados CLIs que fallaron');
-      assert.match(r.stdout, /NO SE PUDIERON CONFIGURAR: claude code, codex, agy/);
+      assert.match(r.stdout, /NO SE PUDIERON CONFIGURAR: claude code, codex, agy, opencode/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
@@ -1210,7 +1219,9 @@ describe('puntos de entrada', () => {
   // de alguien. Si lo estás viendo fallar: no cambies el test, deshaz el
   // renombre.
   // statusline.mjs se sumó con #82: `init --statusline` también graba su ruta.
-  for (const nombre of ['capture.mjs', 'inject.mjs', 'statusline.mjs']) {
+  // opencode.mjs se sumó con la integración de OpenCode: el plugin que init
+  // deja en la config de OpenCode lo importa por su ruta absoluta.
+  for (const nombre of ['capture.mjs', 'inject.mjs', 'statusline.mjs', 'opencode.mjs']) {
     test(`src/${nombre} conserva su nombre`, () => {
       assert.ok(existsSync(join(SRC, nombre)),
         `src/${nombre} no existe. Es un punto de entrada registrado en ` +
@@ -1218,12 +1229,12 @@ describe('puntos de entrada', () => {
     });
   }
 
-  test('el instalador registra exactamente esos tres scripts', () => {
-    // Si alguien agrega un tercer punto de entrada, tiene que entrar también
+  test('el instalador registra exactamente esos cuatro scripts', () => {
+    // Si alguien agrega otro punto de entrada, tiene que entrar también
     // en la lista de arriba y en el invariante 8 de AGENTS.md.
     const configHooks = readFileSync(join(SRC, 'commands', 'hook-config.mjs'), 'utf8');
     const registrados = [...configHooks.matchAll(/resolve\(AQUI, '([\w.-]+)'\)/g)].map((m) => m[1]);
-    assert.deepEqual([...new Set(registrados)].sort(), ['capture.mjs', 'inject.mjs', 'statusline.mjs']);
+    assert.deepEqual([...new Set(registrados)].sort(), ['capture.mjs', 'inject.mjs', 'opencode.mjs', 'statusline.mjs']);
   });
 });
 

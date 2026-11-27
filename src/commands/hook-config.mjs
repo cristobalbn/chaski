@@ -10,7 +10,8 @@
 import { chmodSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { globalDir } from '../lib/paths.mjs';
 import { writeAtomic } from '../lib/atomic.mjs';
 import { AQUI } from './common.mjs';
@@ -33,6 +34,9 @@ import { AQUI } from './common.mjs';
 export const CAPTURE = resolve(AQUI, 'capture.mjs');
 export const INJECT = resolve(AQUI, 'inject.mjs');
 export const STATUSLINE = resolve(AQUI, 'statusline.mjs');
+// El plugin de OpenCode: el archivo que init deja en la config de OpenCode
+// lo importa por esta ruta, así que el nombre queda fijo igual que los otros.
+export const OPENCODE_PLUGIN = resolve(AQUI, 'opencode.mjs');
 export const MARCA_INI = '# >>> chaski (no editar a mano) >>>';
 export const MARCA_FIN = '# <<< chaski <<<';
 
@@ -111,7 +115,87 @@ export const CLIS = {
     config: join(homedir(), '.gemini', 'config', 'hooks.json'),
     formato: 'json-agy',
   },
+  // OpenCode no tiene hooks de shell: carga los .js de su carpeta de plugins
+  // (XDG también en Windows, verificado con `opencode debug paths`). La
+  // «config» es un archivo propio de chaski, no uno compartido.
+  'opencode': {
+    bin: 'opencode',
+    config: join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'opencode', 'plugins', 'chaski.js'),
+    formato: 'js-opencode',
+  },
 };
+
+/** Primera línea del plugin de OpenCode: lo identifica como de chaski. */
+export const OPENCODE_MARK = '// >>> chaski: generado por `chaski init`, no editar a mano >>>';
+
+/** Eventos de chaski que traduce el plugin de OpenCode (ver src/opencode.mjs). */
+export const OPENCODE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Stop', 'PreCompact'];
+
+/**
+ * Contenido del plugin de OpenCode: importa src/opencode.mjs por su ruta
+ * absoluta y le pasa la de Node, porque dentro de OpenCode
+ * `process.execPath` es el binario de OpenCode.
+ */
+export function opencodePluginSource() {
+  return [
+    OPENCODE_MARK,
+    `import { chaskiDefinition } from ${JSON.stringify(pathToFileURL(OPENCODE_PLUGIN).href)};`,
+    `export default chaskiDefinition({ node: ${JSON.stringify(process.execPath)} });`,
+    '',
+  ].join('\n');
+}
+
+/**
+ * Versión mínima de OpenCode que carga el plugin de chaski. Es desde cuando
+ * 1.x acepta un `export default` con `server()` (guía oficial de migración a
+ * 2.x: «V1 object entrypoints are supported in OpenCode 1.18.29 and newer»),
+ * que es lo que permite servir 1.x y 2.x desde el mismo archivo.
+ * La política de versiones está en AGENTS.md («Versiones soportadas»).
+ */
+export const OPENCODE_MIN = [1, 18, 29];
+
+/**
+ * Versión del OpenCode instalado como `[mayor, menor, parche]`, o null si no
+ * se pudo leer. 1.x imprime `1.19.6`; 2.x, `opencode v2.4.2`.
+ * Con `shell` en Windows porque `opencode` es un shim .cmd/.ps1 de npm.
+ */
+export function opencodeVersion() {
+  try {
+    const r = spawnSync('opencode', ['--version'], {
+      encoding: 'utf8', timeout: 8000, windowsHide: true, shell: process.platform === 'win32',
+    });
+    const m = /(\d+)\.(\d+)\.(\d+)/.exec(String(r.stdout ?? ''));
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ¿Esta versión carga el plugin? Una versión ilegible se da por buena: es
+ * preferible instalar y que doctor lo diga a no instalar por una salida rara.
+ */
+export function opencodeSupported(version) {
+  if (!Array.isArray(version)) return true;
+  for (let i = 0; i < 3; i++) {
+    if (version[i] !== OPENCODE_MIN[i]) return version[i] > OPENCODE_MIN[i];
+  }
+  return true;
+}
+
+/** Rutas que usa un plugin de OpenCode generado por chaski, o null si no es nuestro. */
+export function parseOpencodePlugin(texto) {
+  if (typeof texto !== 'string' || !texto.startsWith(OPENCODE_MARK)) return null;
+  // `chaskiPlugin` es la forma de antes de soportar OpenCode 2.x: se reconoce
+  // para que doctor y uninstall sigan funcionando sobre una instalación vieja.
+  const modulo = texto.match(/^import \{ (?:chaskiDefinition|chaskiPlugin) \} from ("[^"\n]*");$/m);
+  const node = texto.match(/(?:chaskiDefinition|chaskiPlugin)\(\{ node: ("[^"\n]*") \}\)/);
+  try {
+    return { module: modulo ? JSON.parse(modulo[1]) : null, node: node ? JSON.parse(node[1]) : null };
+  } catch {
+    return { module: null, node: null };
+  }
+}
 
 /**
  * Reconoce los hooks de Claude Code registrados por chaski.

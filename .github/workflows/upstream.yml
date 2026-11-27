@@ -1,0 +1,56 @@
+# Vigila los CLIs que integra chaski (Claude Code, Codex, agy, OpenCode 1.x y
+# 2.x): versiones nuevas, notas de cambios que tocan el contrato o abren una
+# oportunidad, y líneas que dejan de publicarse. Si hay algo que atender, abre
+# o actualiza UN issue con la etiqueta `upstream`; si no, no hace nada.
+# Política: AGENTS.md, «Versiones soportadas». Script: scripts/upstream.mjs.
+name: Cambios upstream
+
+on:
+  schedule:
+    - cron: '17 9 * * 1' # lunes 09:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream
+  cancel-in-progress: false
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Revisar versiones y notas de cambios
+        id: revision
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/upstream.mjs --out upstream.md > /dev/null
+
+      # Un solo issue abierto a la vez: se reescribe su cuerpo y, si cambió,
+      # se deja un comentario para que llegue la notificación. Sin esto, cada
+      # lunes con versiones pendientes abriría un issue nuevo.
+      - name: Abrir o actualizar el issue
+        if: steps.revision.outputs.relevant == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create upstream --color 5319e7 --description "Cambios en los CLIs que integra chaski" --force
+          numero=$(gh issue list --label upstream --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -z "$numero" ]; then
+            gh issue create --title "Cambios upstream en los CLIs" --label upstream --body-file upstream.md
+          else
+            gh issue view "$numero" --json body --jq .body > anterior.md
+            # La primera línea con fecha cambia cada semana: se compara sin ella.
+            if ! diff -q <(grep -v '^Revisado el ' anterior.md) <(grep -v '^Revisado el ' upstream.md) > /dev/null; then
+              gh issue edit "$numero" --body-file upstream.md
+              gh issue comment "$numero" --body "Hay cambios nuevos desde la última revisión: el cuerpo del issue está actualizado."
+            fi
+          fi

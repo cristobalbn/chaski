@@ -84,6 +84,10 @@ export function shouldAsk(ev, estado, previo, config, ahora = Date.now(), cuota 
   // protección la pone chaski: solo se pide en la primera vuelta.
   if (ev.stop_hook_active) return null;
   if (Number(ev.executionNum ?? 1) > 1) return null;
+  // agy 1.5.6 agregó el equivalente explícito: `continuation_active` es true
+  // mientras el agente trabaja en una continuación que pidió un Stop anterior.
+  // Lo detectó el informe de scripts/upstream.mjs (2026-11-27).
+  if (ev.continuation_active === true || ev.continuationActive === true) return null;
 
   // Un `Stop` sin trabajo detrás no necesita narrativa: no hay nada que
   // contar y el turno extra sería puro ruido.
@@ -268,6 +272,9 @@ export const PROMPT_HOOK_EVENTS = Object.freeze({
   'claude code': 'UserPromptSubmit',
   codex: 'UserPromptSubmit',
   agy: 'PreInvocation',
+  // Lo traduce el plugin (src/opencode.mjs): `chat.message` lanza inject.mjs
+  // con este evento y agrega el `additionalContext` al system prompt.
+  opencode: 'UserPromptSubmit',
 });
 
 /**

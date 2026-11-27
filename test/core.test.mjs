@@ -92,6 +92,29 @@ describe('contrato de transcript: Claude Code', () => {
     assert.match(r.lastMessage ?? '', /typecheck/);
   });
 
+  // Forma observada en Claude Code 2.1.330 en Windows (2026-11-27): una
+  // herramienta `PowerShell` además de `Bash`, y un `tool_use` repetido
+  // después de su resultado.
+  test('registra PowerShell y no duplica un tool_use repetido', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaski-powershell-'));
+    try {
+      const path = join(dir, 'transcript.jsonl');
+      const uso = (id, name, command) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input: { command, description: 'x' } }] } });
+      const resultado = (id, is_error) => ({ type: 'user', toolUseResult: { stdout: '', stderr: '', interrupted: false }, message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'salida', is_error }] } });
+      const lineas = [
+        uso('ps1', 'PowerShell', 'Get-ChildItem src'), resultado('ps1', false),
+        uso('ps2', 'PowerShell', 'npm test'), resultado('ps2', true),
+        uso('b1', 'Bash', 'git status'), resultado('b1', false), uso('b1', 'Bash', 'git status'),
+      ];
+      writeFileSync(path, lineas.map((l) => JSON.stringify(l)).join('\n') + '\n');
+      const res = transcriptFacts(path, 0, {});
+      assert.deepEqual(res.commands.map((c) => [c.cmd, c.exit]),
+        [['Get-ChildItem src', 0], ['npm test', 1], ['git status', 0]]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   test('redacta un token antes de recortar el comando a 160 caracteres', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chaski-comando-largo-'));
     try {
@@ -1921,6 +1944,15 @@ describe('cuándo se pide la narrativa', () => {
     assert.ok(shouldAsk({ hook_event_name: 'Stop', executionNum: 1 }, e, {}, {}));
     assert.equal(shouldAsk({ hook_event_name: 'Stop', executionNum: 2 }, e, {}, {}), null,
       'pidió otra vez dentro del mismo bucle: eso no termina nunca');
+  });
+
+  test('en agy 1.5.6+ también corta con continuation_active', () => {
+    // agy 1.5.6 agregó `continuation_active` al JSON de los hooks Stop: es la
+    // señal explícita, y no depende de que executionNum siga existiendo.
+    const e = { ...base(), agent: 'agy', narrative: null };
+    // Caso positivo: sin la marca, la misma entrada sí pide.
+    assert.ok(shouldAsk({ hook_event_name: 'Stop', continuation_active: false }, e, {}, {}));
+    assert.equal(shouldAsk({ hook_event_name: 'Stop', continuation_active: true }, e, {}, {}), null);
   });
 
   test('con skill instalada, el mensaje visible es UNA línea legible', () => {

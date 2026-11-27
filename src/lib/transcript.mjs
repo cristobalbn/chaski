@@ -3,17 +3,25 @@ import { createPathFilter, createRedactor } from './secrets.mjs';
 import { extractClaude } from './transcripts/claude.mjs';
 import { extractAgy } from './transcripts/agy.mjs';
 import { extractCodex } from './transcripts/codex.mjs';
+import { extractOpencode } from './transcripts/opencode.mjs';
 
 const MAX_TRANSCRIPT_BYTES = 8 * 1024 * 1024;
 
-/** Hechos del transcript desde la marca de agua anterior. */
+/**
+ * Hechos del transcript desde la marca de agua anterior.
+ *
+ * `path` es la ruta de un JSONL o, para CLIs que no escriben uno (OpenCode),
+ * `{ id, content }`: el JSONL completo en memoria, llegado por stdin.
+ */
 export function transcriptFacts(path, offset = 0, config = null, budget = null, previousCommands = [], previousIdentity = null) {
   const res = { commands: previousCommands.slice(-12).map((command) => ({ ...command })), filesRead: [], lastMessage: null, offset, turns: 0, redactions: 0 };
   if (previousIdentity) res.identity = previousIdentity;
   if (!path) return res;
   if (budget?.expired()) return { ...res, trimmed: true };
 
-  const chunk = readTranscriptChunk(path, offset, previousIdentity);
+  const chunk = typeof path === 'object'
+    ? inlineChunk(path, offset)
+    : readTranscriptChunk(path, offset, previousIdentity);
   if (!chunk) return res;
   const { buffer, from, trimmed, reset, identity } = chunk;
   res.identity = identity;
@@ -71,6 +79,24 @@ export function transcriptFacts(path, offset = 0, config = null, budget = null, 
   return res;
 }
 
+/**
+ * El mismo recorte que readTranscriptChunk, sobre un transcript en memoria.
+ * Si la marca de agua no cae justo después de un salto de línea, el contenido
+ * cambió por debajo (OpenCode permite deshacer mensajes) y se relee desde 0.
+ */
+function inlineChunk({ id, content }, offset) {
+  if (typeof content !== 'string') return null;
+  const all = Buffer.from(content, 'utf8');
+  const valid = Number.isSafeInteger(offset) && offset >= 0 && offset <= all.length
+    && (offset === 0 || all[offset - 1] === 0x0a);
+  const start = valid ? offset : 0;
+  const from = Math.max(start, all.length - MAX_TRANSCRIPT_BYTES);
+  return {
+    buffer: all.subarray(from), from, trimmed: from > start,
+    reset: !valid, identity: `inline:${id}`,
+  };
+}
+
 function readTranscriptChunk(path, offset, previousIdentity) {
   try {
     // Tamaño y lectura del mismo descriptor: si el transcript se reemplaza
@@ -98,6 +124,7 @@ function readTranscriptChunk(path, offset, previousIdentity) {
 }
 
 function extract(event, res, lookup) {
+  if (event.info && Array.isArray(event.parts)) return extractOpencode(event, res, lookup);
   if (event.step_index !== undefined || event.stepIndex !== undefined) return extractAgy(event, res, lookup);
   if (event.type === 'response_item' || event.type === 'event_msg') return extractCodex(event, res, lookup);
   return extractClaude(event, res, lookup);

@@ -32,6 +32,7 @@ export function canonicalAgent(agent) {
   if (n === 'claude' || n === 'claude code') return 'claude code';
   if (n === 'codex' || n === 'codex cli') return 'codex';
   if (n === 'agy' || n === 'antigravity' || n === 'antigravity cli') return 'agy';
+  if (n === 'opencode' || n === 'open code') return 'opencode';
   return n || 'desconocido';
 }
 

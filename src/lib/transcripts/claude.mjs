@@ -17,7 +17,14 @@ export function extractClaude(ev, res, lookup) {
 
     if (b.type === 'tool_use' && b.name) {
       const inp = b.input ?? {};
-      if (/^bash$|^shell$|^run/i.test(b.name) && inp.command) {
+      // `PowerShell` es la herramienta de shell de Claude Code en Windows,
+      // junto a `Bash`. Sin ella, la mitad de los comandos de una sesión en
+      // Windows no llegaba al relevo (visto en 2.1.330, 2026-11-27).
+      if (/^bash$|^shell$|^run|^powershell$/i.test(b.name) && inp.command) {
+        // Claude Code puede escribir el mismo `tool_use` dos veces (visto en
+        // 2.1.330): la copia llegaba después del resultado y dejaba un
+        // comando duplicado sin código de salida. Mismo criterio que Codex.
+        if (b.id != null && lookup.byId.has(b.id)) continue;
         const texto = lookup.redactCommand(String(inp.command));
         lookup.recordCommand({ cmd: texto, id: b.id, exit: null });
       } else if (/^read$|^view$/i.test(b.name) && (inp.file_path ?? inp.path)) {

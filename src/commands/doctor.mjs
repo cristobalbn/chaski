@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readOnlyGlobalDir, readJson, syncedFolder, tamboIsIgnored, loadConfig, promptHookPath, claudePluginEnabled, claudePluginEnabledForUser, CLAUDE_PLUGIN_ID, usagePath, readOnlyBranchDir, legacyBranchState, currentBranch, stripBom } from '../lib/paths.mjs';
 import { PROMPT_HOOK_EVENTS, promptHookAlive, usageSummary } from '../lib/ask.mjs';
 import { canonicalAgent } from '../lib/payload.mjs';
@@ -8,7 +9,7 @@ import { latestMergedBranchEntry } from '../lib/history.mjs';
 import { readRelay } from '../lib/relay-store.mjs';
 import { orphanRelays, effectivePruneDays } from '../lib/maintenance.mjs';
 import { pkgVersion, pad } from './common.mjs';
-import { CAPTURE, INJECT, CLIS, isInstalled } from './hook-config.mjs';
+import { CAPTURE, INJECT, CLIS, isInstalled, parseOpencodePlugin, OPENCODE_EVENTS, opencodeVersion, opencodeSupported, OPENCODE_MIN } from './hook-config.mjs';
 import { projectContext, projectRootNote } from './project.mjs';
 import { isChaskiStatusLine } from './statusline.mjs';
 
@@ -20,11 +21,14 @@ export function doctor() {
   const pluginUser = claudePluginEnabledForUser();
   const cliStatus = Object.entries(CLIS).map(([name, cli]) => {
     const installed = isInstalled(cli.bin);
-    const hasConfig = installed && existsSync(cli.config);
+    // Un OpenCode anterior al mínimo no carga el plugin, aunque el archivo exista.
+    const version = installed && cli.formato === 'js-opencode' ? opencodeVersion() : null;
+    const unsupported = Boolean(version) && !opencodeSupported(version);
+    const hasConfig = installed && !unsupported && existsSync(cli.config);
     const inspected = hasConfig ? inspectRegisteredHooks(cli) : null;
     const events = inspected ? inspected.events : null;
     const missingPaths = inspected ? inspected.missingPaths : [];
-    return { name, cli, installed, hasConfig, events, missingPaths };
+    return { name, cli, installed, version, unsupported, hasConfig, events, missingPaths };
   });
 
   console.log('CLIs y hooks');
@@ -169,8 +173,9 @@ export function doctor() {
   console.log(`  ${pad('llamadas')} chaski NO invoca claude -p, codex exec ni agy -p\n`);
 }
 
-function describeHooks({ installed, hasConfig, cli, events }, plugin, pluginUser = false) {
+function describeHooks({ installed, version, unsupported, hasConfig, cli, events }, plugin, pluginUser = false) {
   if (!installed) return 'no instalado';
+  if (unsupported) return `${version.join('.')} no soportada (mínimo ${OPENCODE_MIN.join('.')}): actualiza OpenCode`;
   if (cli.formato === 'json-claude' && plugin) {
     if (!events?.length) return `vía plugin ${CLAUDE_PLUGIN_ID}`;
     return `vía plugin ${CLAUDE_PLUGIN_ID}` + (pluginUser
@@ -210,6 +215,19 @@ function inspectRegisteredHooks(cli) {
     if (rota) missing.add(rota);
     return true;
   };
+
+  if (cli.formato === 'js-opencode') {
+    // Un archivo entero de chaski: si es nuestro, trae los cuatro eventos que
+    // traduce src/opencode.mjs. Lo que puede romperse son sus dos rutas.
+    const plugin = parseOpencodePlugin(txt);
+    if (!plugin) return { events: [], missingPaths: [] };
+    let modulo = null;
+    try { modulo = plugin.module ? fileURLToPath(plugin.module) : null; } catch {}
+    for (const ruta of [modulo ?? String(plugin.module), plugin.node]) {
+      if (!ruta || !existsSync(ruta)) missing.add(String(ruta));
+    }
+    return { events: [...OPENCODE_EVENTS], missingPaths: [...missing] };
+  }
 
   if (cli.formato === 'toml-codex') {
     // Sin parser TOML (cero dependencias): se recorren las líneas, se ignoran

@@ -18,7 +18,8 @@ máquina, y los secretos se redactan antes de escribir a disco
 Los chaskis eran los mensajeros del imperio inca: cada uno corría un tramo y en
 el **tambo** entregaba el mensaje al siguiente. Mismo problema, misma solución.
 
-Compatible con **Claude Code**, **Codex CLI** y **Antigravity CLI (`agy`)**. Con
+Compatible con **Claude Code**, **Codex CLI**, **Antigravity CLI (`agy`)** y
+**OpenCode** (1.18.29 o posterior, y 2.x). Con
 uno solo ya sirve: el relevo entre sesiones de la misma herramienta tiene valor
 propio.
 
@@ -160,13 +161,16 @@ Qué cambia frente a `init`:
 
 ### Qué hace `init`
 
-1. Detecta cuáles de los tres CLIs tienes instalados y registra los hooks **a
+1. Detecta cuáles de los cuatro CLIs tienes instalados y registra los hooks **a
    nivel de usuario**, con rutas nativas del sistema operativo. Respalda cada
-   archivo de configuración antes de tocarlo.
+   archivo de configuración antes de tocarlo. OpenCode no tiene hooks de
+   shell: ahí `init` deja un plugin propio en
+   `~/.config/opencode/plugins/chaski.js`, que `uninstall` borra.
 2. Agrega `.tambo/` y `chaski.local.json` a tu `.gitignore`.
 3. Instala la skill `relevo` (un archivo de instrucciones que el agente carga
    al oírte pedir «relevo») dos veces: en `.claude/skills/relevo/`, que lee
    Claude Code, y en `.agents/skills/relevo/`, que leen Codex y Antigravity.
+   OpenCode lee las dos (su log avisa «duplicate skill name»; es inofensivo).
    Es el mismo archivo y reconoce las mismas peticiones: **«relevo»**,
    **«guarda el relevo»** y **«actualiza el relevo»**.
 4. Agrega una sección de relevo a tu `AGENTS.md`. Si ya existe, añade o actualiza
@@ -467,6 +471,7 @@ Los atajos nativos siguen disponibles si prefieres invocar la skill directamente
 | [Claude Code](https://code.claude.com/docs/en/skills) | `/relevo` |
 | [Codex CLI](https://learn.chatgpt.com/docs/build-skills) | `$relevo` o `/skills` → `relevo` |
 | [agy](https://antigravity.google/docs/skills/#slash-command-conversion) | `/relevo` |
+| [OpenCode](https://opencode.ai/docs/) | sin atajo verificado: escribe `relevo` en el chat |
 
 Si la skill aún no aparece tras actualizar, abre una sesión nueva en ese proyecto
 (en agy también puedes ejecutar `/skills reload`).
@@ -513,6 +518,7 @@ eso el modelo es el último recurso y no el primero.
 |---|---|---|
 | `src/capture.mjs` | hook `Stop` en los tres CLIs; también `SessionEnd`, `PreCompact`, `SubagentStop` y `StopFailure` en Claude Code | Lee el transcript desde una marca de agua (hasta dónde ya leyó) y git; escribe `relevo.md`, `estado.json` y `.tambo/historia/` |
 | `src/inject.mjs` | hook `SessionStart`; y `UserPromptSubmit` / `PreInvocation` | En `SessionStart` imprime el relevo; en cada mensaje entrega la petición de narrativa anotada y registra el turno abierto |
+| `src/opencode.mjs` | plugin de OpenCode 1.x y 2.x, dentro de su proceso | Traduce el fin de turno, el mensaje del usuario, el system prompt y la compactación a los mismos hooks, y lanza `capture.mjs` / `inject.mjs` con `node`. OpenCode no escribe transcript: el plugin pasa los mensajes por stdin |
 | `src/statusline.mjs` | statusline opcional de Claude Code (`init --statusline`) | Anota `rate_limits` en `~/.chaski/usage.json` y delega en la statusline previa del usuario |
 | `src/cli.mjs` | a mano | `init`, `doctor`, `next`, `cost`, `why`, `share`, `version`, `uninstall`, `probe` |
 | `skill/SKILL.md` | al pedir «relevo» | Instrucciones para que el agente escriba la narrativa |
@@ -670,12 +676,14 @@ razonamiento completo están en la
 
 ## Lo que chaski no hace
 
-- **No funciona en modo headless** (sin interfaz interactiva). Verificado
-  empíricamente en los tres: `claude -p`, `codex exec` y `agy -p` no disparan
-  los hooks `SessionStart` ni `Stop`. chaski es para sesiones interactivas; si
-  lo necesitas en CI, esta herramienta no es la indicada.
+- **No funciona en modo headless** (sin interfaz interactiva) en tres de los
+  cuatro. Verificado empíricamente: `claude -p`, `codex exec` y `agy -p` no
+  disparan los hooks `SessionStart` ni `Stop`. La excepción es OpenCode, cuyo
+  plugin sí corre con `opencode run` (verificado en 1.19.6 y 2.4.2). chaski es
+  para sesiones interactivas; si lo necesitas en CI, esta herramienta no es la
+  indicada.
 - **No es una base de datos vectorial ni un servicio en la nube**, no sincroniza
-  estado en tiempo real entre máquinas y solo soporta tres herramientas (para
+  estado en tiempo real entre máquinas y solo soporta cuatro herramientas (para
   historial local tiene `chaski why`, para decisiones puntuales `chaski share` y
   para ver el último corte por `rate_limit` tiene `chaski next`). Si necesitas
   búsqueda semántica o veinte integraciones, [ai-memory](https://github.com/akitaonrails/ai-memory)
@@ -692,6 +700,7 @@ razonamiento completo están en la
 | Hooks de Codex | requieren conceder confianza | La primera vez que abres Codex con hooks instalados pide confiar en ellos. Hasta que aceptes, no se ejecuta ninguno, y el permiso se aplica desde la sesión siguiente |
 | Un turno con miles de archivos modificados | el relevo sale **incompleto, y lo dice** | El hook sacrifica detalle caro (líneas `+/-`, log de commits) antes de agotar su presupuesto de tiempo; la rama, el `HEAD`, la lista de archivos y su total siempre sobreviven, y lo omitido aparece declarado en el relevo |
 | Ruta del proyecto de más de ~240 caracteres | los subprocesos de git fallan | En Windows, una ruta así de larga hace que el subproceso de git falle. Desde la 0.1.1, si existe `.git` el relevo no afirma «Sin repositorio git»: declara la rama sin leer como recorte, pero sale sin rama ni los datos que dependen de git. No hay arreglo barato conocido: evita rutas tan largas para este proyecto |
+| OpenCode | 1.18.29 o posterior; 2.x | El mismo plugin sirve a las dos APIs de plugins de OpenCode (verificado con 1.19.6 y 2.4.2). En una versión anterior a 1.18.29 `init` no instala nada y `doctor` avisa. En 1.x la inyección del relevo usa hooks que OpenCode marca como experimentales: si cambian, el relevo deja de llegar sin error visible; el CI lo detecta con sus fixtures. Al terminar cada turno, OpenCode espera unos cientos de ms a la captura |
 | Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
 
 Si un administrador fijó `allowManagedHooksOnly` o `disableAllHooks` en una

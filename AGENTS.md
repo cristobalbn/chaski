@@ -17,6 +17,8 @@ node src/cli.mjs probe        # captura el payload de los hooks con redacción
 node src/cli.mjs version      # imprime la versión de package.json (--version / -v)
 npm run check                      # chequeo de sintaxis (no hay build)
 npm test                           # node:test, sin dependencias
+node scripts/upstream.mjs          # versiones nuevas y cambios en los CLIs (usa la red; ver «Versiones soportadas»)
+node scripts/verify-local.mjs      # contrato de transcript contra los transcripts reales de esta máquina
 ```
 
 Si agregas un archivo de tests, **súmalo al script `test` de package.json**:
@@ -189,8 +191,9 @@ Estos no son preferencias de estilo. Romper cualquiera rompe el producto.
    uno a medio escribir. El lock evita trabajo redundante y que un escritor
    pise los comandos que otro acababa de agregar.
 
-8. **`capture.mjs`, `inject.mjs` y `statusline.mjs` no cambian de nombre nunca.** `init` escribe
-   su ruta absoluta en la configuración de cada CLI, y esas configuraciones
+8. **`capture.mjs`, `inject.mjs`, `statusline.mjs` y `opencode.mjs` no cambian de nombre nunca.** `init` escribe
+   su ruta absoluta en la configuración de cada CLI (el plugin de OpenCode
+   importa `opencode.mjs` por su ruta), y esas configuraciones
    viven fuera del repositorio. Renombrarlos deja a toda instalación existente
    invocando un archivo inexistente: el usuario ve un volcado de Node en cada
    turno hasta que vuelva a correr `chaski init`. Pasó al homologar los nombres
@@ -265,6 +268,9 @@ herramienta existe para evitar.
 src/cli.mjs          — despacha los subcomandos
 src/commands/        — instalación, diagnóstico, sonda, informes y statusline
 src/capture.mjs      ~615 lín.   — hook de captura (Stop, SubagentStop): orquesta git, transcripts, cuota, costos e historia
+src/opencode.mjs     ~400 lín.   — plugin de OpenCode 1.x y 2.x (corre dentro de OpenCode, en Bun): traduce sus eventos a los hooks y lanza capture/inject con `node`
+scripts/upstream.mjs, upstream.json — vigilante semanal de versiones y matriz de versiones soportadas (no viaja en el paquete)
+src/lib/transcripts/opencode.mjs — mensajes de OpenCode reducidos a JSONL por el plugin (no hay transcript en disco)
 src/statusline.mjs   ~150 lín.   — statusline opcional de Claude Code (`init --statusline`): anota rate_limits y delega en la del usuario
 src/inject.mjs       ~350 lín.   — hook de inyección (SessionStart; y UserPromptSubmit / PreInvocation, que entregan la petición de narrativa anotada): camino crítico, detecta deriva y neutraliza marcas <<< >>>
 src/lib/facts.mjs     — hechos desde git (status, log, diff, upstream)
@@ -405,6 +411,95 @@ Codex exige además **hook trust persistido** (documentado para el usuario en el
 concede, y `--dangerously-bypass-hook-trust` lo saltea por invocación. Es la
 causa más probable de que sus hooks no se disparen tras `init`.
 
+### OpenCode: plugin, no hooks
+
+OpenCode no ejecuta hooks de shell: carga cada `.js` de
+`~/.config/opencode/plugins/` (o `$XDG_CONFIG_HOME/opencode/plugins/`, también
+en Windows) dentro de su proceso. `init` escribe ahí `chaski.js`, que importa
+`src/opencode.mjs` por su ruta absoluta y le pasa la ruta de `node` (dentro de
+OpenCode `process.execPath` es el binario de OpenCode).
+
+Hay **dos APIs de plugins incompatibles**: 1.x (`opencode-ai` en npm) y 2.x
+(`@opencode/cli`, desde septiembre de 2026). Un solo `export default
+chaskiDefinition(...)` sirve a las dos: 1.x llama a `server()` (desde 1.18.29,
+el mínimo soportado) y 2.x a `setup()`. Ninguna importa `@opencode/plugin`
+(invariante 1): en 2.x basta un objeto con `id` y `setup`.
+
+| chaski | 1.x (verificado con 1.19.6) | 2.x (verificado con 2.4.2) |
+|---|---|---|
+| `SessionStart` | `experimental.chat.system.transform`: relevo al **final de `system[0]`**; se omite la llamada del título | hook `context`: relevo como **parte nueva** `{ type: "text" }` al final de `system` |
+| `UserPromptSubmit` | hook `chat.message` | hook `prompt` |
+| `Stop` | evento `session.idle` | eventos `session.execution.{succeeded,failed,interrupted}` del bus (`ctx.event.subscribe()`); **no existe `session.idle`** |
+| `PreCompact` | `experimental.session.compacting` → `output.context` | hook `compaction` → parte nueva en `system` |
+| mensajes | `client.session.messages()` → `reduceMessages()` | `ctx.session.context()` → `reduceMessagesV2()` |
+| subagente | `client.session.get()` → `data.parentID` | `ctx.session.get()` → `parentID` |
+
+- **No hay transcript en disco** (OpenCode guarda en SQLite). Al terminar el
+  turno el plugin pide los mensajes, los reduce a un JSONL determinista —el
+  mismo en las dos versiones, así el adaptador no las distingue— y lo manda en
+  `transcript_inline`. La «ruta» es `opencode:<sessionID>`; el `offset` es en
+  bytes sobre ese JSONL. No hagas que el plugin escriba ese JSONL a disco:
+  sería una copia sin redactar (invariante 6).
+- **En 1.x no hagas `output.system.push()`.** Un elemento nuevo sale como un
+  segundo mensaje `system` y varios proveedores compatibles con OpenAI lo
+  rechazan (anomalyco/opencode#34243, cerrado sin arreglo en 1.x). Pega al
+  final de `system[0]`, mutando en el lugar: reasignar `output.system` no tiene
+  efecto. En 2.x `system` ya es una lista de partes y agregar una es lo nativo.
+- **La captura es `spawnSync`.** `opencode run` sale sin esperar a los plugins
+  (anomalyco/opencode#23380, cerrado sin arreglo); con `spawn` la captura moría
+  a medias. Verificado que 2.x sí espera a un `spawnSync` en el handler.
+- **Varios hooks son `experimental.` en 1.x.** Si OpenCode los renombra, la
+  inyección se cae en silencio; `test/opencode.test.mjs` y sus fixtures son la
+  alarma, y el workflow `upstream.yml` avisa de versiones nuevas.
+- Para depurar: `opencode debug paths` (1.x), el log en
+  `~/.local/share/opencode/log/` y un HOME aislado con `HOME`, `USERPROFILE` y
+  `XDG_*_HOME` en la misma línea. Para probar 2.x sin reemplazar el 1.x
+  instalado: `npm i --prefix <dir> @opencode/cli` y ejecuta
+  `<dir>/node_modules/@opencode/cli/bin/opencode.exe` (o `opencode` fuera de
+  Windows). Los modelos `opencode/*-free` no piden credenciales.
+
+## Versiones soportadas
+
+La matriz vive en [`scripts/upstream.json`](scripts/upstream.json) y es la
+**única** fuente: qué línea mayor de cada CLI se soporta (`tracks`), la última
+versión verificada contra un binario real (`verified`), el mínimo
+(`minSupported`) y el estado (`supported`, `deprecated`, `dropped`). Un test
+falla si `OPENCODE_MIN` en `src/commands/hook-config.mjs` no coincide.
+
+**Cómo se entera chaski de los cambios.** `.github/workflows/upstream.yml`
+corre `node scripts/upstream.mjs` cada lunes: compara la última versión
+publicada (npm, o el CHANGELOG en agy) con `verified`, extrae de las notas de
+cambios las líneas que pueden romper el contrato y las que podrían servirnos
+(palabras clave en `keywords`), y abre o actualiza **un** issue con la
+etiqueta `upstream`. Córrelo a mano igual: `GITHUB_TOKEN=$(gh auth token) node
+scripts/upstream.mjs`.
+
+**Al verificar una versión nueva:** corre `node scripts/verify-local.mjs`,
+que contrasta el contrato con el transcript real más reciente de Claude Code,
+Codex y agy de tu máquina (imprime formas y conteos, nunca contenido). Si
+algo falla, captura la forma con `chaski probe` (o la sonda de plugin en
+OpenCode) y reemplaza el fixture. Después corre `npm test`, sube `verified` y
+anota versión, fecha y método en la tabla de `test/fixtures/README.md`. No
+subas `verified` sin un transcript o un turno del CLI real: es la promesa que
+sostiene el issue.
+
+**Cuándo se deja de soportar una línea mayor.** Cuando pasa una de dos:
+
+1. upstream no publica versiones de esa línea hace `staleAfterDays` (120 días);
+2. pasaron `successorGraceDays` (180 días) desde la primera versión de la
+   mayor siguiente (`successorSince`, que se anota en la línea vieja).
+
+El informe semanal lo avisa. El retiro va en dos pasos, cada uno con su
+versión de chaski y su entrada en el CHANGELOG: primero `status: "deprecated"`
+—`init` y `doctor` siguen funcionando y el README lo dice—; en la versión
+siguiente `status: "dropped"`, se borra el adaptador y su fixture, y `init`
+deja de instalar para esa línea. **No** borres código de una línea todavía
+`supported`, aunque nadie parezca usarla.
+
+**Una línea mayor nueva** (como OpenCode 2.x): agrégala a `tracks` con su
+propia sonda, fixture y bloque de contrato. Sin eso no entra, igual que un CLI
+nuevo.
+
 ## Si vas a escribir documentación de este repo
 
 La leen agentes además de personas, y para un agente cada token de documento es
@@ -427,7 +522,7 @@ contexto que le queda sin usar para trabajar. Entonces:
 ## Relevo de contexto
 
 <!-- chaski:requests:start -->
-Peticiones comunes en Claude Code, Codex y agy:
+Peticiones comunes en Claude Code, Codex, agy y OpenCode:
 - Si el usuario escribe **«relevo»**, **«guarda el relevo»** o
   **«actualiza el relevo»**, usa la skill `relevo` para guardar la narrativa.
   Lee `.agents/skills/relevo/SKILL.md` o `.claude/skills/relevo/SKILL.md`.
@@ -444,7 +539,7 @@ el código tiene razón — dilo en vez de confiar en el texto.
 Al cerrar un bloque de trabajo, deja escrito el porqué: qué se intentaba, qué se
 decidió y qué se descartó, qué quedó a medias con su ruta, y el siguiente paso.
 La fuente de las instrucciones es [`skill/SKILL.md`](skill/SKILL.md). Escribe
-solo `narrative`, `narrativeAuthor` (`"claude code"`, `"codex"` o `"agy"`) y
+solo `narrative`, `narrativeAuthor` (`"claude code"`, `"codex"`, `"agy"` u `"opencode"`) y
 `narrativeWrittenAt` (ISO 8601 UTC actual) en `.tambo/branches/<slug>/estado.json`
 (donde `<slug>` es `main` para `main`, o `<rama-con-guiones>-<hash6>` si la rama
 tiene `/`). Los atajos nativos están documentados en el README.

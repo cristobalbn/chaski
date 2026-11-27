@@ -1,9 +1,9 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { readJsonForWrite, tambo, TAMBO, claudePluginEnabled, claudePluginEnabledForUser, CLAUDE_PLUGIN_ID } from '../lib/paths.mjs';
 import { writeAtomic } from '../lib/atomic.mjs';
 import { AQUI, pad, backup } from './common.mjs';
-import { CAPTURE, INJECT, cmd, MARCA_INI, MARCA_FIN, PROBE_START, PROBE_END, CLIS, isInstalled, isChaskiHookGroup, isProbeHookGroup, removeBlock } from './hook-config.mjs';
+import { CAPTURE, INJECT, cmd, MARCA_INI, MARCA_FIN, PROBE_START, PROBE_END, CLIS, isInstalled, isChaskiHookGroup, isProbeHookGroup, removeBlock, opencodePluginSource, parseOpencodePlugin, opencodeVersion, opencodeSupported, OPENCODE_MIN } from './hook-config.mjs';
 import { projectContext, projectRootNote } from './project.mjs';
 import { installStatusLine, restoreStatusLine } from './statusline.mjs';
 
@@ -37,7 +37,7 @@ export function init(args = []) {
     detectados.push(name);
   }
   if (!detectados.length) {
-    console.log('\nNo encontré claude, codex ni agy en el PATH. Nada que hacer.');
+    console.log('\nNo encontré claude, codex, agy ni opencode en el PATH. Nada que hacer.');
     return;
   }
 
@@ -48,6 +48,16 @@ export function init(args = []) {
   const estado = { configurados: [], yaEstaban: [], fallidos: [] };
   for (const name of detectados) {
     const cli = CLIS[name];
+    // Un OpenCode anterior al mínimo no carga el plugin: instalarlo ahí sería
+    // anunciar un relevo que nunca corre. No es un fallo de init, es una
+    // versión que chaski no soporta (ver OPENCODE_MIN).
+    if (cli.formato === 'js-opencode') {
+      const version = opencodeVersion();
+      if (!opencodeSupported(version)) {
+        console.log(`  ${pad(name)} ${version.join('.')} no soportada (mínimo ${OPENCODE_MIN.join('.')}): actualiza OpenCode; se omite`);
+        continue;
+      }
+    }
     try {
       // Los install* devuelven el contenido en vez de escribirlo: si es
       // idéntico al que hay, no se toca el archivo. Así init es idempotente
@@ -63,6 +73,7 @@ export function init(args = []) {
       if (cli.formato === 'json-claude') nuevo = installClaude(cli.config, { viaPlugin });
       else if (cli.formato === 'json-agy') nuevo = installAgy(cli.config);
       else if (cli.formato === 'toml-codex') nuevo = installCodex(cli.config);
+      else if (cli.formato === 'js-opencode') nuevo = installOpencode(cli.config);
       let actual = null;
       try { actual = readFileSync(cli.config, 'utf8'); } catch {}
       if (actual === nuevo || (viaPlugin && nuevo === null)) {
@@ -72,12 +83,16 @@ export function init(args = []) {
           : `  ${pad(name)} ya configurado     →  ${cli.config}`);
         continue;
       }
-      backup(cli.config);
+      // El plugin de OpenCode es un archivo nuestro entero: no hay nada ajeno
+      // que respaldar, y un .chaski-backup quedaría en la carpeta de plugins.
+      if (cli.formato !== 'js-opencode') backup(cli.config);
       writeAtomic(cli.config, nuevo);
       estado.configurados.push(name);
       console.log(viaPlugin
         ? `  ${pad(name)} vía plugin ${CLAUDE_PLUGIN_ID}; quitados los hooks viejos de ${cli.config}`
-        : `  ${pad(name)} hooks registrados  →  ${cli.config}`);
+        : cli.formato === 'js-opencode'
+          ? `  ${pad(name)} plugin instalado   →  ${cli.config}`
+          : `  ${pad(name)} hooks registrados  →  ${cli.config}`);
     } catch (e) {
       estado.fallidos.push(name);
       console.log(`  ${pad(name)} FALLÓ: ${e?.message ?? e}`);
@@ -174,7 +189,7 @@ function finalSummary(cwd, { configurados, yaEstaban, fallidos }) {
     ' OPCIONAL: la skill "relevo"',
     '   Los hechos se guardan solos. Para agregar el "por qué", escribe',
     '   relevo, guarda el relevo o actualiza el relevo en cualquiera',
-    '   de los tres agentes. Son mensajes dentro del chat.',
+    '   de los cuatro agentes. Son mensajes dentro del chat.',
     '   Atajos opcionales: /relevo en Claude Code y agy;',
     '   $relevo o /skills en Codex CLI.',
     '',
@@ -256,6 +271,21 @@ function installAgy(ruta) {
     PreInvocation: [{ type: 'command', command: cmd(INJECT, 'PreInvocation', 'agy', true), timeout: 10 }],
   };
   return JSON.stringify(h, null, 2);
+}
+
+/**
+ * OpenCode carga cada .js de su carpeta de plugins. El archivo es de chaski
+ * de punta a punta; si ya hay uno con ese nombre que no generó chaski, no se
+ * pisa.
+ */
+function installOpencode(ruta) {
+  let actual = null;
+  try { actual = readFileSync(ruta, 'utf8'); } catch {}
+  if (actual !== null && !parseOpencodePlugin(actual)) {
+    throw new Error(`${ruta} existe y no lo generó chaski; muévelo y vuelve a correr init`);
+  }
+  mkdirSync(dirname(ruta), { recursive: true });
+  return opencodePluginSource();
 }
 
 function installCodex(ruta) {
@@ -384,7 +414,7 @@ function installSkill(cwd) {
   const viaPlugin = claudePluginEnabled(cwd);
   for (const [base, quienes] of [
     ...(viaPlugin ? [] : [[['.claude', 'skills'], 'claude code']]),
-    [['.agents', 'skills'], 'codex y agy'],
+    [['.agents', 'skills'], 'codex, agy y opencode'],
   ]) {
     const dir = join(cwd, ...base, 'relevo');
     mkdirSync(dir, { recursive: true });
@@ -402,7 +432,7 @@ function ensureAgentsMd(cwd) {
   const fin = '<!-- chaski:requests:end -->';
   const peticiones = [
     inicio,
-    'Peticiones comunes en Claude Code, Codex y agy:',
+    'Peticiones comunes en Claude Code, Codex, agy y OpenCode:',
     '- Si el usuario escribe **«relevo»**, **«guarda el relevo»** o',
     '  **«actualiza el relevo»**, usa la skill `relevo` para guardar la narrativa.',
     '  Lee `.agents/skills/relevo/SKILL.md` o `.claude/skills/relevo/SKILL.md`.',
@@ -439,7 +469,7 @@ function ensureAgentsMd(cwd) {
       '  próximo agente necesita para trabajar.',
       '  - Sigue la skill `relevo`, que `chaski init` instaló en este proyecto.',
       '  - En cualquier CLI: escribe los campos `narrative`, `narrativeAuthor` (`"claude code"`,',
-      '    `"codex"` o `"agy"`) y `narrativeWrittenAt` (ISO 8601 UTC actual) en',
+      '    `"codex"`, `"agy"` u `"opencode"`) y `narrativeWrittenAt` (ISO 8601 UTC actual) en',
       '    `.tambo/branches/<slug>/estado.json`. Si la rama (`git rev-parse --abbrev-ref HEAD`)',
       '    no tiene `/` (ej. `main`), `<slug>` es el nombre tal cual; si tiene `/` (ej. `feat/x`),',
       '    chaski cambia `/` por `-` y agrega un sufijo corto (`feat-x-<hash>`, donde',
@@ -480,7 +510,13 @@ export function uninstall() {
         // init (y el trusted_hash que Codex escribe al conceder confianza).
         let changed = false;
         let finalizeStatusLine = null;
-        if (cli.formato === 'toml-codex') {
+        if (cli.formato === 'js-opencode') {
+          // Solo se borra si es nuestro: un chaski.js ajeno se deja.
+          if (parseOpencodePlugin(readFileSync(cli.config, 'utf8'))) {
+            rmSync(cli.config, { force: true, maxRetries: 5, retryDelay: 50 });
+            changed = true;
+          }
+        } else if (cli.formato === 'toml-codex') {
           const before = readFileSync(cli.config, 'utf8');
           const after = removeBlock(removeBlock(before), PROBE_START, PROBE_END);
           if (after !== before) {

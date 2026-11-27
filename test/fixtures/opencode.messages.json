@@ -1,0 +1,40 @@
+[
+  {
+    "info": { "id": "msg_01user", "sessionID": "ses_fixture", "role": "user", "time": { "created": 1795810249681 }, "summary": { "diffs": [] }, "agent": "build", "model": { "providerID": "opencode", "modelID": "modelo-x" } },
+    "parts": [
+      { "id": "prt_01", "sessionID": "ses_fixture", "messageID": "msg_01user", "type": "text", "text": "Corre los tests de auth y dime qué falla." }
+    ]
+  },
+  {
+    "info": { "id": "msg_02asst", "sessionID": "ses_fixture", "role": "assistant", "time": { "created": 1795810250155, "completed": 1795810255014 }, "parentID": "msg_01user", "modelID": "modelo-x", "providerID": "opencode", "mode": "build", "agent": "build", "path": { "cwd": "/proyecto", "root": "/proyecto" }, "cost": 0, "tokens": { "input": 100, "output": 20, "reasoning": 5, "cache": { "read": 0, "write": 0 } } },
+    "parts": [
+      { "id": "prt_02", "sessionID": "ses_fixture", "messageID": "msg_02asst", "type": "step-start", "snapshot": "0000000000000000000000000000000000000000" },
+      { "id": "prt_03", "sessionID": "ses_fixture", "messageID": "msg_02asst", "type": "reasoning", "text": "Voy a correr los tests.", "time": { "start": 1795810253596, "end": 1795810253751 } },
+      { "id": "prt_04", "sessionID": "ses_fixture", "messageID": "msg_02asst", "type": "tool", "callID": "call_read", "tool": "read", "state": { "status": "completed", "input": { "filePath": "/proyecto/src/auth/jwt.ts" }, "output": "export function firmar() {}", "title": "src/auth/jwt.ts", "metadata": { "truncated": false }, "time": { "start": 1795810254000, "end": 1795810254010 } } },
+      { "id": "prt_05", "sessionID": "ses_fixture", "messageID": "msg_02asst", "type": "tool", "callID": "call_ok", "tool": "bash", "state": { "status": "completed", "input": { "command": "git status", "workdir": "/proyecto" }, "output": "On branch main\n", "title": "git status", "metadata": { "output": "On branch main\n", "exit": 0, "truncated": false }, "time": { "start": 1795810254064, "end": 1795810254504 } } },
+      { "id": "prt_06", "sessionID": "ses_fixture", "messageID": "msg_02asst", "type": "tool", "callID": "call_fail", "tool": "bash", "state": { "status": "completed", "input": { "command": "npm test -- auth", "workdir": "/proyecto" }, "output": "2 failing\n", "title": "npm test -- auth", "metadata": { "output": "2 failing\n", "exit": 1, "truncated": false }, "time": { "start": 1795810254600, "end": 1795810254900 } } },
+      { "id": "prt_07", "sessionID": "ses_fixture", "messageID": "msg_02asst", "type": "step-finish", "reason": "tool-calls", "snapshot": "0000000000000000000000000000000000000000", "cost": 0, "tokens": { "total": 120, "input": 100, "output": 20, "reasoning": 5, "cache": { "read": 0, "write": 0 } } }
+    ]
+  },
+  {
+    "info": { "id": "msg_03asst", "sessionID": "ses_fixture", "role": "assistant", "time": { "created": 1795810255018, "completed": 1795810261117 }, "parentID": "msg_01user", "modelID": "modelo-x", "providerID": "opencode", "mode": "build", "agent": "build" },
+    "parts": [
+      { "id": "prt_08", "sessionID": "ses_fixture", "messageID": "msg_03asst", "type": "step-start", "snapshot": "0000000000000000000000000000000000000000" },
+      { "id": "prt_09", "sessionID": "ses_fixture", "messageID": "msg_03asst", "type": "text", "text": "Fallan 2 tests en auth: el refresh no rota el token.", "time": { "start": 1795810260562, "end": 1795810260768 } },
+      { "id": "prt_10", "sessionID": "ses_fixture", "messageID": "msg_03asst", "type": "step-finish", "reason": "stop", "snapshot": "0000000000000000000000000000000000000000", "cost": 0, "tokens": { "total": 50, "input": 30, "output": 20, "reasoning": 0, "cache": { "read": 0, "write": 0 } } }
+    ]
+  },
+  {
+    "info": { "id": "msg_04user", "sessionID": "ses_fixture", "role": "user", "time": { "created": 1795810262000 } },
+    "parts": [
+      { "id": "prt_11", "sessionID": "ses_fixture", "messageID": "msg_04user", "type": "text", "text": "Contenido de un archivo adjunto", "synthetic": true },
+      { "id": "prt_12", "sessionID": "ses_fixture", "messageID": "msg_04user", "type": "text", "text": "Arréglalo." }
+    ]
+  },
+  {
+    "info": { "id": "msg_05asst", "sessionID": "ses_fixture", "role": "assistant", "time": { "created": 1795810262100 }, "parentID": "msg_04user" },
+    "parts": [
+      { "id": "prt_13", "sessionID": "ses_fixture", "messageID": "msg_05asst", "type": "tool", "callID": "call_pending", "tool": "bash", "state": { "status": "running", "input": { "command": "npm run build" } } }
+    ]
+  }
+]
