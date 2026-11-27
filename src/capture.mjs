@@ -123,6 +123,11 @@ function main() {
       writtenAt: new Date().toISOString(),
       agent: ev.__agente ?? 'desconocido',
       session: ev.session_id ?? null,
+      // Árbol de trabajo donde corrió el turno. `.tambo/` vive en el árbol
+      // principal aunque la sesión sea de un worktree enlazado (stateRoot), y
+      // con esto inject.mjs puede señalar desde otro árbol los relevos
+      // recientes que no son suyos, incluso si el worktree ya se borró.
+      worktree: cwd,
       // La ruta del transcript se guarda para poder invalidar la marca de agua.
       transcript,
       ...(t.identity ? { transcriptIdentity: t.identity } : {}),

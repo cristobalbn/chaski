@@ -234,7 +234,7 @@
           <tbody>
             <tr><td class="wrap">Captura de hechos desde git y el transcript</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Inyecci&oacute;n al arrancar, con precedencia y firma</td><td><span class="tag t-ok">funcionando</span></td></tr>
-            <tr><td class="wrap">Soporte a los tres CLIs, validado con payloads reales (sin la interfaz formal de adaptadores de la secci&oacute;n <a href="#adaptadores">Adaptadores</a>: hoy es c&oacute;digo por CLI en <code>src/lib/</code> y el mapa <code>CLIS</code>)</td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Soporte a los cuatro CLIs (Claude Code, Codex, Antigravity y OpenCode 1.x y 2.x), validado con payloads reales (sin la interfaz formal de adaptadores de la secci&oacute;n <a href="#adaptadores">Adaptadores</a>: hoy es c&oacute;digo por CLI en <code>src/lib/</code> y el mapa <code>CLIS</code>)</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Relevo por rama, con recuperaci&oacute;n al volver</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Filtro de secretos antes de escribir</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Aviso de lo que cambi&oacute; y qui&eacute;n lo cambi&oacute;</td><td><span class="tag t-ok">funcionando</span></td></tr>
@@ -648,7 +648,7 @@ avisa de la contradicci&oacute;n en vez de confiar en este texto.</code></pre>
       </div>
       <div class="threat">
         <h4>Chaski mismo es c&oacute;digo que se ejecuta autom&aacute;ticamente <span class="tag t-warn">medio</span></h4>
-        <p>Instalarlo significa registrar un comando que tres CLIs van a invocar solos, muchas veces al d&iacute;a, sin confirmaci&oacute;n. Eso es exactamente la forma de un ataque de cadena de suministro, as&iacute; que la herramienta tiene que merecer esa confianza de manera verificable.</p>
+        <p>Instalarlo significa registrar un comando que cuatro CLIs van a invocar solos, muchas veces al d&iacute;a, sin confirmaci&oacute;n. Eso es exactamente la forma de un ataque de cadena de suministro, as&iacute; que la herramienta tiene que merecer esa confianza de manera verificable.</p>
         <p class="mit">Contenci&oacute;n: cero dependencias en runtime, as&iacute; que no hay &aacute;rbol de npm que comprometer; los hooks registran una ruta absoluta a <code>capture.mjs</code>/<code>inject.mjs</code> (o a un wrapper en <code>~/.chaski/</code>); <code>doctor</code> dice en qu&eacute; eventos de cada config hay un hook de chaski y si esos scripts existen (mostrar el comando textual y verificar un hash: no implementado); y <code>chaski uninstall</code> quita de cada config solo los hooks de chaski (el respaldo queda en disco).</p>
       </div>
       <div class="threat">
@@ -701,7 +701,7 @@ avisa de la contradicci&oacute;n en vez de confiar en este texto.</code></pre>
             <tr><td>git</td><td class="wrap">Deriva los hechos de <code>mtime</code> de archivos en vez del diff.</td></tr>
             <tr><td>red o cuota</td><td class="wrap">Emite quipu mec&aacute;nico y lo rotula como tal.</td></tr>
             <tr><td>soporte de hooks</td><td class="wrap">Degrada a la instrucci&oacute;n en <code>AGENTS.md</code>.</td></tr>
-            <tr><td>dos de tres CLIs</td><td class="wrap">Funciona con uno: el relevo entre sesiones del mismo CLI ya tiene valor.</td></tr>
+            <tr><td>tres de cuatro CLIs</td><td class="wrap">Funciona con uno: el relevo entre sesiones del mismo CLI ya tiene valor.</td></tr>
             <tr><td>permisos de admin</td><td class="wrap">Instalaci&oacute;n por usuario, sin tocar nada del sistema.</td></tr>
           </tbody>
         </table>

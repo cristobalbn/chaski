@@ -8,7 +8,7 @@
 // lugar de fallar en silencio en la máquina de alguien.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync, statSync, readdirSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync, statSync, readdirSync, mkdirSync, utimesSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -1166,6 +1166,35 @@ describe('el relevo no crece con el tiempo', () => {
       assert.ok(!existsSync(join(ramas, 'feat-vieja-borrada')));
     } finally {
       rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('la poda conserva el relevo de un worktree vivo en detached HEAD y no el de uno borrado', () => {
+    const raiz = mkdtempSync(join(tmpdir(), 'chaski-limpieza-wt-'));
+    const dir = join(raiz, 'repo');
+    mkdirSync(dir);
+    const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    try {
+      g('init', '-q');
+      g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+      writeFileSync(join(dir, 'a.txt'), 'x');
+      g('add', '-A'); g('commit', '-qm', 'inicial');
+      g('worktree', 'add', '--detach', join(raiz, 'vivo'));
+
+      const ramas = join(dir, '.tambo', 'branches');
+      for (const name of ['HEAD-vivo', 'HEAD-borrado']) {
+        const d = join(ramas, name);
+        mkdirSync(d, { recursive: true });
+        writeFileSync(join(d, 'relevo.md'), 'x');
+        const t = new Date(Date.now() - 60 * 86400000);
+        utimesSync(d, t, t);
+      }
+      // Desde el worktree: la poda corre en cualquier árbol y mira el `.tambo/` común.
+      const borrados = pruneOrphanRelays(join(raiz, 'vivo'), { factsOnly: 30 });
+      assert.deepEqual(borrados, ['HEAD-borrado']);
+      assert.ok(existsSync(join(ramas, 'HEAD-vivo')), 'borró el relevo de un worktree que existe');
+    } finally {
+      rmSync(raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -2491,10 +2520,26 @@ describe('lib/payload.mjs: normalización compartida del payload', () => {
   });
 
   test('agentOf usa el argumento del hook o detecta el CLI desde el payload y evento', () => {
-    assert.equal(agentOf({}, ['node', 'x', 'SessionStart', 'claude-code']), 'claude code');
-    assert.equal(agentOf({}, ['node', 'x', 'PreInvocation', 'Antigravity']), 'agy');
-    assert.equal(agentOf({ workspacePaths: ['/a'] }, ['node', 'x', 'SessionStart']), 'agy');
-    assert.equal(agentOf({ hook_event_name: 'StopFailure' }, ['node', 'x']), 'claude code');
+    // agentOf mira el entorno antes que el payload: corrida desde una sesión
+    // de Claude Code (CLAUDECODE=1) o de Codex, la suite fallaba. Se aísla y
+    // se restaura, y se prueba también que el entorno sí se detecta.
+    const keys = ['CLAUDECODE', 'CODEX_HOME', 'CODEX_SESSION', 'AGY_SESSION', 'ANTIGRAVITY_SESSION'];
+    const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    try {
+      for (const k of keys) delete process.env[k];
+      assert.equal(agentOf({}, ['node', 'x', 'SessionStart', 'claude-code']), 'claude code');
+      assert.equal(agentOf({}, ['node', 'x', 'PreInvocation', 'Antigravity']), 'agy');
+      assert.equal(agentOf({ workspacePaths: ['/a'] }, ['node', 'x', 'SessionStart']), 'agy');
+      assert.equal(agentOf({ hook_event_name: 'StopFailure' }, ['node', 'x']), 'claude code');
+      assert.equal(agentOf({}, ['node', 'x']), 'desconocido');
+      process.env.CLAUDECODE = '1';
+      assert.equal(agentOf({ workspacePaths: ['/a'] }, ['node', 'x', 'SessionStart']), 'claude code');
+    } finally {
+      for (const k of keys) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
   });
 
   test('sessionOf acepta el nombre de cada CLI y rechaza lo que no es texto', () => {

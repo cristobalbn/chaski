@@ -2,7 +2,7 @@
 // Todo path se construye con path.join: el caso real incluye carpetas con
 // espacios y acentos sincronizadas por OneDrive, donde se rompen los scripts
 // escritos asumiendo rutas POSIX.
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, basename } from 'node:path';
 import { mkdirSync, rmSync, statSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -48,9 +48,80 @@ export function projectDir(cwd) {
   return base;
 }
 
+/**
+ * Worktree enlazado (`git worktree add`) de `root`, o null si no lo es.
+ *
+ * En uno enlazado `.git` es un archivo `gitdir: <común>/worktrees/<nombre>`,
+ * y esa carpeta trae `commondir` con la ruta al `.git` común. Se lee a mano y
+ * no con `git rev-parse --git-common-dir` porque projectDir() se consulta en
+ * cada hook y muchas veces por hook: un subproceso por llamada se come el
+ * presupuesto de `Stop`. Un submódulo también tiene `.git` archivo pero no
+ * `commondir`, así que queda fuera, que es lo correcto: es otro repositorio.
+ */
+const linkedCache = new Map();
+export function linkedWorktree(root) {
+  if (linkedCache.has(root)) return linkedCache.get(root);
+  let result = null;
+  try {
+    const dotGit = join(root, '.git');
+    if (statSync(dotGit).isFile()) {
+      const m = /^gitdir:\s*(.+?)\s*$/m.exec(stripBom(readFileSync(dotGit, 'utf8')));
+      if (m) {
+        const gitdir = resolve(root, m[1]);
+        const common = resolve(gitdir, readFileSync(join(gitdir, 'commondir'), 'utf8').trim());
+        // Solo un `.git` común con nombre `.git` tiene un árbol principal al
+        // lado. Un repo bare (`repo.git`) no lo tiene: se queda por worktree.
+        if (basename(common).toLowerCase() === '.git' && existsSync(common)) {
+          result = { main: dirname(common), name: basename(gitdir), common };
+        }
+      }
+    }
+  } catch {}
+  linkedCache.set(root, result);
+  return result;
+}
+
+/**
+ * Raíz donde vive `.tambo/`: la del árbol principal aunque la sesión corra
+ * en un worktree enlazado. Los worktrees que crean Codex y otros CLIs se
+ * borran al terminar, y el relevo se iba con ellos; además el siguiente
+ * agente, abierto en el repo, nunca lo veía. Git sigue corriendo en el
+ * worktree (projectDir): los cambios sin commitear son de ese árbol.
+ */
+export function stateRoot(cwd) {
+  const root = projectDir(cwd);
+  return linkedWorktree(root)?.main ?? root;
+}
+
+/**
+ * Rama con la que se nombra la carpeta del relevo. En detached HEAD todos
+ * los árboles dirían `HEAD` y compartirían carpeta; dos worktrees enlazados
+ * sin rama se pisarían. Cada uno lleva su nombre de worktree, único en git.
+ */
+export function stateBranch(cwd, rama) {
+  if (rama !== 'HEAD') return rama;
+  const linked = linkedWorktree(projectDir(cwd));
+  return linked ? `HEAD-${linked.name}` : rama;
+}
+
+/**
+ * Slugs `HEAD-<worktree>` de los worktrees enlazados que existen, para que la
+ * poda no borre el relevo de un worktree vivo en detached HEAD: no hay rama
+ * que lo respalde. Sin subprocesos: se listan `<común>/worktrees/*`.
+ */
+export function liveWorktreeSlugs(cwd) {
+  try {
+    const root = projectDir(cwd);
+    const common = linkedWorktree(root)?.common ?? join(root, '.git');
+    return readdirSync(join(common, 'worktrees'), { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => branchSlug(`HEAD-${e.name}`));
+  } catch { return []; }
+}
+
 /** Directorio .tambo del proyecto, creado si falta. */
 export function tambo(cwd) {
-  const dir = join(projectDir(cwd), TAMBO);
+  const dir = join(stateRoot(cwd), TAMBO);
   mkdirSync(dir, { recursive: true });
   // Invariante 3 sin depender de `init` (#80): quien instala solo el plugin
   // de Claude Code nunca corre init, y `.tambo/` no queda en el .gitignore
@@ -141,7 +212,7 @@ export function git(cwd, args, opciones = {}) {
 /** Directorio de estado de la rama activa. El relevo sigue a la rama, no a la carpeta. */
 export function branchDir(cwd, branch = undefined) {
   const rama = branch === undefined ? currentBranch(cwd) : branch;
-  const dir = join(tambo(cwd), 'branches', branchSlug(rama));
+  const dir = join(tambo(cwd), 'branches', branchSlug(stateBranch(cwd, rama)));
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -157,10 +228,10 @@ export function statePath(cwd, branch = undefined) { return join(branchDir(cwd, 
  * en cada proyecto que se abría —con el plugin, en todos los repos del
  * usuario—, aunque chaski nunca hubiera capturado ahí.
  */
-export function readOnlyTambo(cwd) { return join(projectDir(cwd), TAMBO); }
+export function readOnlyTambo(cwd) { return join(stateRoot(cwd), TAMBO); }
 export function readOnlyBranchDir(cwd, branch = undefined) {
   const rama = branch === undefined ? currentBranch(cwd) : branch;
-  return join(readOnlyTambo(cwd), 'branches', branchSlug(rama));
+  return join(readOnlyTambo(cwd), 'branches', branchSlug(stateBranch(cwd, rama)));
 }
 /** Busca el relevo que una versión anterior guardó con el nombre abreviado de Git. */
 export function legacyBranchState(cwd, branch, budget = null) {
@@ -256,7 +327,7 @@ export function tamboIsIgnored(cwd) {
   // El .gitignore propio de `.tambo/` (ver tambo()): `git check-ignore` sobre
   // la carpeta no lo reporta como ignorada aunque todo su contenido lo esté.
   try {
-    return readFileSync(join(root, TAMBO, '.gitignore'), 'utf8').split(/\r?\n/).some((l) => l.trim() === '*');
+    return readFileSync(join(stateRoot(cwd), TAMBO, '.gitignore'), 'utf8').split(/\r?\n/).some((l) => l.trim() === '*');
   } catch {
     return false;
   }
@@ -329,7 +400,7 @@ export function loadConfig(cwd) {
  * `UserPromptSubmit`, que corre en cada mensaje y no puede pagar un `git` para
  * saber la rama. La sesión que trae adentro la ata a su conversación.
  */
-export function pendingAskPath(cwd) { return join(projectDir(cwd), TAMBO, 'pending-ask.json'); }
+export function pendingAskPath(cwd) { return join(stateRoot(cwd), TAMBO, 'pending-ask.json'); }
 
 /**
  * Prueba de vida del hook de entrega de cada CLI: `{ "<agent>": "<ISO>" }`.
@@ -344,7 +415,7 @@ export function promptHookPath() { return join(readOnlyGlobalDir(), 'prompt-hook
  * al cerrar el turno. Si sobrevive, el turno se cortó: interrupción, ventana
  * cerrada, cuelgue. Ver openTurn() en inject.mjs.
  */
-export function openTurnsPath(cwd) { return join(projectDir(cwd), TAMBO, 'turns-open.json'); }
+export function openTurnsPath(cwd) { return join(stateRoot(cwd), TAMBO, 'turns-open.json'); }
 
 // ----------------------------------------------------------- plugin de Claude Code
 //

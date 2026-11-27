@@ -59,7 +59,7 @@ conservadores, y en este orden:
 | | |
 |---|---|
 | Apagarlo | `"askNarrative": false` en `chaski.json` o `chaski.local.json` |
-| Cuándo se entrega (#73) | En `Stop` solo se anota en `.tambo/pending-ask.json`. La entrega `inject.mjs` en el evento previo a la respuesta de cada CLI, con el contrato de cada uno: `UserPromptSubmit` con `hookSpecificOutput.additionalContext` en Claude Code (no se pinta en la conversación) y en Codex («extra developer context»), y `PreInvocation` con `injectSteps` en Antigravity, que corre antes de cada llamada al modelo y por eso borra la anotación al entregarla. El agente guarda el relevo **antes** de responder y la respuesta queda al final. Pedirla en `Stop` dejaba las llamadas del guardado debajo de la respuesta, y no hay forma de ocultarlas: `suppressOutput` no tiene efecto en `Stop`, y `SessionEnd` no puede hacer actuar al modelo. No se entrega en otra sesión (el agente no tendría la conversación), ni si ya hay una narrativa posterior, ni pasadas 12 h. Mide ~54 ms por evento en los tres CLIs, contra ~39 ms de un `node` vacío (más el `cmd`/`sh` del wrapper en Codex y agy) |
+| Cuándo se entrega (#73) | En `Stop` solo se anota en `.tambo/pending-ask.json`. La entrega `inject.mjs` en el evento previo a la respuesta de cada CLI, con el contrato de cada uno: `UserPromptSubmit` con `hookSpecificOutput.additionalContext` en Claude Code (no se pinta en la conversación) y en Codex («extra developer context»), y `PreInvocation` con `injectSteps` en Antigravity, que corre antes de cada llamada al modelo y por eso borra la anotación al entregarla. El agente guarda el relevo **antes** de responder y la respuesta queda al final. Pedirla en `Stop` dejaba las llamadas del guardado debajo de la respuesta, y no hay forma de ocultarlas: `suppressOutput` no tiene efecto en `Stop`, y `SessionEnd` no puede hacer actuar al modelo. No se entrega en otra sesión (el agente no tendría la conversación), ni si ya hay una narrativa posterior, ni pasadas 12 h. En OpenCode la entrega va por el plugin (`chat.message` en 1.x, `prompt` en 2.x). Mide ~54 ms por evento en los tres CLIs con hooks, contra ~39 ms de un `node` vacío (más el `cmd`/`sh` del wrapper en Codex y agy) |
 | Si no llega otro mensaje | `capture.mjs` guarda la última respuesta del agente (`lastReply`: redactada, ~700 caracteres, vence a las 72 h) y el relevo la muestra como «Última respuesta del agente» cuando hubo trabajo después de la narrativa. No pasa por ningún modelo |
 | Cuándo NO se difiere | Si el hook de entrega de ese CLI no dio señales de vida en las últimas 12 h (`~/.chaski/prompt-hook.json`, que escribe `inject.mjs` a lo sumo cada 10 min). Cubre la instalación que no volvió a correr `chaski init` y, en Codex, el hook nuevo que el usuario todavía no marcó como confiable. Ahí se sigue pidiendo en `Stop` con el formato de abajo: diferir sin quien entregue dejaría el relevo sin narrativa sin que nadie se entere |
 | Cómo se ve (petición en `Stop`) | Una línea bajo el rótulo **«Stop hook feedback»** (cuatro si la sesión no tiene la skill `relevo`: entonces trae la ruta y los campos que hay que escribir). Ese rótulo y el `Ran 1 stop hook` los pinta Claude Code al ejecutar cualquier hook y no se pueden suprimir; lo nuestro es el texto, y es corto a propósito porque ocupa pantalla del usuario. Se emite con `hookSpecificOutput.additionalContext`, que la documentación llama «non-error feedback»: mantiene el turno extra y las protecciones contra bucles sin rotularse como error. En una versión de Claude Code anterior a ese campo la petición no llega — no rompe nada |
@@ -79,13 +79,15 @@ chaski probe --show       # mira lo capturado
 chaski probe --clean      # quita la sonda
 ```
 
-Tiene que ser una sesión interactiva: ninguno de los tres dispara hooks en
-modo headless. `chaski probe` instala una sonda temporal en
+Cubre los tres CLIs con hooks de shell (Claude Code, Codex y agy). OpenCode,
+el cuarto, carga un plugin en vez de hooks y queda fuera de la sonda: su
+contrato lo cubren `test/opencode.test.mjs` y sus fixtures. Tiene que ser una
+sesión interactiva: ninguno de los tres dispara hooks en modo headless. `chaski probe` instala una sonda temporal en
 `~/.chaski/sonda.mjs`; `--show` muestra los payloads capturados en
 `~/.chaski/sonda.log` (tope de 256 KiB). La sonda registra un estado cuando
 la entrada supera 64 KiB o el JSON es inválido. `--clean` quita la sonda y conserva los cambios hechos
 en la configuración mientras estaba activa. Los hooks normales siguen activos
-en los tres CLIs.
+en Claude Code, Codex y agy.
 
 La sonda analiza JSON antes de redactar. Así mantiene útiles las claves y
 los tipos ordinarios para crear fixtures. El log se reemplaza bajo un lock
@@ -202,8 +204,9 @@ sobrevive, el turno se cortó: interrupción, ventana cerrada o cuelgue.
 | Dos conversaciones alternan en la misma rama | El relevo conserva la marca de lectura y el plazo de cada pedido. Muestra hasta tres respuestas de otras conversaciones, acotadas a 240 caracteres. Los hechos de Git describen el árbol compartido |
 | Dos `Stop` llegan a la vez | Se espera hasta 220 ms según el presupuesto del hook. Si vence, el próximo `Stop` de esa conversación puede recuperar su transcript desde la marca anterior |
 | Cambias de rama tras `Stop` | El pedido diferido indica el `estado.json` de la rama del turno anterior |
-| Dos directorios creados con `git worktree` | Cada árbol tiene su propio `.tambo/` y conserva sus archivos modificados y su narrativa. [Git worktree](https://git-scm.com/docs/git-worktree) |
-| Dos guardados manuales de narrativa en una rama | El campo de narrativa activa es compartido. Los worktrees permiten mantener una narrativa y archivos independientes por tarea |
+| Dos directorios creados con `git worktree` | El relevo vive en el `.tambo/` del árbol principal, por rama: sobrevive cuando el worktree se borra (Codex borra los suyos). Los archivos modificados son los de cada árbol. Un worktree en detached HEAD usa la carpeta `HEAD-<nombre del worktree>`. [Git worktree](https://git-scm.com/docs/git-worktree) |
+| Relevo escrito desde otro worktree | Al arrancar, se señalan hasta tres relevos de las últimas 72 h escritos desde otro árbol, con su ruta y sin su contenido |
+| Dos guardados manuales de narrativa en una rama | El campo de narrativa activa es compartido. Dos ramas (o dos worktrees en ramas distintas) mantienen narrativas independientes |
 
 Los checkpoints de hasta ocho conversaciones anteriores se guardan en el
 mismo `estado.json` y vencen a las 72 h. Un archivo por conversación requeriría

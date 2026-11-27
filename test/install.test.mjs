@@ -4264,7 +4264,7 @@ describe('varias ventanas en el mismo proyecto', () => {
     }
   });
 
-  test('dos worktrees del mismo repositorio conservan sus propios cambios locales', () => {
+  test('dos worktrees guardan el relevo en el repo principal y conservan sus propios cambios locales', () => {
     const m = montar('chaski-worktrees-');
     try {
       const path = join(m.raiz, 'otro-worktree');
@@ -4272,18 +4272,66 @@ describe('varias ventanas en el mismo proyecto', () => {
       m.g('worktree', 'add', '-b', 'lado', path);
       const captureTree = (cwd, branch, file) => {
         writeFileSync(join(cwd, file), 'contenido local');
-        const result = stop({ ...m, proyecto: cwd }, 'sesion');
+        const result = stop({ ...m, proyecto: cwd }, 'sesion-' + branch);
         assert.equal(result.status, 0);
         assert.equal(result.stderr, '');
-        const state = join(cwd, '.tambo', 'branches', branch, 'estado.json');
-        return JSON.parse(readFileSync(state, 'utf8')).facts.dirty.map(({ ruta }) => ruta);
+        // Los dos en el `.tambo/` del árbol principal: un worktree se borra y
+        // el relevo no puede irse con él.
+        const state = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'branches', branch, 'estado.json'), 'utf8'));
+        return { dirty: state.facts.dirty.map(({ ruta }) => ruta), tree: state.worktree };
       };
       const one = captureTree(m.proyecto, original, 'trabajo-principal.txt');
       const two = captureTree(path, 'lado', 'trabajo-lateral.txt');
-      assert.ok(one.includes('trabajo-principal.txt'));
-      assert.ok(two.includes('trabajo-lateral.txt'));
-      assert.ok(!one.includes('trabajo-lateral.txt'));
-      assert.ok(!two.includes('trabajo-principal.txt'));
+      assert.ok(!existsSync(join(path, '.tambo')), 'el worktree enlazado no debe tener .tambo/ propio');
+      assert.ok(one.dirty.includes('trabajo-principal.txt'));
+      assert.ok(two.dirty.includes('trabajo-lateral.txt'));
+      assert.ok(!one.dirty.includes('trabajo-lateral.txt'));
+      assert.ok(!two.dirty.includes('trabajo-principal.txt'));
+      assert.equal(realpathSync(one.tree), realpathSync(m.proyecto));
+      assert.equal(realpathSync(two.tree), realpathSync(path));
+    } finally {
+      rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  test('un worktree en detached HEAD tiene carpeta propia y el repo principal lo señala aunque el worktree ya no exista', () => {
+    const m = montar('chaski-worktree-detached-');
+    try {
+      const uno = join(m.raiz, 'wt-uno');
+      const dos = join(m.raiz, 'wt-dos');
+      m.g('worktree', 'add', '--detach', uno);
+      m.g('worktree', 'add', '--detach', dos);
+      for (const cwd of [uno, dos]) {
+        const r = stop({ ...m, proyecto: cwd }, 'sesion-' + cwd);
+        assert.equal(r.status, 0);
+        assert.equal(r.stderr, '');
+      }
+      const branches = join(m.proyecto, '.tambo', 'branches');
+      // Sin el nombre del worktree, los dos escribían en `branches/HEAD`.
+      assert.ok(existsSync(join(branches, 'HEAD-wt-uno', 'estado.json')));
+      assert.ok(existsSync(join(branches, 'HEAD-wt-dos', 'estado.json')));
+      assert.ok(!existsSync(join(branches, 'HEAD')));
+
+      // Codex borra sus worktrees al terminar: el relevo sobrevive y el
+      // siguiente agente, en el repo principal, recibe el puntero.
+      m.g('worktree', 'remove', '--force', uno);
+      const arranque = (cwd) => spawnSync(process.execPath, [join(SRC, 'inject.mjs'), 'SessionStart', 'claude-code'], {
+        cwd, env: m.entorno, encoding: 'utf8',
+        input: JSON.stringify({ session_id: 'nueva', cwd, hook_event_name: 'SessionStart', source: 'startup' }),
+      });
+      const principal = arranque(m.proyecto);
+      assert.equal(principal.status, 0);
+      assert.equal(principal.stderr, '');
+      assert.match(principal.stdout, /Relevos recientes de otros worktrees/);
+      assert.match(principal.stdout, /HEAD-wt-uno[\\/]relevo\.md/);
+      assert.match(principal.stdout, /HEAD-wt-dos[\\/]relevo\.md/);
+      assert.match(principal.stdout, /detached HEAD/);
+
+      // Desde un worktree no se señala su propio relevo, que ya se inyecta.
+      const propio = arranque(dos);
+      assert.equal(propio.status, 0);
+      assert.match(propio.stdout, /HEAD-wt-uno[\\/]relevo\.md/);
+      assert.doesNotMatch(propio.stdout, /HEAD-wt-dos[\\/]relevo\.md/);
     } finally {
       rmSync(m.raiz, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
