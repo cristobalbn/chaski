@@ -676,12 +676,14 @@ razonamiento completo están en la
 
 ## Lo que chaski no hace
 
-- **No funciona en modo headless** (sin interfaz interactiva). Verificado
-  empíricamente en los tres: `claude -p`, `codex exec` y `agy -p` no disparan
-  los hooks `SessionStart` ni `Stop`. chaski es para sesiones interactivas; si
-  lo necesitas en CI, esta herramienta no es la indicada.
+- **No funciona en modo headless** (sin interfaz interactiva) en tres de los
+  cuatro. Verificado empíricamente: `claude -p`, `codex exec` y `agy -p` no
+  disparan los hooks `SessionStart` ni `Stop`. La excepción es OpenCode, cuyo
+  plugin sí corre con `opencode run` (verificado en 1.19.6 y 2.4.2). chaski es
+  para sesiones interactivas; si lo necesitas en CI, esta herramienta no es la
+  indicada.
 - **No es una base de datos vectorial ni un servicio en la nube**, no sincroniza
-  estado en tiempo real entre máquinas y solo soporta tres herramientas (para
+  estado en tiempo real entre máquinas y solo soporta cuatro herramientas (para
   historial local tiene `chaski why`, para decisiones puntuales `chaski share` y
   para ver el último corte por `rate_limit` tiene `chaski next`). Si necesitas
   búsqueda semántica o veinte integraciones, [ai-memory](https://github.com/akitaonrails/ai-memory)

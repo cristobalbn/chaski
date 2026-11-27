@@ -32,6 +32,20 @@ existen para detectar.
 | `codex-prompt.payload.json` | hook `UserPromptSubmit` de Codex, **según la documentación oficial** (2026-11-20), sin captura real todavía |
 | `agy-preinvocation.payload.json` | hook `PreInvocation` de Antigravity, **según la documentación instalada** (`agy-customizations/docs/hooks.md`), sin captura real todavía |
 
+### Última verificación contra cada CLI real
+
+La versión verificada de cada CLI vive en `scripts/upstream.json`
+(`verified`). Esta tabla dice **cómo** se verificó, para que nadie suba una
+versión sin haber corrido el CLI.
+
+| CLI | Versión | Fecha | Cómo |
+|---|---|---|---|
+| Claude Code | 2.1.330 | 2026-11-27 | `node scripts/verify-local.mjs` sobre un transcript real; hooks activos en la misma sesión |
+| Codex CLI | 0.171.0 | 2026-11-27 | `scripts/verify-local.mjs` sobre una sesión del 2026-11-22; `estado.json` escrito por su hook `Stop` |
+| agy | 1.5.14 | 2026-11-27 | `scripts/verify-local.mjs` sobre un transcript del 2026-11-21, día en que se instaló 1.5.14 (el transcript no trae versión) |
+| OpenCode 1.x | 1.19.6 | 2026-11-27 | turno real con el plugin en un HOME aislado: captura, inyección y compactación |
+| OpenCode 2.x | 2.4.2 | 2026-11-27 | ídem, con `@opencode/cli` instalado en un prefijo aparte |
+
 Los tres `*-prompt` / `*-preinvocation` no salen de `chaski probe`: reemplázalos por una captura real en cuanto haya una. Si la forma difiere, el test de contrato lo dice.
 
 Los tres formatos de transcript son distintos entre sí. Ninguno de los CLIs

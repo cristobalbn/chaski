@@ -57,7 +57,7 @@
       "notes": {
         "changelog": "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md"
       },
-      "verified": "2.1.316",
+      "verified": "2.1.330",
       "minSupported": null,
       "status": "supported"
     },
@@ -70,7 +70,7 @@
         "github": "openai/codex",
         "tagPrefix": "rust-v"
       },
-      "verified": "0.166.0",
+      "verified": "0.171.0",
       "minSupported": null,
       "status": "supported"
     },
@@ -81,7 +81,7 @@
       "notes": {
         "changelog": "https://raw.githubusercontent.com/google-antigravity/antigravity-cli/main/CHANGELOG.md"
       },
-      "verified": "1.4.12",
+      "verified": "1.5.14",
       "minSupported": null,
       "status": "supported"
     },

@@ -33,6 +33,18 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
   puede romper el contrato o servirnos, avisa de líneas mayores nuevas o
   abandonadas, y abre o actualiza un issue con la etiqueta `upstream`. La
   política de versiones soportadas y de retiro está en AGENTS.md.
+- `scripts/verify-local.mjs`: contrasta el contrato de transcript con el
+  transcript real más reciente de Claude Code, Codex y agy de la máquina, sin
+  imprimir contenido. Con él se re-verificaron Claude Code 2.1.330, Codex
+  0.171.0 y agy 1.5.14.
+
+### Corregido
+- Claude Code en Windows: los comandos de la herramienta `PowerShell` no
+  llegaban al relevo, y un `tool_use` que Claude Code escribe dos veces dejaba
+  un comando duplicado sin código de salida (visto en 2.1.330).
+- agy: la petición de narrativa respeta `continuation_active`, que agy 1.5.6
+  agregó al JSON de los hooks `Stop`, para no pedirla de nuevo durante una
+  continuación.
 
 ## [0.1.34] - 2026-11-21
 

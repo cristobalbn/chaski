@@ -18,6 +18,7 @@ node src/cli.mjs version      # imprime la versión de package.json (--version /
 npm run check                      # chequeo de sintaxis (no hay build)
 npm test                           # node:test, sin dependencias
 node scripts/upstream.mjs          # versiones nuevas y cambios en los CLIs (usa la red; ver «Versiones soportadas»)
+node scripts/verify-local.mjs      # contrato de transcript contra los transcripts reales de esta máquina
 ```
 
 Si agregas un archivo de tests, **súmalo al script `test` de package.json**:
@@ -473,11 +474,14 @@ cambios las líneas que pueden romper el contrato y las que podrían servirnos
 etiqueta `upstream`. Córrelo a mano igual: `GITHUB_TOKEN=$(gh auth token) node
 scripts/upstream.mjs`.
 
-**Al verificar una versión nueva:** captura el payload real con `chaski probe`
-(o la sonda de plugin en OpenCode), reemplaza el fixture si la forma cambió,
-corre `npm test`, sube `verified` y anota la fecha en `test/fixtures/README.md`.
-No subas `verified` sin haber corrido el CLI real: es la promesa que sostiene
-el issue.
+**Al verificar una versión nueva:** corre `node scripts/verify-local.mjs`,
+que contrasta el contrato con el transcript real más reciente de Claude Code,
+Codex y agy de tu máquina (imprime formas y conteos, nunca contenido). Si
+algo falla, captura la forma con `chaski probe` (o la sonda de plugin en
+OpenCode) y reemplaza el fixture. Después corre `npm test`, sube `verified` y
+anota versión, fecha y método en la tabla de `test/fixtures/README.md`. No
+subas `verified` sin un transcript o un turno del CLI real: es la promesa que
+sostiene el issue.
 
 **Cuándo se deja de soportar una línea mayor.** Cuando pasa una de dos:
 
