@@ -28,7 +28,7 @@ la integración de OpenAI corresponde a **Codex en modo local**, con los hooks
 habilitados y aprobados para el perfil que abre el proyecto. ChatGPT web y las
 tareas en la nube quedan fuera de esta integración automática. ChatGPT Work
 en modo completamente local admite hooks según OpenAI y queda por verificar
-como cliente de Chaski. CI verifica los contratos de los tres CLI con payloads
+como cliente de Chaski. CI verifica los contratos de los cuatro CLIs con payloads
 y transcripts sintéticos.
 [Hooks de Codex](https://learn.chatgpt.com/docs/hooks) ·
 [Entornos de Codex](https://learn.chatgpt.com/docs/environments/modes)
@@ -434,7 +434,7 @@ todavía sobra, y nunca se invoca ningún modelo por fuera.
 
 La petición no aparece debajo de la respuesta: se anota al terminar el turno y
 el agente la atiende **al empezar el siguiente**, antes de responderte, así lo
-que preguntaste queda al final de la pantalla. Funciona igual en los tres CLIs.
+que preguntaste queda al final de la pantalla. Funciona igual en los cuatro CLIs.
 Si cierras la sesión antes, el relevo guarda la última respuesta del agente
 como respaldo.
 
@@ -516,7 +516,7 @@ eso el modelo es el último recurso y no el primero.
 
 | Archivo | Cuándo corre | Qué hace |
 |---|---|---|
-| `src/capture.mjs` | hook `Stop` en los tres CLIs; también `SessionEnd`, `PreCompact`, `SubagentStop` y `StopFailure` en Claude Code | Lee el transcript desde una marca de agua (hasta dónde ya leyó) y git; escribe `relevo.md`, `estado.json` y `.tambo/historia/` |
+| `src/capture.mjs` | hook `Stop` en Claude Code, Codex y agy (en OpenCode lo lanza el plugin); también `SessionEnd`, `PreCompact`, `SubagentStop` y `StopFailure` en Claude Code | Lee el transcript desde una marca de agua (hasta dónde ya leyó) y git; escribe `relevo.md`, `estado.json` y `.tambo/historia/` |
 | `src/inject.mjs` | hook `SessionStart`; y `UserPromptSubmit` / `PreInvocation` | En `SessionStart` imprime el relevo; en cada mensaje entrega la petición de narrativa anotada y registra el turno abierto |
 | `src/opencode.mjs` | plugin de OpenCode 1.x y 2.x, dentro de su proceso | Traduce el fin de turno, el mensaje del usuario, el system prompt y la compactación a los mismos hooks, y lanza `capture.mjs` / `inject.mjs` con `node`. OpenCode no escribe transcript: el plugin pasa los mensajes por stdin |
 | `src/statusline.mjs` | statusline opcional de Claude Code (`init --statusline`) | Anota `rate_limits` en `~/.chaski/usage.json` y delega en la statusline previa del usuario |
@@ -608,7 +608,7 @@ merge permanentes sobre contenido que nadie quiere resolver.
 
 Por eso `.tambo/` entra al `.gitignore` y `doctor` avisa si no está ignorado.
 Cada persona tiene su propio relevo, local. Lo que el equipo sí comparte son las
-convenciones estables, y esas van en `AGENTS.md`, que los tres CLIs ya leen de
+convenciones estables, y esas van en `AGENTS.md`, que los cuatro CLIs ya leen de
 forma nativa.
 
 > Nota práctica: si `.tambo/` no está ignorado, `git stash -u` y los `checkout`
