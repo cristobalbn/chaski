@@ -1,0 +1,9 @@
+{
+  "session.created": { "id": "evt_01", "created": 1795812780374, "type": "session.created", "durable": { "aggregateID": "ses_v2", "seq": 0, "version": 1 }, "location": { "directory": "/proyecto" }, "data": { "sessionID": "ses_v2", "projectID": "0000", "location": { "directory": "/proyecto" }, "subpath": "", "slug": "happy-forest", "model": { "id": "modelo-x", "providerID": "opencode" }, "version": "2.4.2" } },
+  "session.execution.succeeded": { "id": "evt_02", "created": 1795812788149, "type": "session.execution.succeeded", "durable": { "aggregateID": "ses_v2", "seq": 25, "version": 1 }, "data": { "sessionID": "ses_v2" } },
+  "session.get": { "id": "ses_v2", "projectID": "0000", "model": { "id": "modelo-x", "providerID": "opencode", "variant": "default" }, "outcome": "succeeded", "title": "Sesión", "location": { "directory": "/proyecto" } },
+  "session.get.child": { "id": "ses_v2_child", "parentID": "ses_v2", "projectID": "0000", "location": { "directory": "/proyecto" } },
+  "hook.prompt": { "sessionID": "ses_v2", "messageID": "msg_01user", "prompt": { "text": "hola", "files": [] }, "delivery": "steer" },
+  "hook.context": { "sessionID": "ses_v2", "model": { "id": "modelo-x", "providerID": "opencode", "variant": "default" }, "system": [{ "type": "text", "text": "You are an AI agent running in OpenCode." }, { "type": "text", "text": "# Your Model" }], "messages": [], "options": { "maxTokens": 32000 }, "agent": "build", "tools": {} },
+  "hook.compaction": { "sessionID": "ses_v2", "model": { "id": "modelo-x", "providerID": "opencode", "variant": "default" }, "system": [{ "type": "text", "text": "You are an AI agent running in OpenCode." }], "messages": [], "options": {}, "agent": "build", "tools": {} }
+}

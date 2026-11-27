@@ -9,7 +9,7 @@ import { latestMergedBranchEntry } from '../lib/history.mjs';
 import { readRelay } from '../lib/relay-store.mjs';
 import { orphanRelays, effectivePruneDays } from '../lib/maintenance.mjs';
 import { pkgVersion, pad } from './common.mjs';
-import { CAPTURE, INJECT, CLIS, isInstalled, parseOpencodePlugin, OPENCODE_EVENTS, opencodeMajor } from './hook-config.mjs';
+import { CAPTURE, INJECT, CLIS, isInstalled, parseOpencodePlugin, OPENCODE_EVENTS, opencodeVersion, opencodeSupported, OPENCODE_MIN } from './hook-config.mjs';
 import { projectContext, projectRootNote } from './project.mjs';
 import { isChaskiStatusLine } from './statusline.mjs';
 
@@ -21,13 +21,14 @@ export function doctor() {
   const pluginUser = claudePluginEnabledForUser();
   const cliStatus = Object.entries(CLIS).map(([name, cli]) => {
     const installed = isInstalled(cli.bin);
-    // OpenCode 2.x no carga el plugin 1.x de chaski, aunque el archivo exista.
-    const unsupported = installed && cli.formato === 'js-opencode' && (opencodeMajor() ?? 1) >= 2;
+    // Un OpenCode anterior al mínimo no carga el plugin, aunque el archivo exista.
+    const version = installed && cli.formato === 'js-opencode' ? opencodeVersion() : null;
+    const unsupported = Boolean(version) && !opencodeSupported(version);
     const hasConfig = installed && !unsupported && existsSync(cli.config);
     const inspected = hasConfig ? inspectRegisteredHooks(cli) : null;
     const events = inspected ? inspected.events : null;
     const missingPaths = inspected ? inspected.missingPaths : [];
-    return { name, cli, installed, unsupported, hasConfig, events, missingPaths };
+    return { name, cli, installed, version, unsupported, hasConfig, events, missingPaths };
   });
 
   console.log('CLIs y hooks');
@@ -172,9 +173,9 @@ export function doctor() {
   console.log(`  ${pad('llamadas')} chaski NO invoca claude -p, codex exec ni agy -p\n`);
 }
 
-function describeHooks({ installed, unsupported, hasConfig, cli, events }, plugin, pluginUser = false) {
+function describeHooks({ installed, version, unsupported, hasConfig, cli, events }, plugin, pluginUser = false) {
   if (!installed) return 'no instalado';
-  if (unsupported) return 'OpenCode 2.x: todavía no compatible (chaski usa la API de plugins 1.x)';
+  if (unsupported) return `${version.join('.')} no soportada (mínimo ${OPENCODE_MIN.join('.')}): actualiza OpenCode`;
   if (cli.formato === 'json-claude' && plugin) {
     if (!events?.length) return `vía plugin ${CLAUDE_PLUGIN_ID}`;
     return `vía plugin ${CLAUDE_PLUGIN_ID}` + (pluginUser

@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { readJsonForWrite, tambo, TAMBO, claudePluginEnabled, claudePluginEnabledForUser, CLAUDE_PLUGIN_ID } from '../lib/paths.mjs';
 import { writeAtomic } from '../lib/atomic.mjs';
 import { AQUI, pad, backup } from './common.mjs';
-import { CAPTURE, INJECT, cmd, MARCA_INI, MARCA_FIN, PROBE_START, PROBE_END, CLIS, isInstalled, isChaskiHookGroup, isProbeHookGroup, removeBlock, opencodePluginSource, parseOpencodePlugin, opencodeMajor } from './hook-config.mjs';
+import { CAPTURE, INJECT, cmd, MARCA_INI, MARCA_FIN, PROBE_START, PROBE_END, CLIS, isInstalled, isChaskiHookGroup, isProbeHookGroup, removeBlock, opencodePluginSource, parseOpencodePlugin, opencodeVersion, opencodeSupported, OPENCODE_MIN } from './hook-config.mjs';
 import { projectContext, projectRootNote } from './project.mjs';
 import { installStatusLine, restoreStatusLine } from './statusline.mjs';
 
@@ -48,12 +48,15 @@ export function init(args = []) {
   const estado = { configurados: [], yaEstaban: [], fallidos: [] };
   for (const name of detectados) {
     const cli = CLIS[name];
-    // OpenCode 2.x no carga plugins 1.x: instalarlo ahí sería anunciar un
-    // relevo que nunca corre. No es un fallo de init, es una versión que
-    // chaski todavía no soporta (ver opencodeMajor).
-    if (cli.formato === 'js-opencode' && (opencodeMajor() ?? 1) >= 2) {
-      console.log(`  ${pad(name)} 2.x detectado: todavía no compatible (chaski usa la API de plugins 1.x), se omite`);
-      continue;
+    // Un OpenCode anterior al mínimo no carga el plugin: instalarlo ahí sería
+    // anunciar un relevo que nunca corre. No es un fallo de init, es una
+    // versión que chaski no soporta (ver OPENCODE_MIN).
+    if (cli.formato === 'js-opencode') {
+      const version = opencodeVersion();
+      if (!opencodeSupported(version)) {
+        console.log(`  ${pad(name)} ${version.join('.')} no soportada (mínimo ${OPENCODE_MIN.join('.')}): actualiza OpenCode; se omite`);
+        continue;
+      }
     }
     try {
       // Los install* devuelven el contenido en vez de escribirlo: si es

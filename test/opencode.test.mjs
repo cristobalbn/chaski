@@ -19,15 +19,19 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 import { transcriptFacts } from '../src/lib/transcript.mjs';
-import { reduceMessages, chaskiPlugin } from '../src/opencode.mjs';
+import { reduceMessages, reduceMessagesV2, chaskiPlugin, chaskiPluginV2, chaskiDefinition } from '../src/opencode.mjs';
 import { promptPayload, PROMPT_HOOK_EVENTS } from '../src/lib/ask.mjs';
 import { canonicalAgent } from '../src/lib/payload.mjs';
+import { opencodeSupported } from '../src/commands/hook-config.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const SRC = join(AQUI, '..', 'src');
 const FIX = join(AQUI, 'fixtures');
 const mensajes = JSON.parse(readFileSync(join(FIX, 'opencode.messages.json'), 'utf8'));
 const eventos = JSON.parse(readFileSync(join(FIX, 'opencode.events.json'), 'utf8'));
+// OpenCode 2.x (verificado con 2.4.2): otra API de plugins y otra forma de mensajes.
+const contextoV2 = JSON.parse(readFileSync(join(FIX, 'opencode-v2.context.json'), 'utf8'));
+const eventosV2 = JSON.parse(readFileSync(join(FIX, 'opencode-v2.events.json'), 'utf8'));
 const limpiar = (dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 
 describe('contrato de mensajes: OpenCode', () => {
@@ -97,6 +101,60 @@ describe('contrato de mensajes: OpenCode', () => {
   });
 });
 
+describe('contrato de mensajes: OpenCode 2.x', () => {
+  const jsonl = reduceMessagesV2(contextoV2);
+  const r = transcriptFacts({ id: 'opencode:ses_v2', content: jsonl }, 0, {});
+
+  test('produce el mismo JSONL común: usuario y asistente, sin `idle` ni el turno en curso', () => {
+    const lineas = jsonl.trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(lineas.map((l) => l.info.role), ['user', 'assistant', 'assistant', 'assistant', 'user']);
+  });
+
+  test('extrae los comandos de la herramienta `shell` con su código de salida', () => {
+    assert.deepEqual(r.commands.map((c) => [c.cmd, c.exit]), [['git status', 0], ['npm test -- auth', 1]]);
+  });
+
+  test('read usa `input.path` y queda como archivo leído', () => {
+    assert.deepEqual(r.filesRead, ['/proyecto/src/auth/jwt.ts']);
+  });
+
+  test('turnos y última respuesta, sin salidas de herramientas ni razonamiento', () => {
+    assert.equal(r.turns, 2);
+    assert.match(r.lastMessage ?? '', /no rota el token/);
+    assert.doesNotMatch(jsonl, /On branch main|2 failing|Voy a correr/);
+    // Caso positivo: esas cadenas sí están en el fixture.
+    assert.match(JSON.stringify(contextoV2), /On branch main/);
+  });
+
+  test('la reducción es determinista', () => {
+    assert.equal(reduceMessagesV2(structuredClone(contextoV2)), jsonl);
+  });
+});
+
+describe('contrato de eventos: OpenCode 2.x', () => {
+  test('el fin de turno es session.execution.succeeded con data.sessionID', () => {
+    assert.equal(eventosV2['session.execution.succeeded'].data.sessionID, 'ses_v2');
+  });
+
+  test('una sesión hija trae parentID en ctx.session.get()', () => {
+    assert.equal(eventosV2['session.get.child'].parentID, 'ses_v2');
+    assert.equal(eventosV2['session.get'].parentID, undefined);
+  });
+
+  test('context y compaction traen system como lista de partes de texto', () => {
+    for (const h of ['hook.context', 'hook.compaction']) {
+      assert.ok(eventosV2[h].system.every((p) => p.type === 'text' && typeof p.text === 'string'), h);
+    }
+  });
+
+  test('la definición sirve a las dos APIs: id + setup para 2.x, server para 1.x', () => {
+    const d = chaskiDefinition({ node: process.execPath });
+    assert.equal(d.id, 'chaski');
+    assert.equal(typeof d.setup, 'function');
+    assert.equal(typeof d.server, 'function');
+  });
+});
+
 describe('contrato de eventos: OpenCode', () => {
   test('session.created trae el id de la sesión y, en un subagente, parentID', () => {
     assert.equal(eventos['session.created'].event.properties.info.id, 'ses_fixture');
@@ -158,7 +216,7 @@ describe('instalación del plugin de OpenCode', () => {
       const correr = (...a) => execFileSync(process.execPath, [join(SRC, 'cli.mjs'), ...a], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
       assert.match(correr('init'), /opencode\s+plugin instalado/);
       const texto = readFileSync(m.plugin, 'utf8');
-      assert.match(texto, /import \{ chaskiPlugin \} from "file:/);
+      assert.match(texto, /import \{ chaskiDefinition \} from "file:/);
       assert.ok(!existsSync(m.plugin + '.chaski-backup'), 'dejó un respaldo en la carpeta de plugins');
       assert.match(correr('init'), /opencode\s+ya configurado/);
       assert.match(correr('doctor'), /opencode\s+registrado \(SessionStart, UserPromptSubmit, Stop, PreCompact\)/);
@@ -169,18 +227,39 @@ describe('instalación del plugin de OpenCode', () => {
     }
   });
 
-  test('con OpenCode 2.x no instala el plugin 1.x y doctor lo dice', () => {
-    const m = montar('chaski-oc-v2-', '2.3.0');
+  test('con un OpenCode anterior al mínimo no instala y doctor lo dice', () => {
+    const m = montar('chaski-oc-viejo-', '1.18.28');
     try {
       const correr = (...a) => execFileSync(process.execPath, [join(SRC, 'cli.mjs'), ...a], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
-      assert.match(correr('init'), /opencode\s+2\.x detectado: todavía no compatible/);
-      assert.ok(!existsSync(m.plugin), 'instaló un plugin que OpenCode 2.x no puede cargar');
+      assert.match(correr('init'), /opencode\s+1\.18\.28 no soportada \(mínimo 1\.18\.29\)/);
+      assert.ok(!existsSync(m.plugin), 'instaló un plugin que esa versión no puede cargar');
       const doc = correr('doctor');
-      assert.match(doc, /opencode\s+OpenCode 2\.x: todavía no compatible/);
+      assert.match(doc, /opencode\s+1\.18\.28 no soportada/);
       assert.doesNotMatch(doc, /opencode: hooks registrados pero nunca ejecutados/);
     } finally {
       limpiar(m.raiz);
     }
+  });
+
+  test('con OpenCode 2.x instala el mismo plugin (la definición sirve a las dos APIs)', () => {
+    // Formato de `opencode --version` en 2.x: «opencode v2.4.2».
+    const m = montar('chaski-oc-v2-', 'opencode v2.4.2');
+    try {
+      const correr = (...a) => execFileSync(process.execPath, [join(SRC, 'cli.mjs'), ...a], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      assert.match(correr('init'), /opencode\s+plugin instalado/);
+      assert.match(readFileSync(m.plugin, 'utf8'), /^export default chaskiDefinition\(/m);
+    } finally {
+      limpiar(m.raiz);
+    }
+  });
+
+  test('opencodeSupported compara contra 1.18.29 y acepta una versión ilegible', () => {
+    assert.equal(opencodeSupported([1, 18, 28]), false);
+    assert.equal(opencodeSupported([1, 18, 29]), true);
+    assert.equal(opencodeSupported([1, 19, 0]), true);
+    assert.equal(opencodeSupported([1, 9, 99]), false);
+    assert.equal(opencodeSupported([2, 0, 0]), true);
+    assert.equal(opencodeSupported(null), true);
   });
 
   test('no pisa ni borra un chaski.js que no generó chaski', () => {
@@ -244,7 +323,7 @@ describe('el plugin de punta a punta, con un cliente falso', () => {
     try {
       execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
       // El archivo que init generó, importado como lo haría OpenCode.
-      const { Chaski } = await import(pathToFileURL(m.plugin).href + '?t=' + Date.now());
+      const Chaski = (await import(pathToFileURL(m.plugin).href + '?t=' + Date.now())).default.server;
       await conEntorno(m, async () => {
         const hooks = await Chaski({ client: cliente(mensajes), directory: m.proyecto });
         await hooks.event(eventos['session.idle']);
@@ -279,7 +358,7 @@ describe('el plugin de punta a punta, con un cliente falso', () => {
     const m = montar('chaski-oc-hijo-');
     try {
       execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
-      const { Chaski } = await import(pathToFileURL(m.plugin).href + '?t=' + Date.now());
+      const Chaski = (await import(pathToFileURL(m.plugin).href + '?t=' + Date.now())).default.server;
       await conEntorno(m, async () => {
         const hooks = await Chaski({ client: cliente(mensajes, { ses_child: 'ses_fixture' }), directory: m.proyecto });
         await hooks.event(eventos['session.created.child']);
@@ -298,7 +377,7 @@ describe('el plugin de punta a punta, con un cliente falso', () => {
     const m = montar('chaski-oc-compact-');
     try {
       execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
-      const { Chaski } = await import(pathToFileURL(m.plugin).href + '?t=' + Date.now());
+      const Chaski = (await import(pathToFileURL(m.plugin).href + '?t=' + Date.now())).default.server;
       await conEntorno(m, async () => {
         const hooks = await Chaski({ client: cliente(mensajes), directory: m.proyecto });
         const salida = structuredClone(eventos['experimental.session.compacting'].output);
@@ -310,6 +389,106 @@ describe('el plugin de punta a punta, con un cliente falso', () => {
     } finally {
       limpiar(m.raiz);
     }
+  });
+
+  /**
+   * Bus de eventos falso con la forma de `ctx.event.subscribe()` de 2.x.
+   * `emitir` se resuelve cuando el plugin terminó de procesar el evento: el
+   * generador recién vuelve a pedir el siguiente después de eso.
+   */
+  function busFalso() {
+    const pendientes = [];
+    let tomar = null;
+    let procesado = null;
+    async function* subscribe() {
+      while (true) {
+        if (procesado) { const ok = procesado; procesado = null; ok(); }
+        const ev = pendientes.length ? pendientes.shift() : await new Promise((r) => { tomar = r; });
+        yield ev;
+      }
+    }
+    const emitir = (ev) => new Promise((ok) => {
+      procesado = ok;
+      if (tomar) { const t = tomar; tomar = null; t(ev); } else pendientes.push(ev);
+    });
+    return { subscribe, emitir };
+  }
+
+  function ctxFalso(directorio, padres = {}) {
+    const hooks = {};
+    const bus = busFalso();
+    const ctx = {
+      location: { directory: directorio },
+      session: {
+        hook: async (nombre, fn) => { hooks[nombre] = fn; return { dispose: async () => {} }; },
+        context: async () => structuredClone(contextoV2),
+        get: async ({ sessionID }) => (padres[sessionID] ? { id: sessionID, parentID: padres[sessionID] } : { id: sessionID }),
+      },
+      event: { subscribe: bus.subscribe },
+    };
+    return { ctx, hooks, emitir: bus.emitir };
+  }
+
+  test('2.x: el fin de turno escribe el relevo, y context y compaction lo entregan', async () => {
+    const m = montar('chaski-oc-v2e2e-', 'opencode v2.4.2');
+    try {
+      execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      const def = (await import(pathToFileURL(m.plugin).href + '?t=' + Date.now())).default;
+      await conEntorno(m, async () => {
+        const a = ctxFalso(m.proyecto);
+        await def.setup(a.ctx);
+        assert.deepEqual(Object.keys(a.hooks).sort(), ['compaction', 'context', 'prompt']);
+        await a.emitir(eventosV2['session.execution.succeeded']);
+
+        const ramas = readdirSync(join(m.proyecto, '.tambo', 'branches'));
+        const estado = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'branches', ramas[0], 'estado.json'), 'utf8'));
+        assert.equal(estado.agent, 'opencode');
+        assert.equal(estado.transcript, 'opencode:ses_v2');
+        assert.deepEqual(estado.commands.map((c) => [c.cmd, c.exit]), [['git status', 0], ['npm test -- auth', 1]]);
+
+        // Sesión nueva: el relevo llega como una parte de texto más, al final.
+        const b = ctxFalso(m.proyecto);
+        await def.setup(b.ctx);
+        const antes = eventosV2['hook.context'].system.length;
+        const ev2 = { ...structuredClone(eventosV2['hook.context']), sessionID: 'ses_nueva' };
+        await b.hooks.context(ev2);
+        assert.equal(ev2.system.length, antes + 1);
+        assert.equal(ev2.system.at(-1).type, 'text');
+        assert.match(ev2.system.at(-1).text, /<<<RELEVO-CHASKI[\s\S]*npm test -- auth/);
+
+        const comp = { ...structuredClone(eventosV2['hook.compaction']), sessionID: 'ses_nueva' };
+        await b.hooks.compaction(comp);
+        assert.match(comp.system.at(-1).text, /^chaski: al resumir, conserva/);
+      });
+    } finally {
+      limpiar(m.raiz);
+    }
+  });
+
+  test('2.x: una sesión hija ni recibe ni escribe el relevo', async () => {
+    const m = montar('chaski-oc-v2hijo-', 'opencode v2.4.2');
+    try {
+      execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      const def = (await import(pathToFileURL(m.plugin).href + '?t=' + Date.now())).default;
+      await conEntorno(m, async () => {
+        const a = ctxFalso(m.proyecto, { ses_v2_child: 'ses_v2' });
+        await def.setup(a.ctx);
+        await a.emitir({ type: 'session.execution.succeeded', data: { sessionID: 'ses_v2_child' } });
+        assert.ok(!existsSync(join(m.proyecto, '.tambo', 'branches')), 'el subagente escribió un relevo');
+        const ev = { ...structuredClone(eventosV2['hook.context']), sessionID: 'ses_v2_child' };
+        await a.hooks.context(ev);
+        assert.equal(ev.system.length, eventosV2['hook.context'].system.length);
+      });
+    } finally {
+      limpiar(m.raiz);
+    }
+  });
+
+  test('2.x: setup no lanza con un contexto incompleto', async () => {
+    await chaskiPluginV2({ node: process.execPath })({});
+    await chaskiPluginV2({ node: process.execPath })({ session: { hook: async () => { throw new Error('x'); } }, event: {} });
+    await chaskiPluginV2({})({ session: { hook: async () => {} } });
+    assert.ok(true);
   });
 
   test('los hooks no lanzan con entradas raras', async () => {

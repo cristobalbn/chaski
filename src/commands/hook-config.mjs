@@ -139,37 +139,57 @@ export const OPENCODE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Stop', 'Pre
 export function opencodePluginSource() {
   return [
     OPENCODE_MARK,
-    `import { chaskiPlugin } from ${JSON.stringify(pathToFileURL(OPENCODE_PLUGIN).href)};`,
-    `export const Chaski = chaskiPlugin({ node: ${JSON.stringify(process.execPath)} });`,
+    `import { chaskiDefinition } from ${JSON.stringify(pathToFileURL(OPENCODE_PLUGIN).href)};`,
+    `export default chaskiDefinition({ node: ${JSON.stringify(process.execPath)} });`,
     '',
   ].join('\n');
 }
 
 /**
- * Versión mayor del OpenCode instalado, o null si no se pudo leer.
- *
- * OpenCode 2.x (octubre de 2026) cambió la API de plugins y no carga los de
- * 1.x: «V1 plugin implementations do not run in V2» (guía oficial de
- * migración). El plugin de chaski es 1.x, así que en 2.x no se instala.
+ * Versión mínima de OpenCode que carga el plugin de chaski. Es desde cuando
+ * 1.x acepta un `export default` con `server()` (guía oficial de migración a
+ * 2.x: «V1 object entrypoints are supported in OpenCode 1.18.29 and newer»),
+ * que es lo que permite servir 1.x y 2.x desde el mismo archivo.
+ * La política de versiones está en AGENTS.md («Versiones soportadas»).
+ */
+export const OPENCODE_MIN = [1, 18, 29];
+
+/**
+ * Versión del OpenCode instalado como `[mayor, menor, parche]`, o null si no
+ * se pudo leer. 1.x imprime `1.19.6`; 2.x, `opencode v2.4.2`.
  * Con `shell` en Windows porque `opencode` es un shim .cmd/.ps1 de npm.
  */
-export function opencodeMajor() {
+export function opencodeVersion() {
   try {
     const r = spawnSync('opencode', ['--version'], {
       encoding: 'utf8', timeout: 8000, windowsHide: true, shell: process.platform === 'win32',
     });
-    const m = /(\d+)\.\d+\.\d+/.exec(String(r.stdout ?? ''));
-    return m ? Number(m[1]) : null;
+    const m = /(\d+)\.(\d+)\.(\d+)/.exec(String(r.stdout ?? ''));
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
   } catch {
     return null;
   }
 }
 
+/**
+ * ¿Esta versión carga el plugin? Una versión ilegible se da por buena: es
+ * preferible instalar y que doctor lo diga a no instalar por una salida rara.
+ */
+export function opencodeSupported(version) {
+  if (!Array.isArray(version)) return true;
+  for (let i = 0; i < 3; i++) {
+    if (version[i] !== OPENCODE_MIN[i]) return version[i] > OPENCODE_MIN[i];
+  }
+  return true;
+}
+
 /** Rutas que usa un plugin de OpenCode generado por chaski, o null si no es nuestro. */
 export function parseOpencodePlugin(texto) {
   if (typeof texto !== 'string' || !texto.startsWith(OPENCODE_MARK)) return null;
-  const modulo = texto.match(/^import \{ chaskiPlugin \} from ("[^"\n]*");$/m);
-  const node = texto.match(/chaskiPlugin\(\{ node: ("[^"\n]*") \}\)/);
+  // `chaskiPlugin` es la forma de antes de soportar OpenCode 2.x: se reconoce
+  // para que doctor y uninstall sigan funcionando sobre una instalación vieja.
+  const modulo = texto.match(/^import \{ (?:chaskiDefinition|chaskiPlugin) \} from ("[^"\n]*");$/m);
+  const node = texto.match(/(?:chaskiDefinition|chaskiPlugin)\(\{ node: ("[^"\n]*") \}\)/);
   try {
     return { module: modulo ? JSON.parse(modulo[1]) : null, node: node ? JSON.parse(node[1]) : null };
   } catch {

@@ -1,0 +1,118 @@
+{
+  "$comment": "Fuente única de las versiones de cada CLI que chaski soporta y verificó. La política está en AGENTS.md, «Versiones soportadas». La lee scripts/upstream.mjs (workflow upstream.yml) y la contrastan los tests.",
+  "staleAfterDays": 120,
+  "successorGraceDays": 180,
+  "keywords": {
+    "contrato": {
+      "words": [
+        "hook",
+        "SessionStart",
+        "SessionEnd",
+        "UserPromptSubmit",
+        "PreInvocation",
+        "PreCompact",
+        "SubagentStop",
+        "StopFailure",
+        "Stop hook",
+        "transcript",
+        "payload",
+        "session_id",
+        "additionalContext",
+        "injectSteps",
+        "plugin",
+        "system.transform",
+        "session.idle",
+        "compacting",
+        "breaking",
+        "deprecat",
+        "removed",
+        "rename"
+      ],
+      "exclude": "^(\\[(vscode|desktop|jetbrains|ide)\\]|((windows|macos|linux):\\s*)?(fix(ed|es)?|improved|reduced|updated docs)\\b)"
+    },
+    "oportunidad": {
+      "words": [
+        "statusline",
+        "status line",
+        "rate limit",
+        "rate_limits",
+        "skill",
+        "AGENTS.md",
+        "compact",
+        "resume",
+        "subagent",
+        "memory",
+        "context window",
+        "headless"
+      ],
+      "require": "^(added|new|introduc|now|support|allow|improved|changed)"
+    }
+  },
+  "tracks": [
+    {
+      "id": "claude-code",
+      "cli": "claude code",
+      "line": "2.x",
+      "npm": "@anthropic-ai/claude-code",
+      "notes": {
+        "changelog": "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md"
+      },
+      "verified": "2.1.316",
+      "minSupported": null,
+      "status": "supported"
+    },
+    {
+      "id": "codex",
+      "cli": "codex",
+      "line": "0.x",
+      "npm": "@openai/codex",
+      "notes": {
+        "github": "openai/codex",
+        "tagPrefix": "rust-v"
+      },
+      "verified": "0.166.0",
+      "minSupported": null,
+      "status": "supported"
+    },
+    {
+      "id": "agy",
+      "cli": "agy",
+      "line": "1.x",
+      "notes": {
+        "changelog": "https://raw.githubusercontent.com/google-antigravity/antigravity-cli/main/CHANGELOG.md"
+      },
+      "verified": "1.4.12",
+      "minSupported": null,
+      "status": "supported"
+    },
+    {
+      "id": "opencode-1",
+      "cli": "opencode",
+      "line": "1.x",
+      "npm": "opencode-ai",
+      "notes": {
+        "github": "anomalyco/opencode",
+        "tagPrefix": "v",
+        "major": 1
+      },
+      "verified": "1.19.6",
+      "minSupported": "1.18.29",
+      "successorSince": "2026-09-11",
+      "status": "supported"
+    },
+    {
+      "id": "opencode-2",
+      "cli": "opencode",
+      "line": "2.x",
+      "npm": "@opencode/cli",
+      "notes": {
+        "github": "anomalyco/opencode",
+        "tagPrefix": "v",
+        "major": 2
+      },
+      "verified": "2.4.2",
+      "minSupported": "2.0.0",
+      "status": "supported"
+    }
+  ]
+}

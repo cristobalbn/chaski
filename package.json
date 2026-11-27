@@ -12,7 +12,7 @@
   },
   "scripts": {
     "check": "node scripts/check.mjs",
-    "test": "node --test test/core.test.mjs test/install.test.mjs test/opencode.test.mjs",
+    "test": "node --test test/core.test.mjs test/install.test.mjs test/opencode.test.mjs test/upstream.test.mjs",
     "prepublishOnly": "npm run check && npm test"
   },
   "publishConfig": {

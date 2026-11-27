@@ -8,22 +8,31 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 ## [0.2.0] - 2026-11-27
 
 ### Agregado
-- Soporte para **OpenCode 1.x** (verificado con 1.19.6). OpenCode no corre hooks de
-  shell: `init` instala un plugin en `~/.config/opencode/plugins/chaski.js` que
-  importa `src/opencode.mjs` y traduce `session.idle` (Stop), `chat.message`
-  (UserPromptSubmit), `experimental.chat.system.transform` (inyección del
-  relevo) y `experimental.session.compacting` (PreCompact). Como OpenCode no
-  escribe transcript en disco, el plugin reduce `client.session.messages()` a
-  JSONL y lo pasa por stdin (`transcript_inline`); `capture.mjs` lleva la marca
-  de agua y redacta como siempre. `doctor` y `uninstall` lo reconocen, y no
-  tocan un `chaski.js` que no haya generado chaski. Nuevo punto de entrada
-  estable: `src/opencode.mjs` (invariante 8).
-- El relevo se pega al final de `system[0]` en vez de agregar un segundo
+- Soporte para **OpenCode 1.x y 2.x** (verificado con 1.19.6 y 2.4.2).
+  OpenCode no corre hooks de shell: `init` instala un plugin en
+  `~/.config/opencode/plugins/chaski.js` que importa `src/opencode.mjs`. Un solo
+  `export default` sirve a las dos APIs de plugins, que son incompatibles: 1.x
+  llama a `server()` y 2.x a `setup()`. En 1.x se traducen `session.idle`
+  (Stop), `chat.message` (UserPromptSubmit),
+  `experimental.chat.system.transform` (relevo) y
+  `experimental.session.compacting` (PreCompact); en 2.x, los eventos
+  `session.execution.*` y los hooks `prompt`, `context` y `compaction`. Como
+  OpenCode no escribe transcript en disco, el plugin reduce los mensajes a un
+  JSONL común y lo pasa por stdin (`transcript_inline`); `capture.mjs` lleva la
+  marca de agua y redacta como siempre. `doctor` y `uninstall` lo reconocen, y
+  no tocan un `chaski.js` que no haya generado chaski. Mínimo: OpenCode
+  1.18.29; en una versión anterior `init` no instala y `doctor` lo avisa. Nuevo
+  punto de entrada estable: `src/opencode.mjs` (invariante 8).
+- En 1.x el relevo se pega al final de `system[0]` en vez de agregar un segundo
   mensaje `system`, que rechazan varios proveedores compatibles con OpenAI
-  (anomalyco/opencode#34243). La captura de `session.idle` es síncrona porque
-  `opencode run` sale sin esperar a los plugins (anomalyco/opencode#23380).
-- OpenCode 2.x cambió la API de plugins y no carga los de 1.x: `init` lee
-  `opencode --version` y ahí no instala el plugin; `doctor` lo avisa.
+  (anomalyco/opencode#34243). La captura es síncrona porque `opencode run` sale
+  sin esperar a los plugins (anomalyco/opencode#23380).
+- Vigilancia de los CLIs: `.github/workflows/upstream.yml` corre cada lunes
+  `scripts/upstream.mjs`, que compara las versiones publicadas con las
+  verificadas en `scripts/upstream.json`, extrae de las notas de cambios lo que
+  puede romper el contrato o servirnos, avisa de líneas mayores nuevas o
+  abandonadas, y abre o actualiza un issue con la etiqueta `upstream`. La
+  política de versiones soportadas y de retiro está en AGENTS.md.
 
 ## [0.1.34] - 2026-11-21
 

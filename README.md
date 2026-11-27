@@ -19,7 +19,7 @@ Los chaskis eran los mensajeros del imperio inca: cada uno corría un tramo y en
 el **tambo** entregaba el mensaje al siguiente. Mismo problema, misma solución.
 
 Compatible con **Claude Code**, **Codex CLI**, **Antigravity CLI (`agy`)** y
-**OpenCode 1.x** (2.x todavía no). Con
+**OpenCode** (1.18.29 o posterior, y 2.x). Con
 uno solo ya sirve: el relevo entre sesiones de la misma herramienta tiene valor
 propio.
 
@@ -518,7 +518,7 @@ eso el modelo es el último recurso y no el primero.
 |---|---|---|
 | `src/capture.mjs` | hook `Stop` en los tres CLIs; también `SessionEnd`, `PreCompact`, `SubagentStop` y `StopFailure` en Claude Code | Lee el transcript desde una marca de agua (hasta dónde ya leyó) y git; escribe `relevo.md`, `estado.json` y `.tambo/historia/` |
 | `src/inject.mjs` | hook `SessionStart`; y `UserPromptSubmit` / `PreInvocation` | En `SessionStart` imprime el relevo; en cada mensaje entrega la petición de narrativa anotada y registra el turno abierto |
-| `src/opencode.mjs` | plugin de OpenCode, dentro de su proceso | Traduce `session.idle`, `chat.message`, el system prompt y la compactación a los mismos hooks, y lanza `capture.mjs` / `inject.mjs` con `node`. OpenCode no escribe transcript: el plugin pasa los mensajes por stdin |
+| `src/opencode.mjs` | plugin de OpenCode 1.x y 2.x, dentro de su proceso | Traduce el fin de turno, el mensaje del usuario, el system prompt y la compactación a los mismos hooks, y lanza `capture.mjs` / `inject.mjs` con `node`. OpenCode no escribe transcript: el plugin pasa los mensajes por stdin |
 | `src/statusline.mjs` | statusline opcional de Claude Code (`init --statusline`) | Anota `rate_limits` en `~/.chaski/usage.json` y delega en la statusline previa del usuario |
 | `src/cli.mjs` | a mano | `init`, `doctor`, `next`, `cost`, `why`, `share`, `version`, `uninstall`, `probe` |
 | `skill/SKILL.md` | al pedir «relevo» | Instrucciones para que el agente escriba la narrativa |
@@ -698,7 +698,7 @@ razonamiento completo están en la
 | Hooks de Codex | requieren conceder confianza | La primera vez que abres Codex con hooks instalados pide confiar en ellos. Hasta que aceptes, no se ejecuta ninguno, y el permiso se aplica desde la sesión siguiente |
 | Un turno con miles de archivos modificados | el relevo sale **incompleto, y lo dice** | El hook sacrifica detalle caro (líneas `+/-`, log de commits) antes de agotar su presupuesto de tiempo; la rama, el `HEAD`, la lista de archivos y su total siempre sobreviven, y lo omitido aparece declarado en el relevo |
 | Ruta del proyecto de más de ~240 caracteres | los subprocesos de git fallan | En Windows, una ruta así de larga hace que el subproceso de git falle. Desde la 0.1.1, si existe `.git` el relevo no afirma «Sin repositorio git»: declara la rama sin leer como recorte, pero sale sin rama ni los datos que dependen de git. No hay arreglo barato conocido: evita rutas tan largas para este proyecto |
-| OpenCode | solo 1.x; depende de dos hooks `experimental.` | OpenCode 2.x cambió la API de plugins y no carga los de 1.x: ahí `init` no instala nada y `doctor` avisa. En 1.x (verificado con 1.19.6), la inyección del relevo y la instrucción de compactación usan hooks que OpenCode marca como experimentales: si cambian, el relevo deja de llegar sin error visible; el CI lo detecta con sus fixtures. Al terminar cada turno, OpenCode espera unos cientos de ms a la captura |
+| OpenCode | 1.18.29 o posterior; 2.x | El mismo plugin sirve a las dos APIs de plugins de OpenCode (verificado con 1.19.6 y 2.4.2). En una versión anterior a 1.18.29 `init` no instala nada y `doctor` avisa. En 1.x la inyección del relevo usa hooks que OpenCode marca como experimentales: si cambian, el relevo deja de llegar sin error visible; el CI lo detecta con sus fixtures. Al terminar cada turno, OpenCode espera unos cientos de ms a la captura |
 | Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
 
 Si un administrador fijó `allowManagedHooksOnly` o `disableAllHooks` en una
