@@ -436,6 +436,11 @@ function ensureAgentsMd(cwd) {
     '- Si el usuario escribe **«relevo»**, **«guarda el relevo»** o',
     '  **«actualiza el relevo»**, usa la skill `relevo` para guardar la narrativa.',
     '  Lee `.agents/skills/relevo/SKILL.md` o `.claude/skills/relevo/SKILL.md`.',
+    // Las dos copias no se versionan, así que un worktree de git no las tiene
+    // (Codex trabaja en los suyos): sin esta línea el agente deducía la ruta
+    // leyendo el código de chaski.
+    '  En un worktree de git están en el árbol principal: la carpeta padre de',
+    '  `git rev-parse --path-format=absolute --git-common-dir`.',
     '- Si pide **«continúa desde el relevo»**, lee el relevo de la rama actual,',
     '  contrástalo con el código y retoma el siguiente paso pendiente.',
     '  Esa petición no solicita guardar ni sobrescribir la narrativa.',
