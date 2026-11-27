@@ -8,6 +8,7 @@ import { isValidSignature } from '../lib/signatures.mjs';
 import { latestMergedBranchEntry } from '../lib/history.mjs';
 import { readRelay } from '../lib/relay-store.mjs';
 import { orphanRelays, effectivePruneDays } from '../lib/maintenance.mjs';
+import { outdatedProjectFiles } from '../lib/project-files.mjs';
 import { pkgVersion, pad } from './common.mjs';
 import { CAPTURE, INJECT, CLIS, isInstalled, parseOpencodePlugin, OPENCODE_EVENTS, opencodeVersion, opencodeSupported, OPENCODE_MIN } from './hook-config.mjs';
 import { projectContext, projectRootNote } from './project.mjs';
@@ -125,6 +126,10 @@ export function doctor() {
   const sync = syncedFolder(cwd);
   console.log(`  ${pad('sincronizada')} ${sync ? `sí (${sync}) — se usa escritura atómica` : 'no'}`);
   console.log(`  ${pad('.tambo en git')} ${tamboIsIgnored(cwd) ? 'ignorado, correcto' : 'NO IGNORADO — ejecuta init'}`);
+  // Actualizar chaski no actualiza la skill ni el bloque de AGENTS.md que
+  // init copió al proyecto: sin este aviso nadie se entera.
+  const viejos = outdatedProjectFiles(cwd);
+  console.log(`  ${pad('skill y AGENTS')} ${viejos.length ? `DESACTUALIZADOS (${viejos.join(', ')}) — ejecuta init` : 'al día'}`);
 
   const huerfanos = orphanRelays(cwd);
   if (huerfanos.length) {

@@ -251,8 +251,11 @@ chaski doctor
 
 Imprime en qué eventos de cada configuración hay un hook de chaski, las rutas de
 `capture.mjs` e `inject.mjs` de esta instalación, el último latido de cada CLI
-(la fecha en que su hook corrió por última vez), el estado del relevo y **qué
-sale de tu máquina**. Para ver el comando textual, abre la config del CLI.
+(la fecha en que su hook corrió por última vez), el estado del relevo, si la
+skill y el bloque de `AGENTS.md` del proyecto son de una versión anterior (al
+actualizar chaski hay que volver a correr `chaski init` en cada proyecto; el
+agente también recibe el aviso al arrancar la sesión) y **qué sale de tu
+máquina**. Para ver el comando textual, abre la config del CLI.
 
 Esta es la salida real en un proyecto recién creado y **sin ningún CLI
 configurado** (las rutas y el directorio dependen de tu máquina; `…` marca lo

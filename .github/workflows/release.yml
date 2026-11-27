@@ -77,6 +77,12 @@ jobs:
       - name: Verificar contenido del paquete npm (dry-run)
         run: npm pack --dry-run
 
+      # El tarball instalado de verdad, no el árbol del repo: atrapa un módulo
+      # que no entra en `files`, un bin roto o un import que solo resuelve
+      # dentro del repo. Ver scripts/smoke-package.mjs.
+      - name: Prueba de humo del paquete
+        run: npm run smoke
+
       - name: Asegurar tag y GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

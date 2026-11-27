@@ -6,6 +6,7 @@ import { AQUI, pad, backup } from './common.mjs';
 import { CAPTURE, INJECT, cmd, MARCA_INI, MARCA_FIN, PROBE_START, PROBE_END, CLIS, isInstalled, isChaskiHookGroup, isProbeHookGroup, removeBlock, opencodePluginSource, parseOpencodePlugin, opencodeVersion, opencodeSupported, OPENCODE_MIN } from './hook-config.mjs';
 import { projectContext, projectRootNote } from './project.mjs';
 import { installStatusLine, restoreStatusLine } from './statusline.mjs';
+import { requestsBlock, REQUESTS_START, REQUESTS_END } from '../lib/project-files.mjs';
 
 export function init(args = []) {
   const { cwd, workspace } = projectContext();
@@ -428,25 +429,9 @@ function ensureAgentsMd(cwd) {
   const marca = '## Relevo de contexto';
   const txt = existsSync(ruta) ? readFileSync(ruta, 'utf8') : '';
   const eol = txt.includes('\r\n') ? '\r\n' : '\n';
-  const inicio = '<!-- chaski:requests:start -->';
-  const fin = '<!-- chaski:requests:end -->';
-  const peticiones = [
-    inicio,
-    'Peticiones comunes en Claude Code, Codex, agy y OpenCode:',
-    '- Si el usuario escribe **«relevo»**, **«guarda el relevo»** o',
-    '  **«actualiza el relevo»**, usa la skill `relevo` para guardar la narrativa.',
-    '  Lee `.agents/skills/relevo/SKILL.md` o `.claude/skills/relevo/SKILL.md`.',
-    // Las dos copias no se versionan, así que un worktree de git no las tiene
-    // (Codex trabaja en los suyos): sin esta línea el agente deducía la ruta
-    // leyendo el código de chaski.
-    '  En un worktree de git están en el árbol principal: la carpeta padre de',
-    '  `git rev-parse --path-format=absolute --git-common-dir`.',
-    '- Si pide **«continúa desde el relevo»**, lee el relevo de la rama actual,',
-    '  contrástalo con el código y retoma el siguiente paso pendiente.',
-    '  Esa petición no solicita guardar ni sobrescribir la narrativa.',
-    '- Una consulta sobre Chaski o el relevo no es una petición de guardado.',
-    fin,
-  ].join(eol);
+  const inicio = REQUESTS_START;
+  const fin = REQUESTS_END;
+  const peticiones = requestsBlock(eol);
   let actualizado;
   const desde = txt.indexOf(inicio);
   const hasta = txt.indexOf(fin);

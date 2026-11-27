@@ -5,6 +5,27 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.2.4] - 2026-11-27
+
+### Agregado
+- Aviso de archivos desactualizados: actualizar chaski no actualiza la skill
+  `relevo` ni el bloque de `AGENTS.md` que `init` copió a cada proyecto, y
+  nadie se enteraba. `chaski doctor` muestra la línea `skill y AGENTS`, y el
+  `SessionStart` le pide al agente que avise al usuario de correr
+  `chaski init`. Ignora diferencias de fin de línea, y la copia de
+  `.claude/skills/` cuando el plugin de Claude Code está activo.
+- CI: job `coverage` (cobertura de `src/` con umbrales: 98 % de líneas y
+  funciones, 79 % de ramas) y job `package` (instala el tarball de
+  `npm pack` y corre `init`, `doctor`, `Stop`, `SessionStart` y `uninstall`
+  con HOME aislado en Linux, Windows y macOS). El release también corre la
+  prueba del paquete antes de publicar.
+- Tests para lo que no tenía el suyo: entrega del pedido de narrativa en
+  OpenCode 1.x (`chat.message`) y 2.x (`prompt`) y `session.deleted`, rutas
+  del relevo, `tamboIsIgnored` sin git, `lastFile`, el tope de relevos de
+  otros worktrees y la redacción de arreglos en la sonda. Guardas: cada
+  archivo de tests está en el script `test`, cada subcomando se ejecuta en
+  algún test y cada módulo de `src/` lo importa alguien.
+
 ## [0.2.3] - 2026-11-27
 
 ### Corregido
