@@ -528,6 +528,8 @@ Peticiones comunes en Claude Code, Codex, agy y OpenCode:
 - Si el usuario escribe **«relevo»**, **«guarda el relevo»** o
   **«actualiza el relevo»**, usa la skill `relevo` para guardar la narrativa.
   Lee `.agents/skills/relevo/SKILL.md` o `.claude/skills/relevo/SKILL.md`.
+  En un worktree de git están en el árbol principal: la carpeta padre de
+  `git rev-parse --path-format=absolute --git-common-dir`.
 - Si pide **«continúa desde el relevo»**, lee el relevo de la rama actual,
   contrástalo con el código y retoma el siguiente paso pendiente.
   Esa petición no solicita guardar ni sobrescribir la narrativa.

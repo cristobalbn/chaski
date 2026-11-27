@@ -5,6 +5,17 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.2.3] - 2026-11-27
+
+### Corregido
+- El bloque de peticiones que `init` escribe en `AGENTS.md` dice dónde está la
+  skill `relevo` cuando la sesión corre en un worktree de git: las copias de
+  `.agents/skills/` y `.claude/skills/` no se versionan y el worktree no las
+  tiene. Verificado con una sesión de Codex 0.172.0 en su worktree, que tuvo
+  que deducir la ruta leyendo el código. El pedido automático ya traía las
+  instrucciones completas en ese caso. Vuelve a correr `chaski init` para
+  actualizar el bloque.
+
 ## [0.2.2] - 2026-11-27
 
 ### Corregido
