@@ -11,7 +11,7 @@ son exactos. No los repitas ni los corrijas.
 
 ## Petición común
 
-En Claude Code, Codex y agy:
+En Claude Code, Codex, agy y OpenCode:
 - **«relevo»**, **«guarda el relevo»** o **«actualiza el relevo»**: solicita guardar la narrativa de la sesión actual. Ejecuta los pasos de **Guardar el relevo** y confirma al terminar.
 - **«continúa desde el relevo»**: solicita retomar el trabajo. Lee el bloque `<<<RELEVO-CHASKI>>>` inyectado al inicio de la sesión (o `.tambo/branches/<slug>/relevo.md`), contrástalo con `git status` y los archivos mencionados, y ejecuta el siguiente paso pendiente; **no** sobrescribas la narrativa al recibir esta petición.
 - Una pregunta sobre el funcionamiento del relevo o sobre decisiones pasadas (para lo cual puedes ejecutar `chaski why [tema]`) tampoco solicita sobrescribirlo.
@@ -24,7 +24,7 @@ En Claude Code, Codex y agy:
    - Si el nombre de la rama contiene `/` u otros caracteres especiales (por ejemplo `feat/pagos` o `fix/login`), chaski reemplaza esos caracteres por `-` y agrega un sufijo hash de 6 caracteres: `.tambo/branches/feat-pagos-<hash>/estado.json` (dentro del archivo, `"facts.branch"` coincide exactamente con la rama actual). Lista `.tambo/branches/` para tomar la carpeta `<rama-con-guiones>-*` sin adivinar el hash.
 3. **Actualiza únicamente los tres campos de narrativa** en ese JSON (codificación UTF-8):
    - `"narrative"`: texto con las cuatro secciones de abajo.
-   - `"narrativeAuthor"`: tu identificador canónico (`"claude code"`, `"codex"` o `"agy"`).
+   - `"narrativeAuthor"`: tu identificador canónico (`"claude code"`, `"codex"`, `"agy"` u `"opencode"`).
    - `"narrativeWrittenAt"`: marca ISO 8601 UTC actual (`new Date().toISOString()`). La siguiente captura detecta la marca nueva y archiva la narrativa en `.tambo/historia/entries.jsonl`.
 4. **No toques ningún otro campo.** `facts`, `commands`, `offset`, `turns`, `subagents` y `signature` los calcula y firma chaski.
 5. **Confirma al usuario en una línea** qué quedó anotado como siguiente paso.

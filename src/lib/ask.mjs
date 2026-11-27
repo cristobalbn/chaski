@@ -268,6 +268,9 @@ export const PROMPT_HOOK_EVENTS = Object.freeze({
   'claude code': 'UserPromptSubmit',
   codex: 'UserPromptSubmit',
   agy: 'PreInvocation',
+  // Lo traduce el plugin (src/opencode.mjs): `chat.message` lanza inject.mjs
+  // con este evento y agrega el `additionalContext` al system prompt.
+  opencode: 'UserPromptSubmit',
 });
 
 /**

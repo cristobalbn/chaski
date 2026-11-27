@@ -1,0 +1,9 @@
+{
+  "session.created": { "event": { "id": "evt_01", "type": "session.created", "properties": { "sessionID": "ses_fixture", "info": { "id": "ses_fixture", "slug": "sunny-panda", "version": "1.19.6", "projectID": "0000", "directory": "/proyecto", "path": "", "title": "New session", "permission": [], "cost": 0, "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": { "read": 0, "write": 0 } }, "time": { "created": 1795810191325, "updated": 1795810191325 } } } } },
+  "session.created.child": { "event": { "id": "evt_02", "type": "session.created", "properties": { "sessionID": "ses_child", "info": { "id": "ses_child", "parentID": "ses_fixture", "directory": "/proyecto", "time": { "created": 1795810191400, "updated": 1795810191400 } } } } },
+  "session.idle": { "event": { "id": "evt_03", "type": "session.idle", "properties": { "sessionID": "ses_fixture" } } },
+  "chat.message": { "input": { "sessionID": "ses_fixture", "model": { "providerID": "opencode", "modelID": "modelo-x" } }, "output": { "message": { "id": "msg_01user", "role": "user", "sessionID": "ses_fixture" }, "parts": [{ "type": "text", "text": "hola" }] } },
+  "experimental.chat.system.transform": { "input": { "sessionID": "ses_fixture", "model": { "id": "modelo-x", "providerID": "opencode" } }, "output": { "system": ["You are opencode, an interactive CLI tool."] } },
+  "experimental.session.compacting": { "input": { "sessionID": "ses_fixture" }, "output": { "context": [] } },
+  "experimental.chat.system.transform.title": { "input": { "sessionID": "ses_fixture", "model": { "id": "modelo-x", "providerID": "opencode" } }, "output": { "system": ["You are a title generator. You output ONLY a thread title. Nothing else."] } }
+}

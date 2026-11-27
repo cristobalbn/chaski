@@ -5,6 +5,26 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.2.0] - 2026-11-27
+
+### Agregado
+- Soporte para **OpenCode 1.x** (verificado con 1.19.6). OpenCode no corre hooks de
+  shell: `init` instala un plugin en `~/.config/opencode/plugins/chaski.js` que
+  importa `src/opencode.mjs` y traduce `session.idle` (Stop), `chat.message`
+  (UserPromptSubmit), `experimental.chat.system.transform` (inyección del
+  relevo) y `experimental.session.compacting` (PreCompact). Como OpenCode no
+  escribe transcript en disco, el plugin reduce `client.session.messages()` a
+  JSONL y lo pasa por stdin (`transcript_inline`); `capture.mjs` lleva la marca
+  de agua y redacta como siempre. `doctor` y `uninstall` lo reconocen, y no
+  tocan un `chaski.js` que no haya generado chaski. Nuevo punto de entrada
+  estable: `src/opencode.mjs` (invariante 8).
+- El relevo se pega al final de `system[0]` en vez de agregar un segundo
+  mensaje `system`, que rechazan varios proveedores compatibles con OpenAI
+  (anomalyco/opencode#34243). La captura de `session.idle` es síncrona porque
+  `opencode run` sale sin esperar a los plugins (anomalyco/opencode#23380).
+- OpenCode 2.x cambió la API de plugins y no carga los de 1.x: `init` lee
+  `opencode --version` y ahí no instala el plugin; `doctor` lo avisa.
+
 ## [0.1.34] - 2026-11-21
 
 ### Corregido

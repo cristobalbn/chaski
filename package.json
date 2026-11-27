@@ -1,7 +1,7 @@
 {
   "name": "@cristobalbn/chaski",
-  "version": "0.1.34",
-  "description": "Relevo de contexto entre agentes de codigo (Claude Code, Codex, agy)",
+  "version": "0.2.0",
+  "description": "Relevo de contexto entre agentes de codigo (Claude Code, Codex, agy, OpenCode)",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -12,7 +12,7 @@
   },
   "scripts": {
     "check": "node scripts/check.mjs",
-    "test": "node --test test/core.test.mjs test/install.test.mjs",
+    "test": "node --test test/core.test.mjs test/install.test.mjs test/opencode.test.mjs",
     "prepublishOnly": "npm run check && npm test"
   },
   "publishConfig": {
@@ -32,6 +32,7 @@
     "codex",
     "antigravity",
     "agy",
+    "opencode",
     "handoff",
     "context",
     "ai-agent",

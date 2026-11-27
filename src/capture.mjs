@@ -84,7 +84,7 @@ function main() {
     // narrativa: compactar es perder contexto, igual que cambiar de agente.
     // Va antes del lock: no depende del estado, y una captura salteada no
     // debería dejar sin instrucción a la compactación.
-    if (ev.hook_event_name === 'PreCompact' && ev.__agente === 'claude code') {
+    if (ev.hook_event_name === 'PreCompact' && (ev.__agente === 'claude code' || ev.__agente === 'opencode')) {
       process.stdout.write(COMPACT_HINT + '\n');
     }
 
@@ -112,7 +112,9 @@ function main() {
     const offset = mismoTranscript ? (conversacion.offset ?? 0) : 0;
     const commands = Array.isArray(conversacion?.commands) ? conversacion.commands : [];
     const identity = mismoTranscript ? conversacion.transcriptIdentity : null;
-    const t = transcriptFacts(ev.transcript_path, offset, config, budget, commands, identity);
+    const fuente = ev.__transcriptInline != null && ev.transcript_path
+      ? { id: ev.transcript_path, content: ev.__transcriptInline } : ev.transcript_path;
+    const t = transcriptFacts(fuente, offset, config, budget, commands, identity);
     const g = gitFacts(cwd, config, budget, snapshot);
     const headFromLog = g.commits?.[0]?.split(' ')[0] || null;
 
@@ -495,6 +497,11 @@ function readPayload() {
   ev.transcript_path = transcriptOf(ev);
   ev.hook_event_name = eventOf(ev);
   ev.session_id = sessionOf(ev);
+  // OpenCode no escribe transcript: su plugin manda el JSONL por stdin (ver
+  // src/opencode.mjs). La «ruta» es un nombre estable por sesión, que es lo
+  // que conversations.mjs compara para saber si la marca de agua sigue valiendo.
+  ev.__transcriptInline = typeof ev.transcript_inline === 'string' ? ev.transcript_inline : null;
+  if (ev.__transcriptInline != null && ev.session_id) ev.transcript_path = `opencode:${ev.session_id}`;
   ev.cwd = cwdOf(ev);
   // agy manda el último prompt del usuario; sirve como pista de la tarea.
   ev.__ultimoPrompt = ev.lastUserInput ?? ev.user_prompt ?? null;

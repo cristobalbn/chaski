@@ -24,6 +24,8 @@ existen para detectar.
 | `agy.payload.json` | hook `Stop`, Antigravity CLI 1.4.12 |
 | `agy.transcript.jsonl` | pasos con `step_index`, `type` y `content` |
 | `agy-tool-calls.transcript.jsonl` | formato observado el 2026-11-07: `tool_calls` en `PLANNER_RESPONSE` y salidas `GENERIC`; contenido sintético |
+| `opencode.messages.json` | respuesta de `client.session.messages()` en el plugin de OpenCode 1.19.6 (2026-11-27): `{ info, parts }` con partes `text`, `reasoning`, `tool` (`state.input.command`, `state.metadata.exit`); contenido sintético |
+| `opencode.events.json` | eventos y entradas de hooks del plugin de OpenCode 1.19.6 (2026-11-27): `session.created`, `session.idle`, `chat.message`, `experimental.chat.system.transform`, `experimental.session.compacting`; contenido sintético |
 | `claude-code-prompt.payload.json` | hook `UserPromptSubmit` de Claude Code, **según la documentación oficial** (2026-11-20), sin captura real todavía |
 | `codex-prompt.payload.json` | hook `UserPromptSubmit` de Codex, **según la documentación oficial** (2026-11-20), sin captura real todavía |
 | `agy-preinvocation.payload.json` | hook `PreInvocation` de Antigravity, **según la documentación instalada** (`agy-customizations/docs/hooks.md`), sin captura real todavía |
