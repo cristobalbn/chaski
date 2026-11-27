@@ -23,6 +23,7 @@ import { reduceMessages, reduceMessagesV2, chaskiPlugin, chaskiPluginV2, chaskiD
 import { promptPayload, PROMPT_HOOK_EVENTS } from '../src/lib/ask.mjs';
 import { canonicalAgent } from '../src/lib/payload.mjs';
 import { opencodeSupported } from '../src/commands/hook-config.mjs';
+import { notePendingAsk } from '../src/lib/pending.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const SRC = join(AQUI, '..', 'src');
@@ -478,6 +479,68 @@ describe('el plugin de punta a punta, con un cliente falso', () => {
         const ev = { ...structuredClone(eventosV2['hook.context']), sessionID: 'ses_v2_child' };
         await a.hooks.context(ev);
         assert.equal(ev.system.length, eventosV2['hook.context'].system.length);
+      });
+    } finally {
+      limpiar(m.raiz);
+    }
+  });
+
+  // El pedido de narrativa que Stop deja anotado se entrega con el mensaje
+  // siguiente: en 1.x por `chat.message`, en 2.x por el hook `prompt`. Llega
+  // al system prompt de la próxima llamada, y `session.deleted` lo olvida.
+  const anotarPedido = (m, session) => {
+    mkdirSync(join(m.proyecto, '.tambo'), { recursive: true });
+    assert.equal(notePendingAsk(m.proyecto, {
+      session, transcript: `opencode:${session}`, at: new Date().toISOString(),
+      reason: 'prueba de entrega a OpenCode', statePath: join(m.proyecto, '.tambo', 'estado-de-prueba.json'), hasSkill: false,
+    }), true);
+  };
+
+  test('1.x: chat.message entrega el pedido de narrativa en el system prompt y session.deleted lo olvida', async () => {
+    const m = montar('chaski-oc-pedido-');
+    try {
+      execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      const Chaski = (await import(pathToFileURL(m.plugin).href + '?t=' + Date.now())).default.server;
+      await conEntorno(m, async () => {
+        anotarPedido(m, 'ses_pedido');
+        const hooks = await Chaski({ client: cliente(mensajes), directory: m.proyecto });
+        await hooks['chat.message']({ sessionID: 'ses_pedido' });
+        const salida = { system: ['base'] };
+        await hooks['experimental.chat.system.transform']({ sessionID: 'ses_pedido' }, salida);
+        assert.equal(salida.system.length, 1);
+        assert.match(salida.system[0], /^base\n\n[\s\S]*prueba de entrega a OpenCode/);
+        assert.match(salida.system[0], /estado-de-prueba\.json/, 'sin skill, la petición trae la ruta');
+
+        await hooks.event({ event: { type: 'session.deleted', properties: { info: { id: 'ses_pedido' } } } });
+        const despues = { system: ['base'] };
+        await hooks['experimental.chat.system.transform']({ sessionID: 'ses_pedido' }, despues);
+        assert.deepEqual(despues.system, ['base'], 'la sesión borrada siguió recibiendo el pedido');
+      });
+    } finally {
+      limpiar(m.raiz);
+    }
+  });
+
+  test('2.x: el hook prompt entrega el pedido de narrativa como parte de system y session.deleted lo olvida', async () => {
+    const m = montar('chaski-oc-v2pedido-', 'opencode v2.4.2');
+    try {
+      execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      const def = (await import(pathToFileURL(m.plugin).href + '?t=' + Date.now())).default;
+      await conEntorno(m, async () => {
+        anotarPedido(m, 'ses_v2_pedido');
+        const a = ctxFalso(m.proyecto);
+        await def.setup(a.ctx);
+        await a.hooks.prompt({ sessionID: 'ses_v2_pedido' });
+        const ev = { ...structuredClone(eventosV2['hook.context']), sessionID: 'ses_v2_pedido' };
+        const antes = ev.system.length;
+        await a.hooks.context(ev);
+        assert.equal(ev.system.length, antes + 1);
+        assert.match(ev.system.at(-1).text, /prueba de entrega a OpenCode/);
+
+        await a.emitir({ type: 'session.deleted', data: { sessionID: 'ses_v2_pedido' } });
+        const ev2 = { ...structuredClone(eventosV2['hook.context']), sessionID: 'ses_v2_pedido' };
+        await a.hooks.context(ev2);
+        assert.equal(ev2.system.length, antes, 'la sesión borrada siguió recibiendo el pedido');
       });
     } finally {
       limpiar(m.raiz);

@@ -17,6 +17,8 @@ node src/cli.mjs probe        # captura el payload de los hooks con redacción
 node src/cli.mjs version      # imprime la versión de package.json (--version / -v)
 npm run check                      # chequeo de sintaxis (no hay build)
 npm test                           # node:test, sin dependencias
+npm run test:coverage              # cobertura de src/ con umbrales (Node >= 22.8); lo corre el CI
+npm run smoke                      # npm pack + install del tarball + init, doctor y hooks con HOME aislado
 node scripts/upstream.mjs          # versiones nuevas y cambios en los CLIs (usa la red; ver «Versiones soportadas»)
 node scripts/verify-local.mjs      # contrato de transcript contra los transcripts reales de esta máquina
 ```
@@ -24,6 +26,13 @@ node scripts/verify-local.mjs      # contrato de transcript contra los transcrip
 Si agregas un archivo de tests, **súmalo al script `test` de package.json**:
 la lista es explícita porque `node --test test/` no funciona y el glob
 `test/**` necesita Node 22, mientras el CI prueba desde Node 20.
+`test/features.test.mjs` falla si te olvidas.
+
+**Toda funcionalidad nueva lleva su test.** El job `coverage` del CI falla si
+la cobertura de `src/` baja de los umbrales de `scripts/coverage.mjs`
+(trinquete: se suben, nunca se bajan para que pase un PR), y las guardas de
+`test/features.test.mjs` fallan si un subcomando no se ejecuta en ningún test
+o si un módulo de `src/` no lo importa nadie.
 
 ## Los tests de contrato son lo que sostiene el proyecto
 
@@ -289,6 +298,8 @@ src/lib/pending.mjs  ~105 lín.   — pedidos de narrativa por sesión (pending-
 src/lib/turns.mjs    ~90 lín.    — turnos abiertos (turns-open.json): abrir, cerrar, avisar de los cortados
 src/lib/lock.mjs     — lock breve para actualizar archivos compartidos entre hooks
 src/lib/worktrees.mjs — puntero, al arrancar, a relevos recientes escritos desde otro worktree
+src/lib/project-files.mjs — bloque de AGENTS.md y copias de la skill que escribe init, y si están desactualizados (doctor y SessionStart)
+scripts/coverage.mjs, smoke-package.mjs — cobertura con umbrales y prueba del paquete instalado (CI)
 src/lib/history.mjs  ~130 lín.   — historia de narrativas (historia/entries.jsonl) y narrativa de una rama ya fusionada
 src/lib/maintenance.mjs — poda diaria dentro del presupuesto y listado de relevos huérfanos
 src/lib/activity.mjs  — latidos de captura y de entrega de narrativa

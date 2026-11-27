@@ -88,12 +88,22 @@ Antes de abrir el PR:
 ```bash
 npm run check                       # sintaxis; no hay build
 npm test                            # node:test, sin dependencias
+npm run test:coverage               # cobertura de src/ con umbrales (Node >= 22.8)
+npm run smoke                       # instala el tarball y prueba init, doctor y los hooks
 ```
+
+Cada funcionalidad nueva lleva su test. El CI lo hace cumplir: el job
+`coverage` falla si la cobertura de `src/` baja de los umbrales de
+`scripts/coverage.mjs`, y `test/features.test.mjs` falla si un subcomando no
+se ejecuta en ningún test, si un módulo de `src/` no lo importa nadie o si un
+archivo de tests no está en el script `test`. No bajes un umbral para que
+pase un PR: agrega el test que falta.
 
 Y prueba el cambio a mano según [Probar los cambios a mano](#probar-los-cambios-a-mano).
 
-El CI corre la suite en Linux, Windows y macOS por tres versiones de Node, y
-falla si `package.json` declara alguna dependencia. Si tocas un adaptador,
+El CI corre la suite en Linux, Windows y macOS por tres versiones de Node, la
+cobertura con umbrales y la prueba de humo del paquete instalado en los tres
+sistemas, y falla si `package.json` declara alguna dependencia. Si tocas un adaptador,
 agrega o ajusta su fixture en `test/fixtures/`.
 
 `main` está protegida y exige pull request, los checks de CI en los tres

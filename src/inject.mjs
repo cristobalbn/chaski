@@ -24,6 +24,7 @@ import { takePendingAsk } from './lib/pending.mjs';
 import { openTurn, interruptedTurns } from './lib/turns.mjs';
 import { mergedBranchNarrative } from './lib/history.mjs';
 import { otherWorktreeRelays } from './lib/worktrees.mjs';
+import { outdatedNotice } from './lib/project-files.mjs';
 import { recordPromptActivity } from './lib/activity.mjs';
 
 main();
@@ -73,6 +74,7 @@ function main() {
           interruptedTurns(cwd, sessionOf(ev)),
           mergedBranchNarrative(cwd, {}, budget),
           otherWorktreeRelays(cwd, canonical),
+          outdatedNotice(cwd),
         ].filter(Boolean);
         if (!extras.length) return;
         const salida = [
@@ -181,6 +183,9 @@ function main() {
 
     const otros = otherWorktreeRelays(cwd, canonical);
     if (otros) partes.push('', neutralizeMarks(otros));
+
+    const viejos = outdatedNotice(cwd);
+    if (viejos) partes.push('', neutralizeMarks(viejos));
 
     partes.push('', CLOSING_MARK);
 

@@ -1,10 +1,14 @@
 name: test
 
-# Dos cosas que este workflow resuelve:
+# Lo que este workflow resuelve:
 #   - Que un PR con tests rotos no pueda entrar a main.
 #   - Que el proyecto se verifique en macOS y Linux, donde nunca se probó.
 #     El envoltorio de hooks genera un .sh para Unix que hasta ahora nadie
 #     había ejecutado.
+#   - Que una funcionalidad nueva no entre sin su test (job `coverage`: el
+#     código que ningún test ejecuta baja la cobertura bajo el umbral).
+#   - Que lo publicado en npm funcione instalado, no solo en el repo (job
+#     `package`: instala el tarball y corre init, doctor y los hooks).
 
 on:
   push:
@@ -118,3 +122,38 @@ jobs:
             echo "::warning title=Cambios en main sin publicar en npm::Hay $commits_since_tag commit(s) en src/ o skill/ desde $last_tag que aún no se han publicado en npm (v$pkg_ver). Sube 'version' en package.json y actualiza CHANGELOG.md."
             echo "> **Atención:** Hay \`$commits_since_tag\` commit(s) de código en \`main\` desde \`$last_tag\` que no están en npm (\`v$pkg_ver\`). Sube \`version\` en \`package.json\` y actualiza \`CHANGELOG.md\` para disparar el release." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # Umbrales en scripts/coverage.mjs (trinquete: se suben, no se bajan). Solo
+  # en Linux y la LTS: necesita Node >= 22.8, y los porcentajes de una sola
+  # plataforma son estables entre corridas.
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
+
+      - name: Cobertura de src/ con umbrales
+        run: npm run test:coverage
+
+  # El paquete tal como lo instala un usuario, en los tres sistemas: npm pack,
+  # npm install del tarball y una sesión de punta a punta con HOME aislado.
+  package:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
+
+      - name: Prueba de humo del paquete instalado
+        run: npm run smoke
