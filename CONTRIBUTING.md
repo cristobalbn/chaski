@@ -24,27 +24,47 @@ No hay `npm install` porque no hay nada que instalar.
 
 ## Probar los cambios a mano
 
-Además de la suite automatizada (`npm test`), para probar los hooks a mano el ciclo es este:
+Corre `npm run smoke` para instalar el paquete en un prefijo temporal, probar
+`init` y `doctor`, capturar un turno e inyectar el relevo. Para inspeccionar
+una captura a mano, abre Git Bash, bash o zsh en el clon y ejecuta:
 
 ```bash
-mkdir /tmp/prueba && cd /tmp/prueba && git init
-echo "x" > a.js && git add -A && git commit -m inicial
-echo "y" >> a.js
+(
+  set -e
+  chaski_repo=$(node -p 'process.cwd()')
+  prueba=$(mktemp -d)
+  cd "$prueba"
+  mkdir home
+  chaski_test_home=$(node -p 'require("path").resolve("home")')
+  export HOME="$chaski_test_home" USERPROFILE="$chaski_test_home"
+  export CODEX_HOME="$chaski_test_home/.codex" XDG_CONFIG_HOME="$chaski_test_home/.config"
+  git init -q
+  git config user.name "Prueba Chaski"
+  git config user.email "prueba@example.invalid"
+  echo x > a.js
+  git add a.js
+  git commit -qm inicial
+  echo y >> a.js
 
-echo '{"cwd":"'$PWD'","hook_event_name":"Stop"}' | node ruta/a/chaski/src/capture.mjs Stop "claude code"
-cat .tambo/branches/*/relevo.md
+  node -p 'JSON.stringify({cwd: process.cwd(), hook_event_name: "Stop"})' |
+    node "$chaski_repo/src/capture.mjs" Stop "claude code"
+  cat .tambo/branches/*/relevo.md
 
-echo '{"cwd":"'$PWD'"}' | node ruta/a/chaski/src/inject.mjs
+  node -p 'JSON.stringify({cwd: process.cwd(), hook_event_name: "SessionStart"})' |
+    node "$chaski_repo/src/inject.mjs" SessionStart "claude code"
+)
 ```
 
-En Windows, usa rutas nativas: una ruta POSIX de Git Bash no resuelve cuando el
-hook se ejecuta de verdad.
+El ejemplo deja el relevo en la carpeta temporal para inspeccionarlo. Node
+genera rutas nativas también al ejecutar el ejemplo desde Git Bash en Windows.
 
 ## Qué conviene aportar
 
-- **Validación de los payloads de Codex y `agy`.** Es lo más útil ahora mismo.
-  Si tienes esos CLIs, captura el JSON real que llega por stdin en cada evento y
-  envíalo como fixture en `test/fixtures/`.
+- **Validación de eventos en sesiones reales.** Usa `chaski probe` en
+  Claude Code, Codex o `agy`. Para OpenCode sigue el diagnóstico de
+  [la referencia técnica](docs/referencia.md#opencode). Si cambia la forma,
+  actualiza el fixture de `test/fixtures/` con contenido sintético que conserve
+  esa estructura.
 - **Formatos de credencial que el filtro no detecta.** Agregalos a
   `src/lib/secrets.mjs` con un caso de prueba.
 - **Adaptadores para otros CLIs o mejoras a comandos.** Entrada en el mapa
@@ -52,8 +72,8 @@ hook se ejecuta de verdad.
   extractor en `src/lib/transcript.mjs` (`src/lib/transcripts/`), formato de
   petición en `src/lib/ask.mjs` o mejoras a los subcomandos (`next`, `cost`,
   `why`, `share`, `version`, etc.).
-- **Más casos en los tests.** Nuevas variantes de transcripts de los CLIs
-  soportados (capturadas con `chaski probe`) o de herramientas emergentes.
+- **Más casos en los tests.** Agrega variantes sintéticas de los transcripts
+  soportados y de los mensajes que devuelve OpenCode al plugin.
 
 ## Qué no se va a aceptar
 
@@ -143,8 +163,11 @@ el registro de npm hasta que se incrementa `version` en `package.json`.
      `.claude-plugin/plugin.json`** (un test falla si difieren: el plugin solo
      se actualiza para quien lo tiene instalado cuando cambia esa versión).
   2. Al mergear a `main`, `.github/workflows/release.yml` se dispara solo:
-     verifica `package.json` + `CHANGELOG.md`, corre `npm run check` y `npm test`,
-     crea el tag `vX.Y.Z`, publica el GitHub Release y ejecuta
-     `npm publish --provenance --access public` vía Trusted Publishing (OIDC
-     configurado en npmjs.com para `release.yml`) o con secret `NPM_TOKEN` como
-     respaldo.
+     verifica `package.json` y `CHANGELOG.md`, corre `npm run check`, `npm test`
+     y `npm run smoke`, crea el tag `vX.Y.Z` y publica el GitHub Release.
+     Después ejecuta `npm publish --provenance --access public` con
+     `NPM_TOKEN` si está definido o vía Trusted Publishing (OIDC configurado
+     en npmjs.com para `release.yml`).
+  3. Comprueba que el job `release` terminó bien y que
+     `npm view @cristobalbn/chaski@latest version gitHead` coincide con la
+     versión y el commit del tag en GitHub.
