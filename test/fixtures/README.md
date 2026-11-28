@@ -25,9 +25,9 @@ existen para detectar.
 | `agy.transcript.jsonl` | pasos con `step_index`, `type` y `content` |
 | `agy-tool-calls.transcript.jsonl` | formato observado el 2026-11-07: `tool_calls` en `PLANNER_RESPONSE` y salidas `GENERIC`; contenido sintético |
 | `opencode.messages.json` | respuesta de `client.session.messages()` en el plugin de OpenCode 1.19.6 (2026-11-27): `{ info, parts }` con partes `text`, `reasoning`, `tool` (`state.input.command`, `state.metadata.exit`); contenido sintético |
-| `opencode.events.json` | eventos y entradas de hooks del plugin de OpenCode 1.19.6 (2026-11-27): `session.created`, `session.idle`, `chat.message`, `experimental.chat.system.transform`, `experimental.session.compacting`; contenido sintético |
+| `opencode.events.json` | eventos y entradas de hooks del plugin de OpenCode 1.19.6 (2026-11-27): `session.created`, `session.idle`, `chat.message`, `experimental.chat.system.transform`, `experimental.session.compacting` y `session.error` (forma observada con un proveedor local que responde 429, 2026-11-28); contenido sintético |
 | `opencode-v2.context.json` | respuesta de `ctx.session.context()` en el plugin de OpenCode 2.4.2 (2026-11-27): `{ type: "user", text }`, `{ type: "assistant", content }` con herramientas `{ type: "tool", name: "shell" \| "read", state }` y `{ type: "idle" }`; contenido sintético |
-| `opencode-v2.events.json` | eventos del bus (`session.created`, `session.execution.succeeded`), `ctx.session.get()` y entradas de los hooks `prompt`, `context` y `compaction` de OpenCode 2.4.2 (2026-11-27); contenido sintético |
+| `opencode-v2.events.json` | eventos del bus (`session.created`, `session.execution.succeeded`, `session.execution.failed` observado con un proveedor local que responde 429), `ctx.session.get()` y entradas de los hooks `prompt`, `context` y `compaction` de OpenCode 2.4.2 (2026-11-27); contenido sintético |
 | `claude-code-prompt.payload.json` | hook `UserPromptSubmit` de Claude Code, **según la documentación oficial** (2026-11-20), sin captura real todavía |
 | `codex-prompt.payload.json` | hook `UserPromptSubmit` de Codex, **según la documentación oficial** (2026-11-20), sin captura real todavía |
 | `agy-preinvocation.payload.json` | hook `PreInvocation` de Antigravity, **según la documentación instalada** (`agy-customizations/docs/hooks.md`), sin captura real todavía |

@@ -5,6 +5,23 @@ Este proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [No publicado]
 
+## [0.2.6] - 2026-11-28
+
+### Agregado
+- OpenCode registra los cortes por cuota: si un turno termina por límite del
+  proveedor (HTTP 429 o un mensaje de «rate limit», «insufficient_quota»,
+  «credit balance»), el plugin pasa el error a la captura, que sella el
+  relevo y lo anota en `~/.chaski/quota.json`; `chaski next` muestra OpenCode
+  como agotado y sugiere otro CLI. Eventos: `session.error` en 1.x y
+  `session.execution.failed` en 2.x, verificados con OpenCode 1.19.6 y 2.4.2
+  reales contra un proveedor local que responde 429.
+
+### Corregido
+- OpenCode 1.19.6 emite `session.idle` dos veces por turno, y el plugin
+  capturaba dos veces: unos cientos de ms más con OpenCode esperando y, tras
+  un corte por cuota, la segunda captura borraba el sello. Una segunda
+  captura sin mensaje del usuario en medio se ignora.
+
 ## [0.2.5] - 2026-11-27
 
 ### Corregido
