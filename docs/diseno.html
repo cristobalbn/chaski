@@ -240,8 +240,8 @@
             <tr><td class="wrap">Aviso de lo que cambi&oacute; y qui&eacute;n lo cambi&oacute;</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Limpieza escalonada de relevos hu&eacute;rfanos</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap"><code>init</code>, <code>doctor</code>, <code>uninstall</code>, <code>probe</code>, <code>version</code></td><td><span class="tag t-ok">funcionando</span></td></tr>
-            <tr><td class="wrap">Narrativa con <code>/relevo</code>, a mano</td><td><span class="tag t-ok">funcionando</span></td></tr>
-            <tr><td class="wrap">Disparo autom&aacute;tico de la narrativa en <code>Stop</code></td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Narrativa a mano con &laquo;relevo&raquo; en el chat</td><td><span class="tag t-ok">funcionando</span></td></tr>
+            <tr><td class="wrap">Pedido autom&aacute;tico de narrativa al terminar el turno y entrega al comenzar el siguiente</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap">Disparo garantizado en <code>PreCompact</code> y <code>SessionEnd</code></td><td><span class="tag t-flat">dise&ntilde;o (no implementado)</span></td></tr>
             <tr><td class="wrap">Promoci&oacute;n de resultados de subagentes</td><td><span class="tag t-ok">funcionando</span></td></tr>
             <tr><td class="wrap"><code>chaski next</code> y registro de cuotas</td><td><span class="tag t-ok">funcionando</span></td></tr>
@@ -259,7 +259,7 @@
           </tbody>
         </table>
       </div>
-      <p>Lo no implementado est&aacute; registrado como issues en el repositorio, con el razonamiento de este documento como referencia. Las secciones que siguen describen el dise&ntilde;o completo &mdash; incluidas las partes que todav&iacute;a no existen &mdash; porque el razonamiento sigue siendo &uacute;til para quien las construya.</p>
+      <p>Las secciones siguientes conservan el razonamiento del dise&ntilde;o original. Para el contrato actual de cada integraci&oacute;n, consulta la <a href="referencia.md">referencia t&eacute;cnica</a>.</p>
       <p><em>Esta tabla se agreg&oacute; despu&eacute;s de notar que el documento promet&iacute;a seis piezas que el c&oacute;digo no tiene, y que el CHANGELOG afirmaba que el disparo autom&aacute;tico estaba implementado cuando no lo estaba. Un dise&ntilde;o que se lee como un inventario de funciones es peor que no tener documento.</em></p>
     </section>
 
@@ -558,8 +558,8 @@
 
     <section id="adaptadores">
       <h2>Adaptadores</h2>
-      <p class="sub">Un archivo por proveedor. Agregar uno nuevo no toca el n&uacute;cleo.</p>
-      <p>Todo lo espec&iacute;fico de cada CLI &mdash; d&oacute;nde vive su config, c&oacute;mo se llaman sus hooks, qu&eacute; forma tiene su transcript, c&oacute;mo informa un l&iacute;mite de cuota &mdash; podr&iacute;a quedar detr&aacute;s de una interfaz formal de siete m&eacute;todos. <strong>Esto es dise&ntilde;o, no lo que hay hoy:</strong> el c&oacute;digo actual no tiene esa abstracci&oacute;n ni esos nombres; cada CLI es una entrada en el mapa <code>CLIS</code> de <code>src/cli.mjs</code> m&aacute;s funciones sueltas en <code>src/lib/*.mjs</code> (<code>gitFacts</code>, <code>transcriptFacts</code>, <code>redact</code>&hellip;), sin m&eacute;todos con estos nombres ni objeto adaptador que los agrupe. La interfaz de abajo es la forma que tendr&iacute;a si el n&uacute;mero de CLIs soportados creciera lo bastante para justificar la indirecci&oacute;n &mdash; que todav&iacute;a no ha pasado:</p>
+      <p class="sub">Configuraci&oacute;n, eventos y formatos por CLI.</p>
+      <p>Cada CLI tiene una entrada en <code>CLIS</code> en <code>src/commands/hook-config.mjs</code> y un lector en <code>src/lib/transcripts/</code>. <code>src/opencode.mjs</code> traduce los eventos del plugin de OpenCode. El dise&ntilde;o original propon&iacute;a esta interfaz de siete m&eacute;todos:</p>
       <pre><code><span class="k">detect</span>()              <span class="c">// &iquest;est&aacute; instalado? &iquest;qu&eacute; versi&oacute;n?</span>
 <span class="k">capabilities</span>()       <span class="c">// qu&eacute; hooks soporta de verdad esta versi&oacute;n</span>
 <span class="k">installHooks</span>(cfg)     <span class="c">// parchea su config: idempotente y reversible</span>
@@ -571,11 +571,12 @@
         <table>
           <thead><tr><th>Proveedor</th><th>Eventos que importan</th><th>Config</th><th>Estado</th></tr></thead>
           <tbody>
-            <tr><td>Claude Code</td><td class="wrap"><code>SessionStart</code> &middot; <code>Stop</code> &middot; <code>PreCompact</code> &middot; <code>SessionEnd</code> &middot; <code>SubagentStop</code> &middot; <code>StopFailure</code></td><td class="num">~/.claude/settings.json</td><td><span class="tag t-ok">registrados por init</span></td></tr>
-            <tr><td>Antigravity (<code>agy</code>)</td><td class="wrap"><code>SessionStart</code> &middot; <code>Stop</code> (m&aacute;s <code>PostInvocation</code> en <code>probe</code>)</td><td class="num">~/.gemini/config/hooks.json</td><td><span class="tag t-ok">registrados por init</span></td></tr>
-            <tr><td>Codex CLI</td><td class="wrap"><code>SessionStart</code> &middot; <code>Stop</code>, con modelo de confianza propio (<code>[hooks.state]</code>)</td><td class="num">~/.codex/config.toml</td><td><span class="tag t-ok">registrados por init</span></td></tr>
+            <tr><td>Claude Code</td><td class="wrap"><code>SessionStart</code> &middot; <code>UserPromptSubmit</code> &middot; <code>Stop</code> &middot; <code>PreCompact</code> &middot; <code>SessionEnd</code> &middot; <code>SubagentStop</code> &middot; <code>StopFailure</code></td><td class="num">~/.claude/settings.json o plugin</td><td><span class="tag t-ok">init o plugin</span></td></tr>
+            <tr><td>Antigravity (<code>agy</code>)</td><td class="wrap"><code>SessionStart</code> &middot; <code>PreInvocation</code> &middot; <code>Stop</code></td><td class="num">~/.gemini/config/hooks.json</td><td><span class="tag t-ok">registrados por init</span></td></tr>
+            <tr><td>Codex CLI</td><td class="wrap"><code>SessionStart</code> &middot; <code>UserPromptSubmit</code> &middot; <code>Stop</code>, con modelo de confianza propio (<code>[hooks.state]</code>)</td><td class="num"><code>$CODEX_HOME/config.toml</code> o <code>~/.codex/config.toml</code></td><td><span class="tag t-ok">registrados por init</span></td></tr>
             <tr><td>Gemini CLI</td><td class="wrap">hooks nativos, con <code>hooks migrate</code> desde Claude Code</td><td class="num">~/.gemini/settings.json</td><td><span class="tag t-flat">solo Code Assist</span></td></tr>
-            <tr><td>Copilot &middot; Cursor &middot; opencode &middot; Amp</td><td class="wrap">por determinar</td><td class="num">&mdash;</td><td><span class="tag t-flat">futuro</span></td></tr>
+            <tr><td>OpenCode 1.x y 2.x</td><td class="wrap">El plugin entrega el relevo y la petici&oacute;n de narrativa, captura al terminar el turno y registra cortes por cuota</td><td class="num"><code>${XDG_CONFIG_HOME:-~/.config}/opencode/plugins/chaski.js</code></td><td><span class="tag t-ok">instalado por init</span></td></tr>
+            <tr><td>Copilot &middot; Cursor &middot; Amp</td><td class="wrap">por determinar</td><td class="num">&mdash;</td><td><span class="tag t-flat">futuro</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -795,7 +796,7 @@ avisa de la contradicci&oacute;n en vez de confiar en este texto.</code></pre>
             </tr>
             <tr>
               <td>Carrera entre agentes</td>
-              <td class="wrap">Un solo escritor con lock por <code>mkdir</code>, at&oacute;mico en los tres sistemas operativos.</td>
+              <td class="wrap">La captura serializa escritores con un lock por <code>mkdir</code>. Cada archivo se publica con renombre at&oacute;mico.</td>
               <td class="wrap">Test de concurrencia: N escritores simult&aacute;neos dejan el quipu v&aacute;lido, sin p&eacute;rdidas.</td>
             </tr>
             <tr>
@@ -856,7 +857,7 @@ avisa de la contradicci&oacute;n en vez de confiar en este texto.</code></pre>
 
     <section id="fases">
       <h2>Fases</h2>
-      <p class="sub">Cada fase se usa sola. Ninguna depende de que exista la siguiente.</p>
+      <p class="sub">Fases del dise&ntilde;o original. El estado actual est&aacute; en la <a href="#estado">tabla de implementaci&oacute;n</a>.</p>
       <div class="phase">
         <div class="badge">F1</div>
         <div><h4>Quipu mec&aacute;nico</h4>

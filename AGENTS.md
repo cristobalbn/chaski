@@ -12,7 +12,7 @@ node src/cli.mjs next         # sugiere a qué CLI cambiar y resume lo pendiente
 node src/cli.mjs cost         # reporta gasto externo ($0) y turnos extra pedidos
 node src/cli.mjs why [tema]   # busca decisiones pasadas en .tambo/historia/ y decisiones/
 node src/cli.mjs share [tema] # publica la narrativa en decisiones/ (con confirmación o --yes)
-node src/cli.mjs uninstall    # revierte desde respaldo
+node src/cli.mjs uninstall    # retira las integraciones de init y conserva los respaldos
 node src/cli.mjs probe        # captura el payload de los hooks con redacción
 node src/cli.mjs version      # imprime la versión de package.json (--version / -v)
 npm run check                      # chequeo de sintaxis (no hay build)
@@ -36,11 +36,10 @@ o si un módulo de `src/` no lo importa nadie.
 
 ## Los tests de contrato son lo que sostiene el proyecto
 
-`test/fixtures/` tiene un payload y al menos un transcript por CLI. **Los tres formatos
-de transcript son distintos entre sí y ninguno prometió estabilidad entre
-versiones** — ese es el riesgo que más probablemente mate el proyecto, y estos
-tests lo convierten en una build roja en lugar de un fallo silencioso en la
-máquina de alguien.
+`test/fixtures/` tiene payloads y transcripts de Claude Code, Codex y agy, y
+eventos y mensajes de OpenCode 1.x y 2.x. Los tests fijan el contrato de cada
+formato. El informe de `upstream.yml` avisa cuándo revisar una versión nueva
+contra los fixtures.
 
 Si capturas un payload con una forma distinta (`chaski probe`), reemplaza el
 fixture y ajusta el test. Si agregas un CLI, agrega su fixture y su bloque de
@@ -242,7 +241,7 @@ error de ejecución y no de sintaxis; los tests pasaban, porque la excepción
 ocurría después de escribir el relevo; y el hook la atrapaba, escribía
 `captura omitida` en stderr y salía con 0.
 
-Por eso hay un test que corre una captura normal en los tres CLIs y **falla si
+Por eso hay un test que corre una captura normal en los CLIs con hooks y **falla si
 stderr trae algo**. En el camino feliz, `captura omitida` significa que algo se
 rompió por dentro. Si agregas una rama al hook, asegúrate de que quede cubierta
 por ese test o por uno de punta a punta: la suite verde no te va a avisar.
@@ -317,10 +316,10 @@ hooks/hooks.json     hooks del plugin: forma exec (`node` + `args` con ${CLAUDE_
   - `.tambo/` vive en el **árbol principal** aunque la sesión corra en un worktree enlazado (`stateRoot()` en `src/lib/paths.mjs`, que lee `.git` → `gitdir` → `commondir` sin subprocesos). Git sigue corriendo en el worktree (`projectDir()`). En detached HEAD dentro de un worktree enlazado, la rama del slug es `HEAD-<nombre del worktree>`.
   - `.tambo/branches/<slug>/estado.json` — hechos, narrativa, marca de agua y firma HMAC.
     - **Regla de `<slug>` (`branchSlug` en `src/lib/paths.mjs`)**: si el nombre de la rama (`git rev-parse --abbrev-ref HEAD`) solo tiene `[a-zA-Z0-9._-]` y hasta 60 caracteres (ej. `main`), `<slug>` es la rama tal cual. Si tiene `/` u otros caracteres o pasa de 60 letras (ej. `feat/pagos`), reemplaza fuera de `[a-zA-Z0-9._-]` por `-`, recorta a 60 caracteres y añade un sufijo FNV-1a de 6 caracteres en base 36 (`feat-pagos-<hash6>`). Para obtener la ruta exacta desde Node: `node -e "import('./src/lib/paths.mjs').then(m=>console.log(m.statePath(process.cwd())))"`.
-    - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy"`), `session`, `worktree` (ruta del árbol de trabajo del turno), `transcript`, `transcriptIdentity` (opcional), `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ ruta, mas, menos, nuevo }] (máx. 50), dirtyTotal (cuando isRepo), dirtyUnknown (opcional), commits, upstream: { ref, ahead, collisions } | null, trimmed }`; `ahead` = commits del upstream que no tienes), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ kind, reason, conclusion, at }]`, máx. 6, vencen a las 72 h), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre el Markdown), `relay` (copia firmada de Markdown y firma anterior para recuperar una publicación interrumpida), `askedAt`, `askedReason`, `askedQuotaKey`, `turnsAtNarrative`, `narrativeStamp`, `narrativeSession`, `historyStamp`, `conversations` (estados de otras sesiones/ventanas en la misma rama), `lastReply` (`{ text, at }`: última respuesta del agente tomada del transcript, redactada, máx. ~700 caracteres, vence a las 72 h; se renderiza solo si hubo turnos después de la narrativa).
-    - **Campos exclusivos del agente (al guardar narrativa)**: `narrative` (string Markdown), `narrativeAuthor` (`"claude code" | "codex" | "agy"`), `narrativeWrittenAt` (ISO 8601 UTC actual, posterior a `writtenAt`).
+    - **Campos que escribe `capture.mjs` (NUNCA el modelo)**: `version` (`1`), `writtenAt` (ISO), `agent` (`"claude code" | "codex" | "agy" | "opencode"`), `session`, `worktree` (ruta del árbol de trabajo del turno), `transcript`, `transcriptIdentity` (opcional), `offset`, `turns`, `facts` (`{ branch, isRepo, dirty: [{ ruta, mas, menos, nuevo }] (máx. 50), dirtyTotal (cuando isRepo), dirtyUnknown (opcional), commits, upstream: { ref, ahead, collisions } | null, trimmed }`; `ahead` = commits del upstream que no tienes), `head` (SHA corto), `trimmed`, `commands` (`[{ cmd, id, exit }]`, máx. 12), `lastFile`, `subagents` (`[{ kind, reason, conclusion, at }]`, máx. 6, vencen a las 72 h), `backgroundTasks` (`[{ description, kind }]`, máx. 6), `redactions`, `event`, `sealedAtLimit` (`{ at, motivo }` opcional), `signature` (HMAC hex de 16 caracteres sobre el Markdown), `relay` (copia firmada de Markdown y firma anterior para recuperar una publicación interrumpida), `askedAt`, `askedReason`, `askedQuotaKey`, `turnsAtNarrative`, `narrativeStamp`, `narrativeSession`, `historyStamp`, `conversations` (estados de otras sesiones/ventanas en la misma rama), `lastReply` (`{ text, at }`: última respuesta del agente tomada del transcript, redactada, máx. ~700 caracteres, vence a las 72 h; se renderiza solo si hubo turnos después de la narrativa).
+    - **Campos exclusivos del agente al guardar narrativa**. `narrative` (Markdown), `narrativeAuthor` (`"claude code" | "codex" | "agy" | "opencode"`) y `narrativeWrittenAt` (ISO 8601 UTC actual, posterior a `writtenAt`).
   - `.tambo/branches/<slug>/relevo.md` — Markdown renderizado desde `estado.json` por `render()` (`src/lib/relay.mjs`), firmado con HMAC e inyectado por `inject.mjs`. Nunca se edita a mano.
-  - `.tambo/pending-ask.json` — pedidos de narrativa anotados por `Stop`, **uno por sesión** (`{ "<session>": { session, transcript, at, reason, statePath, hasSkill, sessionEnded? } }`; se lee también el formato anterior de un solo pedido; `capture.mjs` marca `sessionEnded` en el `SessionEnd` de esa sesión). La consume `inject.mjs` en el `UserPromptSubmit` (Claude Code, Codex) o `PreInvocation` (agy) siguiente de la misma sesión y la borra. Ver `src/lib/ask.mjs`.
+  - `.tambo/pending-ask.json` — pedidos de narrativa anotados por `Stop`, **uno por sesión** (`{ "<session>": { session, transcript, at, reason, statePath, hasSkill, sessionEnded? } }`; se lee también el formato anterior de un solo pedido; `capture.mjs` marca `sessionEnded` en el `SessionEnd` de esa sesión). La consume `inject.mjs` en el `UserPromptSubmit` (Claude Code, Codex), `PreInvocation` (agy) o en el mensaje siguiente que procesa el plugin de OpenCode, siempre en la misma sesión. La entrega quita el pedido. Ver `src/lib/ask.mjs`.
   - `.tambo/turns-open.json` — `{ "<session>": { agent, at } }`, turnos empezados y no terminados. Lo escribe el hook de entrega de `inject.mjs` al empezar el turno (solo si `.tambo/` existe; `init` prepara el directorio), lo limpia `capture.mjs` al cerrarlo (no en `PreCompact`). `SessionStart` avisa de los de otras sesiones aunque otra ventana publique un relevo. Vencen a las 72 h.
   - `.tambo/historia/entries.jsonl` — histórico append-only de narrativas redactadas (consultado por `chaski why`, y por `inject.mjs` para mostrar la narrativa más reciente si es de una rama que ya no existe). Cada línea es `{ at, author, branch, head, narrative }`.
 - **En el repositorio (versionado en git, opt-in):**
@@ -329,7 +328,7 @@ hooks/hooks.json     hooks del plugin: forma exec (`node` + `args` con ${CLAUDE_
   - `~/.chaski/clave` — clave local HMAC aleatoria de 32 bytes en hex (permisos `0600`).
   - `~/.chaski/latidos.json` — `{ "<agent>": "<ISO>" }`, última ejecución del hook por CLI (leído por `chaski doctor`).
   - `~/.chaski/ultima-limpieza` — timestamp en ms de la última poda diaria de relevos huérfanos.
-  - `~/.chaski/prompt-hook.json` — `{ "<agent>": "<ISO>" }`, prueba de vida del hook de entrega por CLI (la escribe `inject.mjs`, a lo sumo cada 10 min). `capture.mjs` solo difiere la petición si es de menos de 12 h.
+  - `~/.chaski/prompt-hook.json` — `{ "<agent>": "<ISO>" }`, prueba de vida del hook de entrega por CLI (la escribe `inject.mjs`, a lo sumo cada 10 min). `capture.mjs` exige un latido de menos de 12 h para diferir la petición en Claude Code, Codex y agy. En OpenCode la entrega va con el plugin.
   - `~/.chaski/quota.json` — `{ "<agent>": { at, reason, message } }`, cortes por cuota de las últimas 12 h (leído por `chaski next`; se limpia cuando ese CLI completa un `Stop` normal).
   - `~/.chaski/cost.json` — `{ asks: [{ at, agent, branch, reason, deferred? }], narratives: [{ at, agent, branch }] }` (últimos 500 de cada uno, leído por `chaski cost`).
   - `~/.chaski/config.json` — configuración global opcional del usuario. Se mezcla con `chaski.json` (proyecto) y `chaski.local.json` (máquina local) con precedencia `local > proyecto > global` en claves escalares (`pruneAfterDays`, `pruneNarrativeAfterDays`, `askNarrative`, `askNarrativeAfterTurns`, `askNarrativeAtQuota`) y concatenación de arreglos en `redact` y `excludePaths`. Además guarda `statusLineCommand`: la statusline que el usuario tenía antes de `init --statusline`, que `statusline.mjs` sigue ejecutando y `uninstall` devuelve.

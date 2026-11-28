@@ -157,16 +157,21 @@ y a 2.x.
 |---|---|
 | Relevo al arrancar | Se agrega al system prompt de cada llamada al modelo (no queda en el historial). En 1.x se omite la llamada que genera el título; en 2.x esa llamada no pasa por el plugin |
 | Captura | Al terminar el turno el plugin pide los mensajes y los pasa por stdin a `capture.mjs`: no hay transcript en disco. OpenCode espera la captura, unos cientos de ms |
-| Petición de narrativa | Siempre con tu mensaje siguiente, nunca al terminar el turno: el plugin no puede hacer actuar al modelo en `Stop`. Antes de 0.2.5 no se generaba nunca |
+| Petición de narrativa | Si la captura genera un pedido, el plugin lo entrega con tu siguiente mensaje en la misma sesión. El pedido diferido para OpenCode llegó en 0.2.5 |
 | Subagentes | Una sesión hija (herramienta `task`) ni recibe ni escribe el relevo |
 | Compactación | Recibe la instrucción de conservar el porqué, como en Claude Code |
 | Corte por cuota | Si el turno termina por límite del proveedor (HTTP 429, «rate limit», «insufficient_quota», «credit balance»), el relevo queda sellado y `chaski next` muestra OpenCode como agotado. OpenCode reintenta antes de rendirse; el corte se registra solo cuando deja de reintentar. Un turno normal después lo limpia |
 | Ruta de `node` | `init` fija la de la instalación actual. Si deja de existir (nvm, fnm, volta), el plugin usa `node` del PATH; `doctor` pide `init` para fijarla de nuevo |
 
 Verificado con OpenCode 1.19.6 y 2.4.2 reales (2026-11-27): captura, pedido,
-entrega y narrativa escrita por el modelo. El aviso «duplicate skill name» de
-su log es inofensivo: lee la skill de `.claude/skills/` y de `.agents/skills/`,
-que son idénticas.
+entrega y narrativa escrita por el modelo. El corte por cuota se verificó
+con un proveedor local que responde HTTP 429 (2026-11-28). En 1.19.6 se
+descarta el segundo `session.idle` del mismo turno para conservar el sello
+de cuota y evitar volver a capturar. La matriz y los pasos de diagnóstico
+están en [AGENTS.md](../AGENTS.md#opencode-plugin-no-hooks).
+
+El aviso «duplicate skill name» del log se debe a que OpenCode carga las dos
+copias idénticas de la skill, desde `.claude/skills/` y `.agents/skills/`.
 
 ## Perfil de Codex
 

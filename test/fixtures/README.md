@@ -1,6 +1,7 @@
 # Fixtures
 
-Payloads de hooks y transcripts de los tres CLIs soportados.
+Payloads y transcripts de Claude Code, Codex y agy, más los eventos y mensajes
+de las dos APIs del plugin de OpenCode.
 
 **Son sintéticos, no capturas literales.** La estructura, los nombres de campo
 y los tipos de evento se tomaron de capturas reales hechas entre el 2026-10-31 y
@@ -48,6 +49,5 @@ versión sin haber corrido el CLI.
 
 Los tres `*-prompt` / `*-preinvocation` no salen de `chaski probe`: reemplázalos por una captura real en cuanto haya una. Si la forma difiere, el test de contrato lo dice.
 
-Los tres formatos de transcript son distintos entre sí. Ninguno de los CLIs
-prometió mantenerlos estables entre versiones, y por eso hay un test por
-formato.
+Cada formato de transcript o de mensajes tiene su propio test de contrato.
+Cada API de OpenCode tiene fixtures con la forma que entrega al plugin.

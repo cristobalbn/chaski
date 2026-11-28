@@ -19,9 +19,8 @@ Los chaskis eran los mensajeros del imperio inca: cada uno corría un tramo y en
 el **tambo** entregaba el mensaje al siguiente. Mismo problema, misma solución.
 
 Compatible con **Claude Code**, **Codex CLI**, **Antigravity CLI (`agy`)** y
-**OpenCode** (1.18.29 o posterior, y 2.x). Con
-uno solo ya sirve: el relevo entre sesiones de la misma herramienta tiene valor
-propio.
+**OpenCode** (1.x desde 1.18.29 y 2.x). También puedes usarlo para hacer
+relevos entre sesiones de una sola herramienta.
 
 El relevo automático usa hooks de los agentes locales. En la app de ChatGPT,
 la integración de OpenAI corresponde a **Codex en modo local**, con los hooks
@@ -80,7 +79,7 @@ un resumen a mano funciona exactamente hasta el día en que te olvidas.
   - [Actualizar](#actualizar)
   - [Desinstalar](#desinstalar)
 - [Uso diario](#uso)
-  - [Qué escribir en el chat del agente](#la-misma-petición-en-los-tres-agentes)
+  - [Qué escribir en el chat del agente](#qué-escribir-en-el-chat-del-agente)
   - [La narrativa se pide sola](#la-narrativa-se-pide-sola)
   - [Referencia de comandos en terminal](#referencia-de-comandos-en-terminal)
 - [Configuración (`chaski.json`, `chaski.local.json`, `~/.chaski/config.json`)](#configuración)
@@ -150,10 +149,10 @@ Qué cambia frente a `init`:
   volver a correr `init` ni depender de una ruta absoluta en tu configuración.
 - **Sigue haciendo falta Node.js 20 o superior** en el `PATH`: el plugin
   ejecuta `node`.
-- **Codex y Antigravity no tienen plugin de chaski**: para ellos sigue siendo
-  `npm install -g` + `chaski init`. Si corres `init` con el plugin activo,
-  no registra los hooks de Claude Code (y quita los que hubiera de antes), y
-  `doctor` muestra `vía plugin chaski@chaski`.
+- **Para Codex, Antigravity y OpenCode**, instala el paquete de npm y corre
+  `chaski init`. Si el plugin de Claude Code está activo, `init` deja esa
+  integración a cargo del plugin y retira los hooks de chaski que hubiera
+  registrado antes. `doctor` muestra `vía plugin chaski@chaski`.
 - **Si quedaron los dos** (hooks de `init` y plugin), los de `init` se callan
   solos: el relevo no se inyecta dos veces.
 - **Sin `init`, `.tambo/` igual queda fuera de git**: la carpeta trae su propio
@@ -163,9 +162,9 @@ Qué cambia frente a `init`:
 
 1. Detecta cuáles de los cuatro CLIs tienes instalados y registra los hooks **a
    nivel de usuario**, con rutas nativas del sistema operativo. Respalda cada
-   archivo de configuración antes de tocarlo. OpenCode no tiene hooks de
-   shell: ahí `init` deja un plugin propio en
-   `~/.config/opencode/plugins/chaski.js`, que `uninstall` borra.
+   archivo de configuración de los hooks antes de tocarlo. En OpenCode instala
+   el plugin `~/.config/opencode/plugins/chaski.js` o
+   `$XDG_CONFIG_HOME/opencode/plugins/chaski.js` si definiste esa variable.
 2. Agrega `.tambo/` y `chaski.local.json` a tu `.gitignore`.
 3. Instala la skill `relevo` (un archivo de instrucciones que el agente carga
    al oírte pedir «relevo») dos veces: en `.claude/skills/relevo/`, que lee
@@ -206,6 +205,7 @@ a un nombre de carpeta seguro (`main` queda `main`; `feat/pagos` queda
 | Abres el CLI en… | El relevo vive en… |
 |---|---|
 | la raíz de un repo o una subcarpeta suya | la raíz del repo, `.tambo/branches/<slug-de-la-rama>/` |
+| un worktree enlazado de git | en el árbol principal, bajo `.tambo/branches/<slug-de-la-rama>/` |
 | una carpeta sin git con **un único** repo hijo | ese repo hijo |
 | una carpeta sin git con cero o varios repos hijos | esa misma carpeta, `.tambo/branches/sin-rama/` |
 
@@ -262,12 +262,13 @@ configurado** (las rutas y el directorio dependen de tu máquina; `…` marca lo
 omitido):
 
 ```
-chaski doctor (v0.1.2)
+chaski doctor (v0.2.6)
 
 CLIs y hooks
   claude code     sin config — ejecuta init
   codex           sin config — ejecuta init
   agy             sin config — ejecuta init
+  opencode        sin config — ejecuta init
 
 Ejecutables del hook
   capture         ok  …\src\capture.mjs
@@ -275,6 +276,8 @@ Ejecutables del hook
 
 Latidos (última vez que cada CLI ejecutó el hook)
   ninguno todavía — abre una sesión y vuelve a revisar
+
+…
 
 Proyecto
   …
@@ -337,7 +340,7 @@ Después:
    - no tiene que hacer nada más, chaski corre solo;
    - cuando se le agote la cuota de un CLI, que abra otro **en la misma
      carpeta**;
-   - escribir **«relevo»** en el chat agrega el «por qué», en cualquiera de los tres.
+   - escribir **«relevo»** en el chat agrega el «por qué», en cualquiera de los cuatro.
 
 **Si algo falla**, no improvises una solución: pégale al usuario la salida de
 `chaski doctor` y dile qué paso falló. Los modos de fallo conocidos están en
@@ -369,7 +372,7 @@ compatibilidad, pero `init` sigue siendo el paso correcto
 
 Con el plugin de Claude Code, la actualización de esa parte es
 `/plugin update chaski@chaski` dentro de Claude Code; `init` solo hace falta
-para Codex y Antigravity.
+para Codex, Antigravity y OpenCode.
 
 Para saber qué versión tienes y si hay una más nueva:
 
@@ -410,7 +413,7 @@ ruta. Lo que queda, y se borra a mano si quieres:
 
 ## Uso
 
-1. Abre Claude Code, Codex o agy **en la raíz del proyecto** y trabaja normalmente.
+1. Abre Claude Code, Codex, agy u OpenCode **en la raíz del proyecto** y trabaja normalmente.
 2. Antes de cambiar de agente, escribe **«relevo»** en su chat y espera a que
    confirme el guardado. Así queda anotada también la intención del trabajo.
 3. Abre otra terminal, **`cd` a esa misma carpeta**, e inicia el siguiente CLI.
@@ -449,17 +452,18 @@ como respaldo.
   días, y pide la narrativa una vez por ventana cuando pasa del 80 %
   (`"askNarrativeAtQuota"` cambia el umbral; `false` lo apaga). `chaski next`
   muestra esa cuota y `uninstall` deja tu statusline como estaba.
-- Si actualizaste desde una versión anterior, vuelve a correr `chaski init` para
-  registrar el hook nuevo; sin él, la petición sigue llegando al terminar. En
-  Codex, acepta también el hook nuevo cuando te pida confiar en él.
+- Al actualizar, corre `chaski init` para registrar los hooks y actualizar el
+  plugin de OpenCode. Acepta cualquier cambio de confianza que te pida Codex.
+  Claude Code, Codex y agy pueden pedir la narrativa al final del turno si
+  falta el hook de entrega. OpenCode la pide al comenzar el turno siguiente.
 - Ver cuántas peticiones hizo, separando las que agregaron un turno de las
   diferidas: `chaski cost`.
 - Los límites exactos (20 minutos, 8 turnos) y el contrato por CLI están en la
   [referencia técnica](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#petición-automática-de-la-narrativa).
 
-### La misma petición en los tres agentes
+### Qué escribir en el chat del agente
 
-En el **chat de cualquiera de los tres agentes**, usa siempre las mismas frases:
+Usa las mismas frases en el chat de los cuatro agentes.
 
 | Qué quieres hacer | Qué escribes en el chat | Qué hace el agente |
 |---|---|---|
@@ -499,7 +503,7 @@ narrativa es lo que evita que reabra decisiones ya cerradas.
 | `chaski why [tema]` | Para consultar por qué se tomó o descartó una decisión pasada | Busca en `.tambo/historia/entries.jsonl` (donde `capture.mjs` archiva cada narrativa antes de que se reemplace), en las ramas activas de `.tambo/branches/` y en `decisiones/`. Si pasas `tema`, filtra por texto o nombre de rama. Muestra las 10 más recientes. |
 | `chaski share [tema] [--yes]` | Para compartir una decisión de tu relevo local con el equipo en git | Toma la narrativa de la rama actual, vuelve a pasar el filtro de secretos (`src/lib/secrets.mjs`), reemplaza tu carpeta personal por `~` y los correos por `[correo]`, muestra la vista previa de `decisiones/YYYY-MM-DD-<tema>.md` y pide confirmación interactiva antes de escribir (o publica directo con `--yes`). Nunca sobrescribe un archivo existente; si ya existe, añade sufijo `-2`, `-3`, etc. Sale con código `1` si la rama no tiene narrativa o si no confirmas |
 | `chaski probe [--show \| --clean]` | Diagnóstico de payloads de hooks o creación de nuevos fixtures | Instala una sonda temporal que registra el payload de los hooks con redacción. Solo para diagnóstico o contribuir: [detalle y uso](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#capturar-payloads-chaski-probe) |
-| `chaski uninstall` | Para quitar los hooks de chaski de tus CLIs | Quita los hooks de chaski de `~/.claude/settings.json`, `~/.codex/config.toml` y `~/.gemini/config/hooks.json` sin tocar el resto de cada archivo. Conserva los respaldos `.chaski-backup`, `.tambo/` y `~/.chaski/` |
+| `chaski uninstall` | Para desinstalar las integraciones de `init` | Quita las entradas de chaski en Claude Code, Codex y agy, y borra el plugin de OpenCode generado por `init`. Conserva los respaldos `.chaski-backup`, `.tambo/` y `~/.chaski/` |
 | `chaski version` (`--version`, `-v`) | Para consultar la versión instalada | Imprime `chaski X.Y.Z` desde `package.json` |
 
 ---
@@ -541,15 +545,11 @@ Archivos que genera en tu proyecto:
 Y en `~/.chaski/`: la clave de firma, los latidos de cada CLI, el estado de
 cuota (`quota.json`), la contabilidad de turnos (`cost.json`) y la config global.
 
-El diseño completo, con los riesgos y la investigación de términos de uso, está
-en [`docs/diseno.html`](docs/diseno.html). Describe el diseño entero, incluidas
-piezas que todavía no existen: abre con una tabla que distingue lo construido
-de lo pendiente.
+La tabla de implementación y el diseño original están en
+[`docs/diseno.html`](https://github.com/cristobalbn/chaski/blob/main/docs/diseno.html).
 
-La auditoría de noviembre de 2026 —qué se revisó, qué se encontró y qué se
-decidió **no** arreglar, con el motivo— está en
-[`docs/auditoria-2026-11.md`](docs/auditoria-2026-11.md). Si vas a cambiar algo
-aquí, la sección de límites conocidos te ahorra descubrirlos de nuevo.
+Los hallazgos y las decisiones de la auditoría de noviembre de 2026 están en
+[`docs/auditoria-2026-11.md`](https://github.com/cristobalbn/chaski/blob/main/docs/auditoria-2026-11.md).
 
 ---
 
@@ -703,7 +703,7 @@ razonamiento completo están en la
 | Hooks de Codex | requieren conceder confianza | La primera vez que abres Codex con hooks instalados pide confiar en ellos. Hasta que aceptes, no se ejecuta ninguno, y el permiso se aplica desde la sesión siguiente |
 | Un turno con miles de archivos modificados | el relevo sale **incompleto, y lo dice** | El hook sacrifica detalle caro (líneas `+/-`, log de commits) antes de agotar su presupuesto de tiempo; la rama, el `HEAD`, la lista de archivos y su total siempre sobreviven, y lo omitido aparece declarado en el relevo |
 | Ruta del proyecto de más de ~240 caracteres | los subprocesos de git fallan | En Windows, una ruta así de larga hace que el subproceso de git falle. Desde la 0.1.1, si existe `.git` el relevo no afirma «Sin repositorio git»: declara la rama sin leer como recorte, pero sale sin rama ni los datos que dependen de git. No hay arreglo barato conocido: evita rutas tan largas para este proyecto |
-| OpenCode | 1.18.29 o posterior; 2.x | El mismo plugin sirve a las dos APIs de plugins de OpenCode (verificado con 1.19.6 y 2.4.2). En una versión anterior a 1.18.29 `init` no instala nada y `doctor` avisa. En 1.x la inyección del relevo usa hooks que OpenCode marca como experimentales: si cambian, el relevo deja de llegar sin error visible; el CI lo detecta con sus fixtures. Al terminar cada turno, OpenCode espera unos cientos de ms a la captura. La petición de narrativa llega siempre con tu mensaje siguiente, nunca al terminar el turno. Un corte por cuota del proveedor queda registrado para `chaski next` |
+| OpenCode | 1.x desde 1.18.29 y 2.x | Verificado con 1.19.6 y 2.4.2. `init` omite OpenCode si está por debajo del mínimo y `doctor` lo indica. En 1.x la inyección depende de hooks experimentales. OpenCode espera unos cientos de ms a la captura. Si se genera una petición de narrativa, llega con tu siguiente mensaje. Los cortes por cuota del proveedor quedan registrados para `chaski next`. [Contrato y diagnóstico](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#opencode) |
 | Tamaño del relevo | 6.000 caracteres | Por encima de 10.000, Claude Code reemplaza el contenido por una ruta y el relevo no llega |
 
 Si un administrador fijó `allowManagedHooksOnly` o `disableAllHooks` en una
@@ -717,12 +717,9 @@ persona, no una verificación para encadenar en un script o en CI — si
 necesitas eso, revisa su salida de texto, no su código de salida. (`init` sí
 termina en 1 si algún CLI falló al configurarse.)
 
-**Falsa alarma de firma con clientes de sincronización.** Si OneDrive, Dropbox
-o similar bloquean `estado.json` justo cuando `capture.mjs` está escribiendo,
-puede quedar un `relevo.md` nuevo firmado junto a un `estado.json` que todavía
-tiene la firma anterior. La sesión siguiente ve la firma desajustada y avisa
-de una posible manipulación aunque no haya pasado nada malintencionado — es un
-falso positivo del mecanismo de integridad, no una vulnerabilidad.
+Si una captura se interrumpe al publicar `relevo.md`, chaski puede recuperar
+la vista desde la copia firmada de `estado.json`. `chaski doctor` indica
+cuándo usó esa copia. [Publicación del relevo](https://github.com/cristobalbn/chaski/blob/main/docs/referencia.md#publicación-del-relevo)
 
 Las mediciones (latencia del hook, 5.000 archivos modificados), el tamaño
 exacto del recorte y los relevos guardados por versiones viejas en
@@ -754,8 +751,7 @@ trae lo que el paquete de npm deja fuera a propósito —historial, `test/`,
 `docs/`, `scripts/`, CI y `CONTRIBUTING.md`—.
 
 Clónalo si vas a contribuir, o si prefieres leer lo que vas a ejecutar antes de
-instalarlo, algo razonable en una herramienta que corre sola en cada turno. Son
-~3.800 líneas de JavaScript sin dependencias:
+instalarlo. El código de la herramienta es JavaScript sin dependencias.
 
 ```bash
 git clone https://github.com/cristobalbn/chaski.git
