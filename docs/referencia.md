@@ -82,8 +82,8 @@ chaski probe --clean      # quita la sonda
 
 Cubre los tres CLIs con hooks de shell (Claude Code, Codex y agy). OpenCode,
 el cuarto, carga un plugin en vez de hooks y queda fuera de la sonda: su
-contrato lo cubren `test/opencode.test.mjs` y sus fixtures. Tiene que ser una
-sesión interactiva: ninguno de los tres dispara hooks en modo headless. `chaski probe` instala una sonda temporal en
+contrato lo cubren `test/opencode.test.mjs` y sus fixtures. Usa una sesión
+interactiva para reproducir el flujo normal de Chaski. `chaski probe` instala una sonda temporal en
 `~/.chaski/sonda.mjs`; `--show` muestra los payloads capturados en
 `~/.chaski/sonda.log` (tope de 256 KiB). La sonda registra un estado cuando
 la entrada supera 64 KiB o el JSON es inválido. `--clean` quita la sonda y conserva los cambios hechos
