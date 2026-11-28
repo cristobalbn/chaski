@@ -11,6 +11,7 @@ falta leerlo.
 - [Capturar payloads (`chaski probe`)](#capturar-payloads-chaski-probe)
 - [Actualizar: por qué `init` no es opcional](#actualizar-por-qué-init-no-es-opcional)
 - [Plugin de Claude Code](#plugin-de-claude-code)
+- [OpenCode](#opencode)
 - [Perfil de Codex](#perfil-de-codex)
 - [Puentes de compatibilidad (`capturar.mjs`, `leer.mjs`)](#puentes-de-compatibilidad-capturarmjs-leermjs)
 - [Cuota (statusline de Claude Code)](#cuota-statusline-de-claude-code)
@@ -107,6 +108,21 @@ También actualiza las copias de la skill y el bloque de peticiones de
 `AGENTS.md` en ese proyecto. Las secciones antiguas sin delimitadores se
 conservan, porque pueden contener instrucciones escritas por ti.
 
+Esas copias son **por proyecto**: hay que correr `init` en cada uno. Para
+que no pase inadvertido (desde 0.2.4):
+
+| Dónde | Qué muestra |
+|---|---|
+| `chaski doctor` | línea `skill y AGENTS`: `al día` o `DESACTUALIZADOS (<archivos>) — ejecuta init` |
+| Arranque de sesión | el relevo inyectado lista los archivos viejos y le pide al agente que te avise de correr `chaski init` |
+
+Compara `.agents/skills/relevo/SKILL.md`, `.claude/skills/relevo/SKILL.md` y
+el bloque entre `<!-- chaski:requests:start -->` y `<!-- chaski:requests:end -->`
+con los de la versión instalada (`src/lib/project-files.mjs`). No cuenta los
+fines de línea, ni la copia de `.claude/skills/` si el plugin de Claude Code
+está activo (`init` ya no la actualiza). Solo mira archivos que existen: un
+proyecto sin `init` no recibe el aviso.
+
 Si ya estás viendo ese error, corre `chaski init`. Pero **la sesión que ya lo
 tiene abierto no lo va a ver desaparecer**: los CLIs leen su configuración de
 hooks una sola vez, al arrancar, así que `init` corrige la ruta para la
@@ -129,6 +145,27 @@ que el id en `enabledPlugins` es `chaski@chaski`.
 | Activo | `enabledPlugins["chaski@chaski"]` en `~/.claude/settings.json`, `.claude/settings.json` o `.claude/settings.local.json`, con esa precedencia de menos a más específico |
 | Sin `init` | `.tambo/` se crea con su propio `.gitignore` (`*`), así que queda fuera de git igual |
 | Validar | `claude plugin validate .` y `claude plugin validate ./.claude-plugin/marketplace.json` |
+
+## OpenCode
+
+OpenCode no corre hooks de shell: `init` instala un plugin en
+`~/.config/opencode/plugins/chaski.js` (o `$XDG_CONFIG_HOME/opencode/plugins/`)
+que importa `src/opencode.mjs`. El mismo archivo sirve a 1.x (desde 1.18.29)
+y a 2.x.
+
+| Qué | Cómo funciona |
+|---|---|
+| Relevo al arrancar | Se agrega al system prompt de cada llamada al modelo (no queda en el historial). En 1.x se omite la llamada que genera el título; en 2.x esa llamada no pasa por el plugin |
+| Captura | Al terminar el turno el plugin pide los mensajes y los pasa por stdin a `capture.mjs`: no hay transcript en disco. OpenCode espera la captura, unos cientos de ms |
+| Petición de narrativa | Siempre con tu mensaje siguiente, nunca al terminar el turno: el plugin no puede hacer actuar al modelo en `Stop`. Antes de 0.2.5 no se generaba nunca |
+| Subagentes | Una sesión hija (herramienta `task`) ni recibe ni escribe el relevo |
+| Compactación | Recibe la instrucción de conservar el porqué, como en Claude Code |
+| Ruta de `node` | `init` fija la de la instalación actual. Si deja de existir (nvm, fnm, volta), el plugin usa `node` del PATH; `doctor` pide `init` para fijarla de nuevo |
+
+Verificado con OpenCode 1.19.6 y 2.4.2 reales (2026-11-27): captura, pedido,
+entrega y narrativa escrita por el modelo. El aviso «duplicate skill name» de
+su log es inofensivo: lee la skill de `.claude/skills/` y de `.agents/skills/`,
+que son idénticas.
 
 ## Perfil de Codex
 
