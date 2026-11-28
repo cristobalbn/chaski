@@ -160,6 +160,7 @@ y a 2.x.
 | Petición de narrativa | Siempre con tu mensaje siguiente, nunca al terminar el turno: el plugin no puede hacer actuar al modelo en `Stop`. Antes de 0.2.5 no se generaba nunca |
 | Subagentes | Una sesión hija (herramienta `task`) ni recibe ni escribe el relevo |
 | Compactación | Recibe la instrucción de conservar el porqué, como en Claude Code |
+| Corte por cuota | Si el turno termina por límite del proveedor (HTTP 429, «rate limit», «insufficient_quota», «credit balance»), el relevo queda sellado y `chaski next` muestra OpenCode como agotado. OpenCode reintenta antes de rendirse; el corte se registra solo cuando deja de reintentar. Un turno normal después lo limpia |
 | Ruta de `node` | `init` fija la de la instalación actual. Si deja de existir (nvm, fnm, volta), el plugin usa `node` del PATH; `doctor` pide `init` para fijarla de nuevo |
 
 Verificado con OpenCode 1.19.6 y 2.4.2 reales (2026-11-27): captura, pedido,

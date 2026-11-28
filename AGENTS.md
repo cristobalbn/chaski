@@ -445,6 +445,7 @@ el mínimo soportado) y 2.x a `setup()`. Ninguna importa `@opencode/plugin`
 | `Stop` | evento `session.idle` | eventos `session.execution.{succeeded,failed,interrupted}` del bus (`ctx.event.subscribe()`); **no existe `session.idle`** |
 | `PreCompact` | `experimental.session.compacting` → `output.context` | hook `compaction` → parte nueva en `system` |
 | mensajes | `client.session.messages()` → `reduceMessages()` | `ctx.session.context()` → `reduceMessagesV2()` |
+| corte por cuota | evento `session.error` (`error.name`, `error.data.statusCode`) → `turnError()` | evento `session.execution.failed` (`data.error.type`, `status`) → `turnError()` |
 | subagente | `client.session.get()` → `data.parentID` | `ctx.session.get()` → `parentID` |
 
 - **La petición de narrativa siempre es diferida** (`DEFERRED_ONLY` en
@@ -454,6 +455,10 @@ el mínimo soportado) y 2.x a `setup()`. Ninguna importa `@opencode/plugin`
   0.2.4 `shouldAsk()` descartaba a OpenCode y la petición nunca se generaba:
   los tests de entrega anotaban el pedido a mano y no lo vieron. El ciclo
   entero (Stop → pedido → mensaje siguiente) tiene test sin atajos.
+- **1.19.6 emite `session.idle` dos veces por turno.** Una segunda captura
+  sin mensaje del usuario en medio (`DUPLICATE_IDLE_MS`) se ignora: repetía
+  trabajo con OpenCode esperando y, tras un corte por cuota, borraba el sello.
+  El error del turno se conserva hasta el mensaje siguiente por lo mismo.
 - **Si la ruta de `node` del plugin ya no existe** (nvm, fnm, volta),
   `resolveNode()` usa `node` del PATH; `doctor` igual pide `init`.
 - **No hay transcript en disco** (OpenCode guarda en SQLite). Al terminar el

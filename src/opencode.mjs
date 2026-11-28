@@ -37,6 +37,8 @@ const INJECT = fileURLToPath(new URL('./inject.mjs', import.meta.url));
 
 /** Más que esto y el hook se da por perdido: OpenCode espera al plugin. */
 const HOOK_TIMEOUT_MS = 10_000;
+/** Dos fines de turno más juntos que esto, sin mensaje del usuario en medio, son el mismo turno. */
+const DUPLICATE_IDLE_MS = 5_000;
 /** Por parte de texto. El relevo usa ~700 caracteres de la última respuesta. */
 const MAX_TEXT = 4000;
 
@@ -53,6 +55,32 @@ const MAX_TEXT = 4000;
 export function resolveNode(node) {
   if (typeof node !== 'string' || !node) return node;
   try { return existsSync(node) ? node : 'node'; } catch { return node; }
+}
+
+/**
+ * Error con el que terminó un turno, en los campos que capture.mjs ya sabe
+ * leer (`error_type`, `error_message`, como el `StopFailure` de Claude
+ * Code). Un corte por cuota sale como `rate_limit`: capture sella el relevo
+ * y lo anota en ~/.chaski/quota.json, que es lo que `chaski next` usa para
+ * sugerir otro CLI.
+ *
+ *   1.x  evento `session.error`: `properties.error = { name, data: { message, statusCode } }`
+ *        (EventSessionError / ApiError en @opencode-ai/sdk 1.19.6)
+ *   2.x  evento `session.execution.failed`: `data.error = { type, message, status }`
+ *        (@opencode/protocol 2.4.2)
+ *
+ * Los proveedores no se ponen de acuerdo en cómo dicen «sin cuota»: HTTP 429,
+ * «rate limit», «insufficient_quota», «credit balance». Se acepta cualquiera.
+ */
+export function turnError(error) {
+  if (!error || typeof error !== 'object') return null;
+  const type = String(error.name ?? error.type ?? '').slice(0, 80);
+  const message = String(error.data?.message ?? error.message ?? '').slice(0, 500);
+  if (!type && !message) return null;
+  const status = Number(error.data?.statusCode ?? error.status);
+  const limit = status === 429
+    || /rate.?limit|too many requests|quota|usage.?limit|insufficient.?(quota|credits?|balance)|credit.?balance/i.test(`${type} ${message}`);
+  return { error_type: limit ? 'rate_limit' : (type || 'error'), error_message: message };
 }
 
 /** Línea del JSONL común: `{ info: { id, role }, parts }`. */
@@ -200,7 +228,7 @@ function bridge({ node, directory, readTranscript, parentOf }) {
   /** Por sesión: relevo de arranque, petición pendiente, y si es un subagente. */
   const sessions = new Map();
   const session = (id) => {
-    if (!sessions.has(id)) sessions.set(id, { relay: null, extra: null, child: null });
+    if (!sessions.has(id)) sessions.set(id, { relay: null, extra: null, child: null, error: null, capturedAt: 0 });
     return sessions.get(id);
   };
   const base = (id, event) => ({ hook_event_name: event, session_id: id, cwd: directory });
@@ -219,6 +247,8 @@ function bridge({ node, directory, readTranscript, parentOf }) {
   return {
     session,
     forget: (id) => sessions.delete(id),
+    /** Anota el error del turno; viaja con la captura siguiente. */
+    noteError(id, error) { session(id).error = turnError(error); },
     isChild,
 
     startRelay(id) {
@@ -237,6 +267,10 @@ function bridge({ node, directory, readTranscript, parentOf }) {
 
     async prompt(id) {
       if (await isChild(id)) return;
+      // Turno nuevo: el error y la marca de captura eran del anterior.
+      const s = session(id);
+      s.error = null;
+      s.capturedAt = 0;
       session(id).extra = contextFrom(await run(node, INJECT, 'UserPromptSubmit', base(id, 'UserPromptSubmit')));
     },
 
@@ -245,7 +279,17 @@ function bridge({ node, directory, readTranscript, parentOf }) {
     },
 
     async capture(id) {
-      session(id).extra = null;
+      const s = session(id);
+      // OpenCode 1.19.6 emite `session.idle` dos veces al terminar un turno
+      // (verificado con un turno real). La segunda captura repetía el trabajo
+      // —unos cientos de ms con OpenCode esperando— y, tras un corte por
+      // cuota, sobrescribía el relevo sellado con uno sin el error. Una
+      // segunda captura sin mensaje nuevo del usuario en medio se ignora.
+      if (s.capturedAt && Date.now() - s.capturedAt < DUPLICATE_IDLE_MS) return;
+      s.extra = null;
+      // El error se conserva hasta el mensaje siguiente (prompt): si una
+      // captura posterior del mismo turno no lo llevara, borraría el sello.
+      const error = s.error;
       if (await isChild(id)) return;
       let transcript = '';
       try { transcript = await readTranscript(id); } catch {}
@@ -256,10 +300,11 @@ function bridge({ node, directory, readTranscript, parentOf }) {
       // de ms al final del turno, igual que el hook Stop en los demás CLIs.
       try {
         spawnSync(node, [CAPTURE, 'Stop', 'opencode'], {
-          input: JSON.stringify({ ...base(id, 'Stop'), transcript_inline: transcript }),
+          input: JSON.stringify({ ...base(id, 'Stop'), ...(error ?? {}), transcript_inline: transcript }),
           stdio: ['pipe', 'ignore', 'ignore'], timeout: HOOK_TIMEOUT_MS, windowsHide: true,
         });
       } catch {}
+      s.capturedAt = Date.now();
     },
   };
 }
@@ -285,6 +330,8 @@ export function chaskiPlugin({ node } = {}) {
             b.session(id).child = Boolean(p.info?.parentID);
             // Se lanza ya, para que esté listo antes de la primera llamada al modelo.
             if (!b.session(id).child) b.startRelay(id);
+          } else if (event?.type === 'session.error' && typeof p.sessionID === 'string') {
+            b.noteError(p.sessionID, p.error);
           } else if (event?.type === 'session.idle' && typeof p.sessionID === 'string') {
             await b.capture(p.sessionID);
           } else if (event?.type === 'session.deleted') {
@@ -384,6 +431,7 @@ export function chaskiPluginV2({ node } = {}) {
           try {
             const id = ev?.data?.sessionID;
             if (typeof id !== 'string') continue;
+            if (ev.type === 'session.execution.failed') b.noteError(id, ev.data?.error);
             if (V2_TURN_END.has(ev.type)) await b.capture(id);
             else if (ev.type === 'session.created' && !(await b.isChild(id))) b.startRelay(id);
             else if (ev.type === 'session.deleted') b.forget(id);

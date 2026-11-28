@@ -5,5 +5,24 @@
   "chat.message": { "input": { "sessionID": "ses_fixture", "model": { "providerID": "opencode", "modelID": "modelo-x" } }, "output": { "message": { "id": "msg_01user", "role": "user", "sessionID": "ses_fixture" }, "parts": [{ "type": "text", "text": "hola" }] } },
   "experimental.chat.system.transform": { "input": { "sessionID": "ses_fixture", "model": { "id": "modelo-x", "providerID": "opencode" } }, "output": { "system": ["You are opencode, an interactive CLI tool."] } },
   "experimental.session.compacting": { "input": { "sessionID": "ses_fixture" }, "output": { "context": [] } },
-  "experimental.chat.system.transform.title": { "input": { "sessionID": "ses_fixture", "model": { "id": "modelo-x", "providerID": "opencode" } }, "output": { "system": ["You are a title generator. You output ONLY a thread title. Nothing else."] } }
+  "experimental.chat.system.transform.title": { "input": { "sessionID": "ses_fixture", "model": { "id": "modelo-x", "providerID": "opencode" } }, "output": { "system": ["You are a title generator. You output ONLY a thread title. Nothing else."] } },
+  "session.error": {
+    "event": {
+      "type": "session.error",
+      "properties": {
+        "sessionID": "ses_fixture",
+        "error": {
+          "name": "APIError",
+          "data": {
+            "message": "Rate limit reached for requests",
+            "statusCode": 429,
+            "isRetryable": true,
+            "responseHeaders": {},
+            "responseBody": "{}",
+            "metadata": {}
+          }
+        }
+      }
+    }
+  }
 }

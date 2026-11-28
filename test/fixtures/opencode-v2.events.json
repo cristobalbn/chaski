@@ -5,5 +5,26 @@
   "session.get.child": { "id": "ses_v2_child", "parentID": "ses_v2", "projectID": "0000", "location": { "directory": "/proyecto" } },
   "hook.prompt": { "sessionID": "ses_v2", "messageID": "msg_01user", "prompt": { "text": "hola", "files": [] }, "delivery": "steer" },
   "hook.context": { "sessionID": "ses_v2", "model": { "id": "modelo-x", "providerID": "opencode", "variant": "default" }, "system": [{ "type": "text", "text": "You are an AI agent running in OpenCode." }, { "type": "text", "text": "# Your Model" }], "messages": [], "options": { "maxTokens": 32000 }, "agent": "build", "tools": {} },
-  "hook.compaction": { "sessionID": "ses_v2", "model": { "id": "modelo-x", "providerID": "opencode", "variant": "default" }, "system": [{ "type": "text", "text": "You are an AI agent running in OpenCode." }], "messages": [], "options": {}, "agent": "build", "tools": {} }
+  "hook.compaction": { "sessionID": "ses_v2", "model": { "id": "modelo-x", "providerID": "opencode", "variant": "default" }, "system": [{ "type": "text", "text": "You are an AI agent running in OpenCode." }], "messages": [], "options": {}, "agent": "build", "tools": {} },
+  "session.execution.failed": {
+    "id": "evt_03",
+    "created": 1795812790000,
+    "type": "session.execution.failed",
+    "durable": {
+      "aggregateID": "ses_v2",
+      "seq": 26,
+      "version": 1
+    },
+    "data": {
+      "sessionID": "ses_v2",
+      "error": {
+        "type": "provider.rate-limit",
+        "message": "Rate limit reached for requests",
+        "status": 429,
+        "response": {
+          "body": "{}"
+        }
+      }
+    }
+  }
 }

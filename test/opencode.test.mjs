@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 import { transcriptFacts } from '../src/lib/transcript.mjs';
-import { reduceMessages, reduceMessagesV2, chaskiPlugin, chaskiPluginV2, chaskiDefinition, resolveNode } from '../src/opencode.mjs';
+import { reduceMessages, reduceMessagesV2, chaskiPlugin, chaskiPluginV2, chaskiDefinition, resolveNode, turnError } from '../src/opencode.mjs';
 import { promptPayload, PROMPT_HOOK_EVENTS } from '../src/lib/ask.mjs';
 import { canonicalAgent } from '../src/lib/payload.mjs';
 import { opencodeSupported } from '../src/commands/hook-config.mjs';
@@ -612,6 +612,74 @@ describe('el plugin de punta a punta, con un cliente falso', () => {
     } finally {
       limpiar(m.raiz);
     }
+  });
+
+  // Corte por cuota: el error del turno viaja con la captura, que sella el
+  // relevo y lo anota para `chaski next`. Las formas son las observadas con
+  // OpenCode real contra un proveedor local que responde 429 (fixtures).
+  test('1.x: un corte por cuota sella el relevo y queda en quota.json, aunque session.idle llegue dos veces', async () => {
+    const m = montar('chaski-oc-cuota-');
+    try {
+      execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      const Chaski = (await import(pathToFileURL(m.plugin).href + '?t=' + Date.now())).default.server;
+      await conEntorno(m, async () => {
+        const hooks = await Chaski({ client: cliente(mensajes), directory: m.proyecto });
+        await hooks.event(eventos['session.error']);
+        // OpenCode 1.19.6 emite session.idle dos veces: la segunda no puede
+        // borrar el sello (pasaba antes de ignorar la captura duplicada).
+        await hooks.event(eventos['session.idle']);
+        await hooks.event(eventos['session.idle']);
+        const ramas = readdirSync(join(m.proyecto, '.tambo', 'branches'));
+        const estado = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'branches', ramas[0], 'estado.json'), 'utf8'));
+        assert.equal(estado.sealedAtLimit?.motivo, 'rate_limit');
+        const cuota = JSON.parse(readFileSync(join(m.casa, '.chaski', 'quota.json'), 'utf8'));
+        assert.equal(cuota.opencode?.reason, 'rate_limit');
+        assert.match(cuota.opencode?.message ?? '', /Rate limit reached/);
+        assert.match(execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'next'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' }),
+          /opencode\s+agotado/);
+
+        // El turno siguiente termina bien: el corte se limpia.
+        await hooks['chat.message']({ sessionID: 'ses_fixture' });
+        await hooks.event(eventos['session.idle']);
+        assert.deepEqual(JSON.parse(readFileSync(join(m.casa, '.chaski', 'quota.json'), 'utf8')), {});
+      });
+    } finally {
+      limpiar(m.raiz);
+    }
+  });
+
+  test('2.x: session.execution.failed por cuota sella el relevo y queda en quota.json', async () => {
+    const m = montar('chaski-oc-v2cuota-', 'opencode v2.4.2');
+    try {
+      execFileSync(process.execPath, [join(SRC, 'cli.mjs'), 'init'], { cwd: m.proyecto, env: m.entorno, encoding: 'utf8' });
+      const def = (await import(pathToFileURL(m.plugin).href + '?t=' + Date.now())).default;
+      await conEntorno(m, async () => {
+        const a = ctxFalso(m.proyecto);
+        await def.setup(a.ctx);
+        await a.emitir(eventosV2['session.execution.failed']);
+        const ramas = readdirSync(join(m.proyecto, '.tambo', 'branches'));
+        const estado = JSON.parse(readFileSync(join(m.proyecto, '.tambo', 'branches', ramas[0], 'estado.json'), 'utf8'));
+        assert.equal(estado.sealedAtLimit?.motivo, 'rate_limit');
+        assert.equal(JSON.parse(readFileSync(join(m.casa, '.chaski', 'quota.json'), 'utf8')).opencode?.reason, 'rate_limit');
+      });
+    } finally {
+      limpiar(m.raiz);
+    }
+  });
+
+  test('turnError reconoce la cuota en las formas de 1.x y 2.x y deja pasar los demás errores', () => {
+    assert.deepEqual(turnError(eventos['session.error'].event.properties.error),
+      { error_type: 'rate_limit', error_message: 'Rate limit reached for requests' });
+    assert.deepEqual(turnError(eventosV2['session.execution.failed'].data.error),
+      { error_type: 'rate_limit', error_message: 'Rate limit reached for requests' });
+    // Sin 429, por el texto del proveedor.
+    assert.equal(turnError({ type: 'provider.error', message: 'You exceeded your current quota (insufficient_quota)' }).error_type, 'rate_limit');
+    assert.equal(turnError({ name: 'APIError', data: { message: 'Your credit balance is too low' } }).error_type, 'rate_limit');
+    // Otro error no es un corte por cuota.
+    assert.deepEqual(turnError({ name: 'ProviderAuthError', data: { message: 'Invalid API key', statusCode: 401 } }),
+      { error_type: 'ProviderAuthError', error_message: 'Invalid API key' });
+    assert.equal(turnError({ name: 'MessageAbortedError', data: { message: 'Aborted' } }).error_type, 'MessageAbortedError');
+    for (const raro of [null, undefined, 'x', 3, {}]) assert.equal(turnError(raro), null);
   });
 
   test('2.x: setup no lanza con un contexto incompleto', async () => {
